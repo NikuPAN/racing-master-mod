@@ -183,6 +183,17 @@ void ShowToast(const char* text, ULONGLONG milliseconds = 2500) {
     g_toastUntil = GetTickCount64() + milliseconds;
 }
 
+// The music engine's state for this moment. One Snapshot is kept across frames and refreshed with
+// GetSnapshotInto, which copies the song list only when it changed (the list can hold thousands
+// of songs; copying it every frame would cost the game frame time for nothing). Frame thread
+// only. Each caller refreshes it once and must not call this again while still using the
+// reference from an earlier call (a refresh can replace the list).
+const music::Snapshot& CurrentSnapshot() {
+    static music::Snapshot* const snapshot = new music::Snapshot();   // created on first use, never freed
+    music::Player::Get().GetSnapshotInto(*snapshot);
+    return *snapshot;
+}
+
 void SaveSettings() {
     UiSettingsRequestSave(g_settings);
 }
@@ -825,7 +836,7 @@ void DrawBar(const PanelFrameInfo& info) {
     const bool myFiles = g_settings.source == SourceMyFiles;
     char nowPlaying[768];
     if (myFiles) {
-        const music::Snapshot snapshot = music::Player::Get().GetSnapshot();
+        const music::Snapshot& snapshot = CurrentSnapshot();
         if (snapshot.tracks.empty()) {
             strcpy_s(nowPlaying, s.noSongsYet);
         } else if (snapshot.currentIndex >= 0 && snapshot.currentIndex < static_cast<int>(snapshot.tracks.size())) {
@@ -946,7 +957,7 @@ void RunMusicCommand(Command command) {
     const bool open = Shared().panelOpen.load(std::memory_order_relaxed);
     if (g_settings.source == SourceMyFiles) {
         music::Player& player = music::Player::Get();
-        const music::Snapshot snapshot = player.GetSnapshot();
+        const music::Snapshot& snapshot = CurrentSnapshot();
         if (snapshot.tracks.empty() && command != Command::LoopMode) {
             if (!open) ShowToast(s.reasonNoSongs);
             return;
@@ -1017,7 +1028,7 @@ int PanelTestItems(const PanelTestItem** items) {
 }
 
 int PanelAppendTestState(char* buffer, int size) {
-    const music::Snapshot snapshot = music::Player::Get().GetSnapshot();
+    const music::Snapshot& snapshot = CurrentSnapshot();
     const int n = snprintf(buffer, static_cast<size_t>(size),
                            "list %d\nsettings %d\nsource %u\nlanguage %u\ntextsize %u\npause %d\nstate %d\nindex %d\n"
                            "tracks %d\nloop %d\nvolume %d\ntextfield %s\ntoast %d\nwanttext %d\nscanning %d\n",
