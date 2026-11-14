@@ -558,6 +558,8 @@ try {
     Record 'end to end: the engine inside version.dll played the MP3 and then the Opus song' ($panelRun.Log.Contains('music: started 02 Beta') -and $panelRun.Log.Contains('music: started 03 gamma.opus'))
     Record 'end to end: the picker handed over the chosen file from a window owned by the game window' ($panelRun.Log.Contains('music: file dialog suppressed (test mode); reporting 1 path(s) from RACING_MASTER_MOD_TEST_PICKER_FILES (owned by a top-level window)'))
     Record 'end to end: only the null device was opened (nothing audible)' ($panelRun.Log.Contains('music: output opened (null device') -and -not $panelRun.Log.Contains('output opened (shared mode'))
+    # The host's window is never shown, so it is never minimised or in front, and has a title bar.
+    Record 'end to end: the game window line names the picture size, windowed, behind another window' ($panelRun.Log -match 'game window: \d+x\d+, windowed, behind another window')
 
     # 41. End to end, "Other app": the real media remote, started by the worker because "Other app"
     # was the last choice, controlling the host's silent fake player through Windows. For a few

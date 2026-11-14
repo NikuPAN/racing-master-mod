@@ -99,6 +99,93 @@ private:
     bool replacedLogged_ = false;
 };
 
+// One log line whenever the game window changes and then holds for about 0.75 s: its size,
+// windowed / borderless / exclusive full screen, minimised, and whether it is the window in
+// front. So a test run's log shows that a resize, an alt-tab or a mode switch happened and that
+// the mod carried on through it. The frame thread only samples the swap chain's full-screen state
+// (about once a second, so a switch to or from exclusive full screen shows up to a second late);
+// everything else is read fresh here, on the worker. The window procedure writes nothing.
+class WindowStateLog {
+public:
+    // Called every 250 ms.
+    void Tick() {
+        const PresentHookWindowState chain = PresentHookGetWindowState();
+        const HWND window = static_cast<HWND>(chain.window);
+        if (!chain.known || !window || !IsWindow(window)) {
+            return;
+        }
+        State now;
+        now.minimised = IsIconic(window) != FALSE;
+        now.inFront = !now.minimised && GetForegroundWindow() == window;
+        RECT client = {};
+        if (GetClientRect(window, &client)) {
+            now.width = static_cast<unsigned>(client.right);
+            now.height = static_cast<unsigned>(client.bottom);
+        }
+        now.kind = chain.exclusiveFullscreen ? Kind::Exclusive
+                                             : (CoversItsMonitor(window) ? Kind::Borderless : Kind::Windowed);
+        if (!havePrevious_ || !Same(now, previous_)) {
+            havePrevious_ = true;
+            previous_ = now;   // changed: wait for it to settle (a drag-resize logs once, at the end)
+            steady_ = 0;
+            return;
+        }
+        if (++steady_ < kSteadyTicks) {
+            return;
+        }
+        if (logged_ && Same(now, last_)) {
+            return;
+        }
+        logged_ = true;
+        last_ = now;
+        if (now.minimised) {
+            Log("game window: minimised");
+            return;
+        }
+        static const char* const kKinds[] = {"windowed", "borderless full screen", "exclusive full screen"};
+        Log("game window: %ux%u, %s, %s", now.width, now.height, kKinds[static_cast<int>(now.kind)],
+            now.inFront ? "in front" : "behind another window");
+    }
+
+private:
+    enum class Kind { Windowed = 0, Borderless = 1, Exclusive = 2 };
+    struct State {
+        bool minimised = false;
+        bool inFront = false;
+        unsigned width = 0;
+        unsigned height = 0;
+        Kind kind = Kind::Windowed;
+    };
+    static bool Same(const State& a, const State& b) {
+        if (a.minimised || b.minimised) {
+            return a.minimised == b.minimised;   // size and mode are stale while minimised
+        }
+        return a.inFront == b.inFront && a.width == b.width && a.height == b.height && a.kind == b.kind;
+    }
+    // A window without a title bar that covers its whole monitor.
+    static bool CoversItsMonitor(HWND window) {
+        if ((GetWindowLongPtrW(window, GWL_STYLE) & WS_CAPTION) == WS_CAPTION) {
+            return false;
+        }
+        RECT rect = {};
+        MONITORINFO monitor = {};
+        monitor.cbSize = sizeof(monitor);
+        const HMONITOR handle = MonitorFromWindow(window, MONITOR_DEFAULTTONULL);
+        if (!handle || !GetWindowRect(window, &rect) || !GetMonitorInfoW(handle, &monitor)) {
+            return false;
+        }
+        return rect.left <= monitor.rcMonitor.left && rect.top <= monitor.rcMonitor.top &&
+               rect.right >= monitor.rcMonitor.right && rect.bottom >= monitor.rcMonitor.bottom;
+    }
+
+    static constexpr unsigned kSteadyTicks = 3;   // three more samples alike: 0.75 s
+    State previous_;
+    State last_;
+    unsigned steady_ = 0;
+    bool havePrevious_ = false;
+    bool logged_ = false;
+};
+
 // When the game closes: the music fades out instead of being cut off mid-sound, the list and
 // settings get their final save, and the other-app control lets go.
 void StopMusicParts() {
@@ -119,6 +206,7 @@ void WatchFrames(bool musicStarted) {
     bool resumedLogged = false;
     bool faultHandled = false;
     GameWindowWatch window;
+    WindowStateLog windowLog;
     for (unsigned tick = 1;; ++tick) {
         Sleep(250);
         if (musicStarted && window.Closed()) {
@@ -149,6 +237,7 @@ void WatchFrames(bool musicStarted) {
             }
             continue;   // only the game window is still watched, for the final save
         }
+        windowLog.Tick();
         if (tick % 4 != 0) {
             continue;
         }

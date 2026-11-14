@@ -34,3 +34,12 @@ PresentHookCounters PresentHookGetCounters();
 
 // True after a fault in the per-frame code; the mod then stays off for this session.
 bool PresentHookSwitchedOff();
+
+// The bound swap chain as the frame thread last saw it (sampled about once a second), for the
+// worker's "game window" log line. known is false until the first game frame.
+struct PresentHookWindowState {
+    bool known;
+    bool exclusiveFullscreen;
+    void* window;      // the swap chain's output window (an HWND)
+};
+PresentHookWindowState PresentHookGetWindowState();

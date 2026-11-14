@@ -30,6 +30,16 @@ display mode); Add files / Add folder use the game's top-level window as owner a
 exclusive full screen and while a file window is open; the panel copies the song list only when
 it changed (`CurrentSnapshot`).
 
+**Window log line (`WindowStateLog` in `worker.cpp`):** "game window: 2558x1360, windowed, in
+front" (or borderless full screen / exclusive full screen, behind another window, minimised),
+written when that changes and then holds for three more 250 ms samples, so the owner's test log
+proves the resize, alt-tab and mode-switch steps happened and the mod carried on. The frame thread
+only samples the swap chain's exclusive full-screen state and window about once a second
+(`PresentHookGetWindowState`); size (client area), minimised, in front and borderless are read
+from user32 on the worker. A state must hold for about 1 s to be logged (up to 2 s for a switch
+to or from exclusive full screen). Run 40 checks the hidden host's line; minimised, in front and
+the full-screen kinds can only be seen in the game.
+
 **Shutdown:** the worker watches the panel's window every 250 ms. Gone, and no frame for a second:
 `Player::Shutdown()` (fade, final save) and `other_app::Shutdown()` (in the game the media thread
 only lets go and sleeps). A gone window while frames still arrive is logged once and ignored.

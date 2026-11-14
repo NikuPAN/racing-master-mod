@@ -43,6 +43,12 @@ volatile ULONGLONG g_lastBoundFrameTick = 0;
 // Present thread of the bound swap chain only.
 ULONGLONG g_firstFrameTick = 0;
 bool g_drawFailedLogged = false;
+ULONGLONG g_lastStateSample = 0;
+
+// The bound swap chain's full-screen state and window, sampled about once a second on the frame
+// thread and read by the worker: bit 0 = sampled, bit 1 = exclusive full screen.
+volatile LONG g_chainState = 0;
+HWND volatile g_chainWindow = nullptr;
 
 DWORD g_faultCode = 0;
 void* g_faultAddress = nullptr;
@@ -95,6 +101,21 @@ void DrawMarker(IDXGISwapChain* swapChain, FrameRefs& refs, bool injectFault) {
     }
     // Nothing that refers to a swap chain buffer is kept between frames.
     ReleaseFrameRefs(refs);
+}
+
+// Nothing is logged here (the frame thread never writes to the log); the worker turns changes
+// into one line.
+void SampleChainState(IDXGISwapChain* swapChain) {
+    DXGI_SWAP_CHAIN_DESC desc = {};
+    if (FAILED(swapChain->GetDesc(&desc))) {
+        return;
+    }
+    BOOL fullscreen = FALSE;
+    if (FAILED(swapChain->GetFullscreenState(&fullscreen, nullptr))) {
+        fullscreen = desc.Windowed ? FALSE : TRUE;
+    }
+    g_chainWindow = desc.OutputWindow;
+    InterlockedExchange(&g_chainState, fullscreen ? 3 : 1);
 }
 
 // The three user32 functions below are delay-loaded. The worker thread calls each of them once
@@ -150,6 +171,10 @@ void OnFrame(IDXGISwapChain* swapChain, UINT flags, FrameRefs& refs) {
     if (frame == 1) {
         g_firstFrameTick = now;
         LogFirstFrame(swapChain, refs);
+    }
+    if (frame == 1 || now - g_lastStateSample >= 1000) {
+        g_lastStateSample = now;
+        SampleChainState(swapChain);
     }
     if (now - g_firstFrameTick < g_markerMs) {
         DrawMarker(swapChain, refs, g_testFaultAtFrame != 0 && frame == static_cast<LONG64>(g_testFaultAtFrame));
@@ -299,4 +324,13 @@ PresentHookCounters PresentHookGetCounters() {
 
 bool PresentHookSwitchedOff() {
     return g_frameWorkOff != 0;
+}
+
+PresentHookWindowState PresentHookGetWindowState() {
+    const LONG packed = InterlockedCompareExchange(&g_chainState, 0, 0);
+    PresentHookWindowState state = {};
+    state.known = (packed & 1) != 0;
+    state.exclusiveFullscreen = (packed & 2) != 0;
+    state.window = g_chainWindow;
+    return state;
 }
