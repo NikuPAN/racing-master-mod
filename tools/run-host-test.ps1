@@ -308,6 +308,12 @@ try {
     }
     # The total line proves the program ran to its end (a crash part-way would leave cases unseen).
     Record 'music: the test program ran to the end and reported its total' (@($run.Lines -match '^musictest: \d+ passed').Count -eq 1)
+    $log = Read-Log $run.Log
+    Record 'music log: tracks start, end and the list finishes, in plain lines' ($log.Contains('music: started ') -and $log.Contains('music: ended ') -and $log.Contains('music: list finished'))
+    Record 'music log: a missing file is skipped with its reason' ($log -match 'music: skipped .+ \(file not found\)')
+    Record 'music log: the watchdog restarted the output after the device loss' ($log.Contains('restarting the output device'))
+    Record 'music log: Chinese file names are written in full (UTF-8)' ($log.Contains('music: started A ' + [string][char]0x6E2C + [string][char]0x8A66 + ' 440.wav'))
+    Record 'music: no real audio device was opened (manual and null output only)' ($log.Contains('music: output opened (manual') -and -not $log.Contains('output opened (shared mode'))
 
     # 24. Only a [music] section (what the music engine writes when the player has no settings
     # file yet): the loader must not report that the file "changed nothing".

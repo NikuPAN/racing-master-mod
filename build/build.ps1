@@ -233,6 +233,8 @@ $loaderSources = @(
 )
 # The music engine. link_anchor.cpp keeps it inside version.dll until the panel calls it (see there).
 $musicSources = @(
+    'src\music\player.cpp',
+    'src\music\audio_output.cpp',
     'src\music\source.cpp',
     'src\music\source_miniaudio.cpp',
     'src\music\source_vorbis.cpp',
@@ -241,7 +243,8 @@ $musicSources = @(
     'src\music\tag_reader.cpp',
     'src\music\playlist_store.cpp',
     'src\music\atomic_file.cpp',
-    'src\music\text.cpp'
+    'src\music\text.cpp',
+    'src\music\link_anchor.cpp'
 )
 $loaderObjects = Build-Objects $loaderSources @()
 $musicObjects = @(Build-Objects $musicSources $musicIncludes)
@@ -262,10 +265,10 @@ Invoke-Tool $rc @('/nologo', "/fo$resObject", (Join-Path $root 'src\loader\versi
 # loading there. Never ship the PDB.
 # The DLL names in the spelling the import dump prints them. Gate 1 below insists on exactly this
 # list, so a new delay-loaded DLL is a conscious change here.
-$delayLoads = @('USER32.dll')
+$delayLoads = @('USER32.dll', 'ole32.dll', 'MFPlat.DLL', 'MFReadWrite.dll')
 $musicLibs = @('ole32.lib', 'shell32.lib', 'mfplat.lib', 'mfreadwrite.lib', 'mfuuid.lib', 'propsys.lib')
 # The music engine in the DLL, kept there by link_anchor.cpp (/INCLUDE) until the loader calls it.
-$dllMusic = @()  # nothing calls the engine yet; it is linked in once the player thread exists
+$dllMusic = @('/INCLUDE:MusicEngineLinkAnchor') + $musicLibs + $musicObjects + @($miniaudioObject, $stbObject, $xiphLib)
 $dll = Join-Path $out 'version.dll'
 Invoke-Tool $link (@('/nologo', '/DLL', "/OUT:$dll",
     "/DEF:$(Join-Path $root 'src\loader\version.def')", "/IMPLIB:$(Join-Path $obj 'version_proxy.lib')",
@@ -343,7 +346,8 @@ $musicTestSources = @(
     'tools\testhost\musictest_vorbis.cpp',
     'tools\testhost\musictest_mf.cpp',
     'tools\testhost\musictest_opus.cpp',
-    'tools\testhost\musictest_store.cpp'
+    'tools\testhost\musictest_store.cpp',
+    'tools\testhost\musictest_engine.cpp'
 )
 $musicTestObjects = Build-Objects $musicTestSources ($musicIncludes + @("/I$(Join-Path $root 'src')", "/I$(Join-Path $vorbisDir 'include')"))
 $engineObjects = @($musicObjects | Where-Object { [IO.Path]::GetFileName($_) -ne 'link_anchor.obj' })
