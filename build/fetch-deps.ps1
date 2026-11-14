@@ -47,6 +47,50 @@ foreach ($p in $packages) {
     Set-Content -Path (Join-Path $target '.complete') -Value $sdkVersion -Encoding utf8
 }
 
+# --- Dear ImGui (the in-game panel's drawing library) ---------------------------------------------
+# Thirteen files of the v1.93.0 release, fetched one by one from the tagged source tree so that each
+# can be checked against a SHA-256 pinned here (an archive download has no stable bytes to pin).
+# The library is MIT licensed; releases of the mod must ship its LICENSE.txt. Nothing of it is
+# committed to this repository.
+$imguiVersion = '1.93.0'
+$imguiTarget = Join-Path $deps "imgui-$imguiVersion"
+$imguiFiles = @(
+    @{ Path = 'imgui.cpp';                    Sha256 = '9542082a1eaeffcab7b3d8069e707839ce1714d167005e9f273ac9f656b415ed' },
+    @{ Path = 'imgui.h';                      Sha256 = '314462301948fbd5673f5ead6f9a53acf54767cbee57e186e69f8f8b022c7094' },
+    @{ Path = 'imgui_draw.cpp';               Sha256 = 'fff3bb04ca11e32041144e83a37b89ec92f4d5c62d681eb7ef29ee6cd7663e84' },
+    @{ Path = 'imgui_internal.h';             Sha256 = '61bc50172d907cc931159cdce48fbff1db616cda33251c9c3469e316056939e6' },
+    @{ Path = 'imgui_tables.cpp';             Sha256 = '36635c1cf2ad1b7c88cdced456cceba3a1d02266d78a63d77e9cce92f4d48d61' },
+    @{ Path = 'imgui_widgets.cpp';            Sha256 = 'd2d388f711688f6a5ce1ae3b30168c1bf4f954ead40235b0b2b9667452850c93' },
+    @{ Path = 'imstb_rectpack.h';             Sha256 = '889b396795202d1457560a797a7242e96f6f132d4b88ca2d69be58bf05e1771f' },
+    @{ Path = 'imstb_textedit.h';             Sha256 = 'a985f5fa0ed97353d493b497961e9eef52082edcd045cf6954b69990ec9d0741' },
+    @{ Path = 'imstb_truetype.h';             Sha256 = 'c51a0f7e7ea760f2366bd3752635ec58e21fccfec4a832501639990ba6ce0528' },
+    @{ Path = 'imconfig.h';                   Sha256 = 'fa91f606da783669ffd485f3f9e0cd0d92cddeac459efce4c2b9327cce7a3233' },
+    @{ Path = 'LICENSE.txt';                  Sha256 = '173506a2d6f7fb67990d257fb2507f188690eca39060c39469ae7bef43aae2a3' },
+    @{ Path = 'backends/imgui_impl_dx11.cpp'; Sha256 = 'ee561259e75ca08c4fcb109db05ba2ef98979175ec1bb7688078a9dfabf3e977' },
+    @{ Path = 'backends/imgui_impl_dx11.h';   Sha256 = '393acaa0fd95acb8c2431a17d6e952fc07ba29344074855aea5679ef3dd5d604' }
+)
+if (Test-Path (Join-Path $imguiTarget '.complete')) {
+    Write-Host "Dear ImGui $imguiVersion already present"
+} else {
+    $staging = "$imguiTarget.partial"
+    if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
+    New-Item -ItemType Directory -Force (Join-Path $staging 'backends') | Out-Null
+    foreach ($f in $imguiFiles) {
+        $url = "https://raw.githubusercontent.com/ocornut/imgui/v$imguiVersion/$($f.Path)"
+        $file = Join-Path $staging ($f.Path -replace '/', '\')
+        Write-Host "Downloading Dear ImGui $imguiVersion $($f.Path) ..."
+        Invoke-WebRequest -Uri $url -OutFile $file
+        $hash = (Get-FileHash $file -Algorithm SHA256).Hash
+        if ($hash -ne $f.Sha256.ToUpperInvariant()) {
+            Remove-Item $staging -Recurse -Force
+            throw "Checksum mismatch for Dear ImGui $imguiVersion $($f.Path) (got $hash). The download is not the file this script expects; nothing was kept."
+        }
+    }
+    if (Test-Path $imguiTarget) { Remove-Item $imguiTarget -Recurse -Force }
+    Rename-Item $staging $imguiTarget
+    Set-Content -Path (Join-Path $imguiTarget '.complete') -Value $imguiVersion -Encoding utf8
+}
+
 if ($MsvcCrt) {
     # Side-by-side 14.50 toolset: older than any Visual Studio 2026 linker, which is the
     # direction Microsoft supports (libraries may be older than the linker, not newer).
