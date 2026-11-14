@@ -646,12 +646,7 @@ void PanelStart(const UiSettings& settings, bool testHost) {
         names[1], names[2], names[3], names[4], names[5], table->mediaKeys ? "on" : "off");
     Shared().hotkeys.store(table, std::memory_order_release);
 
-#if defined(RMM_UI_STANDALONE)
-    const bool standalone = true;
-#else
-    const bool standalone = false;
-#endif
-    PanelConfigure(effective, *table, testHost, standalone);
+    PanelConfigure(effective, *table, testHost);
     if (effective.source == 1) {
         other_app::Start();   // "Other app" was the player's last choice
     }

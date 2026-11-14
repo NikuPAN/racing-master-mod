@@ -195,8 +195,8 @@ other line kept, written to `settings.ini.new` and swapped in). It never writes 
   `scale`, `strings.h` (every visible word; Chinese column is a DRAFT), `ui_settings` (writes
   `[panel]` back), `imgui_errors` (assert and error policy), `imconfig_mod.h`, `media_api.h` (the
   panel's one include for the music engine and the media remote), `other_app` (the panel's way to
-  the media remote, with an example app in the test host), `standalone/` (the stand-in music
-  player the panel was built against before the merge; no longer compiled).
+  the media remote, with an example app in the test host). The stand-in music player the panel
+  was first built against (`src/ui/standalone/`) was removed once the panel ran on the engine.
 - `tools/testhost/` — `testhost.cpp`: Direct3D 11 program with a never-shown window that stands
   in for the game (game layout, worker render thread, checks T1-T8; `media` mode for the remote; `panel`
   mode with the scripts `shots`, `shot1`, `resize`, `fault`, `display`, `input`);

@@ -42,7 +42,6 @@ enum Source : unsigned { SourceMyFiles = 0, SourceOtherApp = 1 };
 UiSettings g_settings;
 HotkeyTable g_keys;
 bool g_testHost = false;
-bool g_standalone = false;
 bool g_testTextField = false;
 Language g_language = Language::English;
 
@@ -856,9 +855,6 @@ void DrawBar(const PanelFrameInfo& info) {
     if (g_settingsOpen) {
         SettingsRow();
     }
-    if (g_standalone) {
-        MutedWrapped(s.testBuildNotice);
-    }
     ImGui::End();
 }
 
@@ -878,11 +874,10 @@ void DrawNotice(const PanelFrameInfo& info, const char* text) {
 
 }  // namespace
 
-void PanelConfigure(const UiSettings& settings, const HotkeyTable& keys, bool testHost, bool standaloneBuild) {
+void PanelConfigure(const UiSettings& settings, const HotkeyTable& keys, bool testHost) {
     g_settings = settings;
     g_keys = keys;
     g_testHost = testHost;
-    g_standalone = standaloneBuild;
     g_language = ResolveLanguage(settings.language);
     Shared().localSourceActive.store(settings.source == SourceMyFiles, std::memory_order_relaxed);
     if (testHost) {

@@ -18,7 +18,7 @@ struct PanelFrameInfo {
 };
 
 // Worker thread, once.
-void PanelConfigure(const UiSettings& settings, const HotkeyTable& keys, bool testHost, bool standaloneBuild);
+void PanelConfigure(const UiSettings& settings, const HotkeyTable& keys, bool testHost);
 
 // True when something should be drawn this frame: the panel is open, or a short notice is showing.
 bool PanelWantsFrame(bool panelOpen, ULONGLONG now);

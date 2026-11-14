@@ -92,7 +92,6 @@ struct Strings {
 
     // Short notices in the corner
     const char* showPanelNotice;         // %s = the key that shows the panel
-    const char* testBuildNotice;         // shown only by a build with the example player
 };
 
 inline const Strings kStringsEnglish = {
@@ -168,7 +167,6 @@ inline const Strings kStringsEnglish = {
     "no key",
 
     "Music panel: press %s to show it.",
-    "Test build: these songs are examples and no sound is played.",
 };
 
 // *** DRAFT *** See the note at the top of this file. The owner rewrites every line below.
@@ -243,7 +241,6 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "沒有按鍵",
 
     "音樂面板：按 %s 顯示。",
-    "測試版：這些歌曲只是範例，不會發出聲音。",
 };
 
 inline const Strings& StringsFor(Language language) {
