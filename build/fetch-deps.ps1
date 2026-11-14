@@ -17,9 +17,13 @@ $deps = Join-Path $root '.deps'
 New-Item -ItemType Directory -Force $deps | Out-Null
 
 $sdkVersion = '10.0.28000.2957'
+# SHA-256 of each .nupkg as published on nuget.org (checked here on 2026-11-14). A new SDK
+# version needs new hashes: download the package, run Get-FileHash, paste the result.
 $packages = @(
-    @{ Id = 'microsoft.windows.sdk.cpp';     Dir = 'winsdk' },
-    @{ Id = 'microsoft.windows.sdk.cpp.x64'; Dir = 'winsdk-x64' }
+    @{ Id = 'microsoft.windows.sdk.cpp';     Dir = 'winsdk';
+       Sha256 = 'F0A200DAE58858F418B30DC9E2F52B4188F97EB7837BD4F73074652A01937DDD' },
+    @{ Id = 'microsoft.windows.sdk.cpp.x64'; Dir = 'winsdk-x64';
+       Sha256 = '7CA47E7345DCBDF36EC4C3C4CD59AB9CB5C9F620A2E785CC4FA641509647CC5A' }
 )
 
 foreach ($p in $packages) {
@@ -32,6 +36,11 @@ foreach ($p in $packages) {
     $zip = Join-Path $deps "$($p.Dir).zip"
     Write-Host "Downloading $($p.Id) $sdkVersion ..."
     Invoke-WebRequest -Uri $url -OutFile $zip
+    $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
+    if ($hash -ne $p.Sha256) {
+        Remove-Item $zip
+        throw "Checksum mismatch for $($p.Id) $sdkVersion (got $hash). The download is not the package this script expects; nothing was unpacked."
+    }
     if (Test-Path $target) { Remove-Item $target -Recurse -Force }
     Expand-Archive -Path $zip -DestinationPath $target
     Remove-Item $zip

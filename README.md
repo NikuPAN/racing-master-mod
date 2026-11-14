@@ -54,11 +54,11 @@ The mod writes what it did to
 %LOCALAPPDATA%\RacingMasterMod\mod.log
 ```
 
-Paste that path into the File Explorer address bar to open it. The previous run is kept next to it as `mod.prev.log`. Please attach both when you report a problem.
+Paste that path into the File Explorer address bar to open it. Earlier runs are kept next to it as `mod.<date>-<time>.log` (the newest five). If two copies of the game run at once, the second writes `mod.<process id>.log`. Please attach the current log and the one before it when you report a problem.
 
 ### Settings
 
-Optional. Create a text file named `racing-master-mod.ini` next to `version.dll`:
+Optional. Create a text file named `settings.ini` in `%LOCALAPPDATA%\RacingMasterMod\` (the folder that holds the log; no administrator permission needed):
 
 ```ini
 [mod]
@@ -67,6 +67,8 @@ stage=2
 ; how long the square stays on screen, in seconds (0 to 600)
 marker_seconds=20
 ```
+
+A file named `racing-master-mod.ini` next to `version.dll` is read as well and overrides it. Save either file as UTF-8 (with or without a byte order mark) or as the UTF-16 that Notepad calls "Unicode". If a value cannot be read, the mod switches itself off and the log says which line and what to write.
 
 ### How it works
 
@@ -142,11 +144,11 @@ MIT. See [LICENSE](LICENSE).
 %LOCALAPPDATA%\RacingMasterMod\mod.log
 ```
 
-把這行貼到檔案總管的網址列就能打開。上一次執行的紀錄會留在旁邊，檔名是 `mod.prev.log`。回報問題時請把兩個檔案一起附上。
+把這行貼到檔案總管的網址列就能打開。之前幾次執行的紀錄會留在旁邊，檔名是 `mod.<日期>-<時間>.log`，最多留五份。如果同時開了兩個遊戲，第二個會寫到 `mod.<處理程序編號>.log`。回報問題時，請把目前這份和上一份紀錄檔一起附上。
 
 ### 設定
 
-可有可無。在 `version.dll` 旁邊新增一個文字檔，檔名 `racing-master-mod.ini`：
+可有可無。在 `%LOCALAPPDATA%\RacingMasterMod\`（就是放紀錄檔的那個資料夾）新增一個文字檔，檔名 `settings.ini`，不需要系統管理員權限：
 
 ```ini
 [mod]
@@ -155,6 +157,8 @@ stage=2
 ; 方塊顯示幾秒（0 到 600）
 marker_seconds=20
 ```
+
+放在 `version.dll` 旁邊、檔名 `racing-master-mod.ini` 的檔案也會讀，而且以它的設定為準。兩個檔案都可以存成 UTF-8（有沒有 BOM 都行）或記事本裡叫「Unicode」的 UTF-16。設定值如果看不懂，模組會自己關掉，紀錄檔會寫出是哪一行、該怎麼改。
 
 ### 運作原理
 

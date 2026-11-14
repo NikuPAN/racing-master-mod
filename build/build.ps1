@@ -1,9 +1,14 @@
-# Builds out\version.dll (the mod) and out\testhost.exe (developer test host).
+# Builds out\version.dll (the mod), out\testhost.exe and out\bystander.exe (developer test programs).
 #
 # Needs: Visual Studio with the C++ compiler (any edition, 2022 or newer). The Windows SDK is
 # fetched by fetch-deps.ps1, so it does not have to be installed.
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File build\build.ps1
+#
+# After linking, two gates run and fail the build if they do not hold:
+#   1. version.dll imports KERNEL32.dll only. Everything else (user32 today) is delay-loaded, so
+#      a bystander program that merely imports version.dll gets no extra DLL loaded.
+#   2. No "%ls" under src\: log lines are UTF-8 and wide strings go through LogUtf8().
 
 $ErrorActionPreference = 'Stop'
 
@@ -19,7 +24,7 @@ $msvcRoot = Join-Path $vsPath 'VC\Tools\MSVC'
 if (-not (Test-Path $msvcRoot)) {
     throw "The C++ compiler is missing from $vsPath. Add the `"Desktop development with C++`" workload."
 }
-$msvc = Get-ChildItem $msvcRoot -Directory | Sort-Object Name -Descending | Select-Object -First 1
+$msvc = Get-ChildItem $msvcRoot -Directory | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
 $bin = Join-Path $msvc.FullName 'bin\Hostx64\x64'
 
 # A partial Visual Studio install can have the compiler without its headers and libraries.
@@ -68,15 +73,28 @@ $link = Join-Path $bin 'link.exe'
 $rc = Join-Path $sdkBin 'rc.exe'
 
 # /MT links the C runtime statically, so players need no extra runtime installer.
+# /Zi with /Fd writes debug information into out\obj\vc.pdb (without /Fd the compiler would drop
+# a vc140.pdb wherever the script was started from).
 $cflags = @('/nologo', '/c', '/std:c++20', '/O2', '/W4', '/WX', '/EHs-c-', '/GR-', '/MT', '/GS', '/guard:cf',
+            '/Zi', "/Fd$(Join-Path $obj 'vc.pdb')",
             '/DUNICODE', '/D_UNICODE', '/DWIN32_LEAN_AND_MEAN', '/DNOMINMAX', '/D_CRT_SECURE_NO_WARNINGS')
+
+# --- gate 2: no %ls in the mod's sources ------------------------------------------------------------
+$wideFormat = Get-ChildItem (Join-Path $root 'src') -Recurse -File | Select-String -Pattern '%ls' -SimpleMatch
+if ($wideFormat) {
+    throw "src\ must not use %ls (log lines are UTF-8; pass wide strings through LogUtf8 and %s): $($wideFormat | ForEach-Object { "$($_.Path):$($_.LineNumber)" })"
+}
 
 # --- version.dll ----------------------------------------------------------------------------------
 $sources = @(
     'src\loader\dllmain.cpp',
     'src\loader\proxy.cpp',
     'src\core\log.cpp',
-    'src\core\present_hook.cpp'
+    'src\core\settings.cpp',
+    'src\core\vtable_patch.cpp',
+    'src\core\dxgi_probe.cpp',
+    'src\core\present_hook.cpp',
+    'src\core\worker.cpp'
 )
 $objects = @()
 foreach ($source in $sources) {
@@ -89,17 +107,45 @@ Invoke-Tool $ml64 @('/nologo', '/c', "/Fo$asmObject", (Join-Path $root 'src\load
 $resObject = Join-Path $obj 'version.res'
 Invoke-Tool $rc @('/nologo', "/fo$resObject", (Join-Path $root 'src\loader\version.rc'))
 
-Invoke-Tool $link (@('/nologo', '/DLL', "/OUT:$(Join-Path $out 'version.dll')",
+# /DEBUG writes out\version.pdb so a fault offset from the log can be turned into a source line.
+# /PDBALTPATH keeps the build folder (and the user name in it) out of the published DLL.
+# /OPT:REF /OPT:ICF stay explicit because /DEBUG would otherwise switch them off.
+# user32 is delay-loaded: it is only called from the mod's own thread inside the game, and a
+# bystander program that imports version.dll must not get it loaded. Never ship the PDB.
+$dll = Join-Path $out 'version.dll'
+Invoke-Tool $link (@('/nologo', '/DLL', "/OUT:$dll",
     "/DEF:$(Join-Path $root 'src\loader\version.def')", "/IMPLIB:$(Join-Path $obj 'version_proxy.lib')",
+    '/DEBUG', "/PDB:$(Join-Path $out 'version.pdb')", '/PDBALTPATH:version.pdb', "/MAP:$(Join-Path $out 'version.map')",
     '/OPT:REF', '/OPT:ICF', '/guard:cf', '/DYNAMICBASE', '/NXCOMPAT',
-    'kernel32.lib', 'user32.lib', 'dxguid.lib') + $objects + @($asmObject, $resObject))
+    '/DELAYLOAD:user32.dll',
+    'kernel32.lib', 'user32.lib', 'delayimp.lib') + $objects + @($asmObject, $resObject))
 
-# --- developer test host ----------------------------------------------------------------------------
+# --- gate 1: static imports are KERNEL32.dll only -----------------------------------------------------
+# link.exe /DUMP is dumpbin; the fetched SDK has no dumpbin.exe of its own.
+$eager = @()
+$inDelay = $false
+foreach ($line in (& $link /DUMP /NOLOGO /IMPORTS $dll)) {
+    if ($line -match 'delay load imports') { $inDelay = $true }
+    if (-not $inDelay -and $line -match '^\s{4}(\S+\.dll)\s*$') { $eager += $Matches[1] }
+}
+$extra = @($eager | Where-Object { $_ -ne 'KERNEL32.dll' })
+if ($extra.Count) {
+    throw "version.dll must import KERNEL32.dll only; also found: $($extra -join ', '). Delay-load it (/DELAYLOAD) or call it through LoadLibraryW from the worker thread."
+}
+Write-Host "version.dll static imports: $($eager -join ', ')"
+
+# --- developer test programs ----------------------------------------------------------------------------
+$hostFlags = @('/nologo', '/c', '/std:c++20', '/O2', '/W4', '/WX', '/EHsc', '/MT', '/DUNICODE', '/D_UNICODE',
+    '/DNOMINMAX', '/D_CRT_SECURE_NO_WARNINGS')
 $hostObject = Join-Path $obj 'testhost.obj'
-Invoke-Tool $cl (@('/nologo', '/c', '/std:c++20', '/O2', '/W4', '/EHsc', '/MT', '/DUNICODE', '/D_UNICODE',
-    '/DNOMINMAX', "/Fo$hostObject", (Join-Path $root 'tools\testhost\testhost.cpp')))
+Invoke-Tool $cl ($hostFlags + @("/Fo$hostObject", (Join-Path $root 'tools\testhost\testhost.cpp')))
 Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'testhost.exe')", '/SUBSYSTEM:CONSOLE', $hostObject)
 
+$bystanderObject = Join-Path $obj 'bystander.obj'
+Invoke-Tool $cl ($hostFlags + @("/Fo$bystanderObject", (Join-Path $root 'tools\testhost\bystander.cpp')))
+Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'bystander.exe')", '/SUBSYSTEM:CONSOLE', $bystanderObject)
+
 Write-Host ''
-Write-Host "Built: $(Join-Path $out 'version.dll')"
+Write-Host "Built: $dll"
 Write-Host "Built: $(Join-Path $out 'testhost.exe')"
+Write-Host "Built: $(Join-Path $out 'bystander.exe')"
