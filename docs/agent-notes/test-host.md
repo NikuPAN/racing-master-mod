@@ -4,9 +4,10 @@ description: How tools/run-host-test.ps1 and testhost.exe check the loader and t
 type: reference
 ---
 
-`tools\run-host-test.ps1` runs 38 hidden programs (runs 1-14 the loader, runs 15-22 the media
+`tools\run-host-test.ps1` runs 42 hidden programs (runs 1-14 the loader, runs 15-22 the media
 remote (see `media-remote-tests.md`), run 23 the music engine's `musictest.exe` with one check
-per line it prints (see `music-tests.md`), runs 25-38 the music panel driving the real engine)
+per line it prints (see `music-tests.md`), runs 25-38 the music panel driving the real engine,
+39-42 the integration: `[panel] mode=off`, the two end-to-end runs, a misplaced settings.ini)
 with `LOCALAPPDATA`
 pointed at its own temp folder, one folder per run, so the real `mod.log` from a game run is
 never archived or overwritten. Runs 7-9, 12-14, 24, 25 and 26 are settings-file cases (UTF-8 BOM,
@@ -69,6 +70,19 @@ code 1 for both "no marker" and "forwarding failed"; the review showed what it d
    `scanning 0` in the layout file. The engine plays through miniaudio's null device (it refuses
    WASAPI whenever the test flag is set), so nothing is heard; the picker prepares the dialog and
    reports a cancel without showing it.
+
+10. **Every panel run ends with the window closed and the music shut down.** After the render
+    thread finishes, `main` destroys the window and (panel mode only) waits up to 10 s, pumping
+    messages, for "music: stopped and saved" from the worker's window watch; the script checks it.
+11. **End to end (runs 40-41).** `integrated` uses the songs from `musictest.exe --fixtures`, with
+    `marker_seconds=600` so the screenshot also checks the loader's marker (`Shoot` with
+    `kMarkerArea` leaves the marker out of the stray count and checks its white frame and dark
+    centre). `other-real` needs `RACING_MASTER_MOD_TEST_FAKE_PLAYER=1` (the host publishes the fake
+    player on its main thread, after `PrepareProcess`, before any window),
+    `RACING_MASTER_MOD_TEST_REMOTE=real` and `RACING_MASTER_MOD_TEST_MEDIA_APP`. Their screenshots
+    are copied to `out\preview\integrated`. The layout file carries `position` in whole seconds
+    (written about once a second while a song plays) and, in "Other app", `other_session`,
+    `other_playing`, `other_repeat`.
 
 **How to apply:** a new panel feature gets a step in `ScriptInput` (behaviour) or a shot (look);
 keep every message in-process and every window hidden. Nothing here may use `SendInput`.

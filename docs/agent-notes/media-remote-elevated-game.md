@@ -32,6 +32,7 @@ The `mod.log` lines that answer it (no titles are ever logged):
 **Why:** the brief could not run an elevated probe without a consent prompt, and the owner's
 rule forbids touching the running game.
 
-**How to apply:** the first in-game build with the panel should start the remote read-only
-(no commands) for about a minute, on the throwaway account, and the owner sends `mod.log`.
+**How to apply:** in 0.3.0 the remote starts only when the player picks "Other app" (or it was
+the last choice). The in-game steps for 0.3.0 ask the owner to pick "Other app" and leave it for
+about a minute, pressing nothing, on the throwaway account, then send `mod.log`.
 Until then, do not tell players that controlling other apps works in the game.

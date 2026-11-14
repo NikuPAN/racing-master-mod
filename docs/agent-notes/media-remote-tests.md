@@ -25,8 +25,13 @@ are tested only against a silent fake player inside `testhost.exe`.
 - `tools/run-host-test.ps1` runs 15-22: basic, ignore-pause, no-repeat, vanish, late, guard,
   lifecycle, and media mode with the flag unset. Every command line in the log must name the
   fake player, and no fake title may appear in the log.
+- Run 41 (end to end) drives the same fake player from the panel: the host publishes it in panel
+  mode with `RACING_MASTER_MOD_TEST_FAKE_PLAYER=1`, the worker starts the remote because
+  `source=other_app`, and `other_app` pins the remote to `RACING_MASTER_MOD_TEST_MEDIA_APP` so a
+  song playing elsewhere on the PC cannot take its place. It must receive exactly "play, next,
+  loop one, pause"; the same safety checks apply.
 
-**Side effect on the PC:** while a run lasts (1-12 s) the fake player is Windows' current media
+**Side effect on the PC:** while a run lasts (1-12 s; run 41 for its whole length, a few seconds more) the fake player is Windows' current media
 session, so the keyboard's media keys and the Windows media flyout point at it. Nothing is shown
 or heard. Other sessions (a browser seen during development) are listed and read, never sent
 anything.

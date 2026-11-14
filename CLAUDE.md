@@ -6,14 +6,21 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 @docs/agent-notes/README.md
 
-## Current state (2026-11-14, evening)
+## Current state (2026-11-15)
 
-- **Loader 0.2.0 built and verified in the test host** (`out\version.dll`, 24 of 24 checks in
-  `tools\run-host-test.ps1`). It forwards the 17 real `version.dll` functions, wakes up only
+- **Version 0.3.0 integrated on branch `integrate` (not merged to main, not pushed), test host
+  only.** The music panel (`src/ui`), the music engine (`src/music`) and the media remote
+  (`src/remote`) are wired into one `version.dll`: 42 hidden runs, 307 checks in
+  `tools\run-host-test.ps1`, including two end-to-end runs (40 "My files", 41 "Other app" against
+  the silent fake player). How the parts are wired: "How the parts are wired" below and
+  `docs/agent-notes/integration.md`. **Not in the real game yet**: the owner tries it on the
+  throwaway account (steps were handed over with the integration); `mod.log` from that run is the
+  next input.
+- **Loader 0.2.0** (inside 0.3.0): forwards the 17 real `version.dll` functions, wakes up only
   inside `g112-Win64-Shipping.exe` (or `testhost.exe` with the test flag), hooks
   `IDXGISwapChain::Present`/`Present1`, binds to the game's one swap chain, draws a marker square
   for 20 s and writes `%LOCALAPPDATA%\RacingMasterMod\mod.log`.
-- **0.2.0 has not been in the real game yet.** It applies the loader review
+- **0.2.0 has not been in the real game on its own.** It applies the loader review
   (`docs/agent-notes/loader-hardening.md`) and the follow-up review of that commit (settings
   reader fail-open cases, build gate, test script, log wording and order; same note). The review
   asked for one more in-person run on the throwaway account before the panel work starts,
@@ -32,13 +39,11 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   MP3/FLAC/WAV/OGG/Opus/M4A, gapless, playlist and settings saved crash-safe, drop-in folder,
   file picker. `tools\run-host-test.ps1` run 23 (`out\musictest.exe`) checks it with no sound and
   no window.
-- **Music panel built on branch `music/panel` (2026-11-14) and merged with the engine
-  (branch `integrate`), test host only.** Dear ImGui 1.93.0 drawn from the Present hook,
-  window-procedure subclass for clicks and hotkeys, the bar / list / settings row, English and a
-  DRAFT Traditional Chinese table. "My files" is the real music engine (started by the worker
-  with the panel); "Other app" the real media remote (started when "Other app" is chosen). Runs
-  25-38 of `tools\run-host-test.ps1`, PNGs in `out\screens`. **Not in the real game yet**; see
-  `docs/agent-notes/music-panel.md` for what is verified and what is not.
+- **Music panel built on branch `music/panel` (2026-11-14), merged with the engine on branch
+  `integrate` (2026-11-15).** Dear ImGui 1.93.0 drawn from the Present hook, window-procedure
+  subclass for clicks and hotkeys, the bar / list / settings row, English and a DRAFT Traditional
+  Chinese table. Runs 25-38, PNGs in `out\screens`; end-to-end PNGs in `out\preview\integrated`.
+  See `docs/agent-notes/music-panel.md` for what is verified and what is not.
 - **In design:** DLSS (verified design briefs in `docs/agent-notes/local/design/` of the main
   repository).
 
@@ -99,12 +104,14 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.dll, testhost.exe, bystander.exe, musictest.exe
-powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 38 hidden runs (loader, media remote, music engine, panel), exit 0 = pass
+powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 42 hidden runs, 307 checks, exit 0 = pass (about 2 min)
 ```
 
 The test script copies the panel screenshots to `out\screens\*.png` (bar, list, settings row,
 "Other app", each text size, English and draft Chinese, four resolutions, display mode, after a
 fault). Look at them with the Read tool after any panel change; the owner reviews the Chinese there.
+The two end-to-end screenshots (the engine's songs with the marker; "Other app" with the fake
+player) go to `out\preview\integrated\`.
 
 `build\fetch-deps.ps1` downloads the Windows SDK (Microsoft NuGet packages, SHA-256 pinned in
 the script) into `.deps\`, the music libraries: miniaudio 0.11.26, stb_vorbis 1.24, libogg
@@ -167,6 +174,13 @@ media_keys=1         ; the keyboard's media keys, only while "My files" is the s
 The panel writes `language`, `text_size`, `pause_when_unfocused` and `source` back to the
 per-user `settings.ini` when the player changes them (`src/ui/ui_settings.cpp`: own thread, every
 other line kept, written to `settings.ini.new` and swapped in). It never writes the ini beside the DLL.
+The engine's I/O thread rewrites `[music]` in the same file, so **both writers hold
+`SettingsFileLock`** (`src/core/settings_file_lock.h`) from reading the file until the new copy is
+in place, and log only after letting go. A new writer of `settings.ini` must take it too.
+
+`settings.ini` (any letter case) **next to `version.dll` is not read**: the owner put one there
+once and it was silently ignored. `ReadSettings` now logs one line naming it as ignored, with the
+full paths of `racing-master-mod.ini` beside the DLL and the per-user `settings.ini` (run 42).
 
 ## Layout
 
@@ -199,7 +213,8 @@ other line kept, written to `settings.ini.new` and swapped in). It never writes 
   was first built against (`src/ui/standalone/`) was removed once the panel ran on the engine.
 - `tools/testhost/` — `testhost.cpp`: Direct3D 11 program with a never-shown window that stands
   in for the game (game layout, worker render thread, checks T1-T8; `media` mode for the remote; `panel`
-  mode with the scripts `shots`, `shot1`, `resize`, `fault`, `display`, `input`);
+  mode with the scripts `shots`, `shot1`, `resize`, `fault`, `display`, `input`, and the end-to-end
+  `integrated` and `other-real`);
   `fake_player.cpp`: a silent media session the remote tests command; `bystander.cpp`: a
   kernel32-only console program that must see plain forwarding and nothing else;
   `musictest*.cpp`: the silent music engine tests (`docs/agent-notes/music-tests.md`).
@@ -210,10 +225,10 @@ other line kept, written to `settings.ini.new` and swapped in). It never writes 
 | Thread | Runs | May do | Must not do |
 |---|---|---|---|
 | Loader (under the loader lock) | `DllMain` | read exe name and one environment variable, load the real `version.dll`, `CreateThread` | wait, log, read files |
-| Worker (`ModThread`) | start-up, settings, hook install, watchdog, periodic log | file I/O, `user32`, device creation, sleeping | touch the game's device context or swap chain |
+| Worker (`ModThread`) | start-up, settings, `PanelStart`, starting the music parts, hook install, watchdog, periodic log, watching the game window (every 250 ms) and the final music shutdown | file I/O, `user32`, device creation, sleeping, `Player::Start`/`Shutdown` | touch the game's device context or swap chain |
 | Game's present thread | `HookedPresent` -> `GuardedOnFrame` -> `PanelOnFrame` | Direct3D on the swap chain it was handed, ImGui, popping the input queue, calling the players (quick calls only), atomics, a one-off log line | file flushes, sleeping, periodic logging, waiting on a lock the worker holds during slow work |
-| Game's window thread | `PanelWndProc` (subclass) | atomics, pushing the input queue, `PostCommand`, `Player::OnGameFocusChanged` | ImGui, Direct3D, files, locks, per-message logging |
-| Panel settings writer | `WriterThread` in `ui_settings.cpp` | read and rewrite `settings.ini`, log | anything else |
+| Game's window thread | `PanelWndProc` (subclass) | atomics, pushing the input queue, `PostCommand`, `Player::OnGameFocusChanged` (posts to the engine under its command lock, held for one `push_back`) | ImGui, Direct3D, files, other locks, per-message logging |
+| Panel settings writer | `WriterThread` in `ui_settings.cpp` | read and rewrite `settings.ini` under `SettingsFileLock`, log after releasing it | anything else |
 | Any game thread | forwarding stubs | jump | anything else |
 | Media (`MediaThread`, created by `Remote::Start`) | every WinRT call, session reading, commands | COM in the multithreaded apartment, waits with deadlines, logging | leave the apartment in the game (`RoUninitialize` is test host only) |
 | Windows' COM threads | media change notices | set an event and return | anything else |
@@ -224,6 +239,32 @@ other line kept, written to `settings.ini.new` and swapped in). It never writes 
 
 The frame thread may call every `music::Player` method: each only posts a command (Pause, Stop
 and SetVolume also store one atomic), and `GetSnapshot` holds a lock only for a few assignments.
+The panel reads the engine through `CurrentSnapshot()` in `panel.cpp` (one snapshot kept across
+frames, refreshed with `GetSnapshotInto`, so the song list is copied only when it changed); never
+call it again while still using a reference from an earlier call.
+
+## How the parts are wired (0.3.0)
+
+Details and the reasons: `docs/agent-notes/integration.md`.
+
+- `ModThread`: identity line, settings, stage checks, wait for the game window, `PanelStart`
+  (hotkeys, shader compiler, delay-load resolution, settings writer), then `StartMusicParts`:
+  with `[panel] mode=off` nothing of the music starts (one log line says so); otherwise
+  `music::Player::Get().Start()` (logs the music folder's full path) and, when `source=other_app`
+  was the last choice, `other_app::Start()`. Then the Present hook, then `WatchFrames`.
+- Per frame (`OnFrame`, inside `GuardedOnFrame`'s fault guard): the marker first, then
+  `PanelOnFrame` (hotkeys every frame, ImGui only while something is shown).
+- Focus: `WM_ACTIVATEAPP` in the panel's window subclass -> `Player::OnGameFocusChanged`; the
+  engine pauses only when "pause when the game is not in focus" is ticked, and resumes on return.
+  No subclass in `mode=display`, so no focus pausing there.
+- Add files / Add folder: the picker gets `GetAncestor(window, GA_ROOT)`; both buttons are greyed
+  with the reason while a file window is open and in exclusive full screen.
+- Shutdown: `WatchFrames` checks every 250 ms whether the window the panel draws into is gone and
+  no frame arrived for a second; then `Player::Shutdown()` (fade, final save) and
+  `other_app::Shutdown()`. Nothing runs from `DllMain`. After a fault in the per-frame code the
+  worker pauses the music (nothing could control it any more) and says why.
+- `src/music/link_anchor.cpp` is gone: the engine is really called now, and gate 1 still sees its
+  DLLs.
 
 ## Gotchas
 
@@ -275,18 +316,18 @@ and SetVolume also store one atomic), and `GetSnapshot` holds a lock only for a 
   The panel's own test runs give it generated tone WAVs in the run's music folder
   (`docs/agent-notes/test-host.md`, item 9); in the test host it plays through the null device.
 - **"Other app" = the real media remote** (`src/remote`), reached only through `other_app.cpp`.
-  The panel calls `remote::Remote::Get().Start()` when "Other app" is chosen and at start-up when
-  it was the saved choice; nothing else starts it in the game. In the **test host** `other_app`
+  `other_app::Start()` (one log line) runs from the worker at start-up when "Other app" was the
+  saved choice, and from the panel when the player picks it; nothing else starts it in the game.
+  With `RACING_MASTER_MOD_TEST_REMOTE=real` in the test host it follows only the app in
+  `RACING_MASTER_MOD_TEST_MEDIA_APP` (the fake player). In the **test host** `other_app`
   uses an example app instead (a web browser that allows play and pause; logged as `test app:`),
   because the real remote reads every media session on the PC and panel screenshots would show the
   developer's own music. `RACING_MASTER_MOD_TEST_REMOTE=real` switches the host to the real one;
   the remote's own tests (runs 15-22) do not go through `other_app`. The remote's status line is
   shown by its `Message` id from the table in `strings.h` (a `static_assert` in `panel.cpp` keeps
   the count in step with `remote::Message`).
-- **How the panel meets the engine:** the worker calls `music::Player::Get().Start()` right after
-  `PanelStart` unless `[panel] mode=off`; the panel calls `SetPauseWhenGameUnfocused` on its first
-  frame and `OnGameFocusChanged` on `WM_ACTIVATEAPP` (window thread). The picker's `done` callback
-  may run on any thread.
+- The panel calls `SetPauseWhenGameUnfocused` on its first frame (its `[panel]` value wins over
+  the engine's `[music]` one). The picker's `done` callback may run on any thread.
 - The panel and Dear ImGui are compiled with the core's flags (`/EHs-c- /D_HAS_EXCEPTIONS=0`,
   `/W4 /WX`) plus `/DIMGUI_USER_CONFIG=<imconfig_mod.h>` and the ImGui folders, so the standard
   library types the panel shares with the engine and the remote are built the same way on both
@@ -294,7 +335,9 @@ and SetVolume also store one atomic), and `GetSnapshot` holds a lock only for a 
 - **Test-only switches** (read only with the test-host flag): `RACING_MASTER_MOD_PANEL=open`,
   `_LANG`, `_TEXT_SIZE`, `_SOURCE`, `_LIST=open`, `_SETTINGS_ROW=open`, `_TEST_PANEL_FAULT=<panel
   frame>`, `_TEST_TEXT_FIELD=1` (adds a text field to the settings row), `_TEST_REMOTE=limited|full|none|real`
-  (the example "Other app", or the real remote). In the test host the mod writes `%LOCALAPPDATA%\RacingMasterMod\test-layout.txt`
+  (the example "Other app", or the real remote), `_TEST_PICKER_FILES=<path>|<path>` (a suppressed
+  file dialog reports these instead of a cancel), and for `testhost.exe` itself
+  `_TEST_FAKE_PLAYER=1` (panel mode publishes the silent fake player). In the test host the mod writes `%LOCALAPPDATA%\RacingMasterMod\test-layout.txt`
   (state, window rectangles, widget centres) whenever it changes; the host reads it to aim its
   posted messages. Never in the game.
 - The test host's own window procedure counts what "the game" receives; panel runs also check 14
@@ -335,6 +378,11 @@ and SetVolume also store one atomic), and `GetSnapshot` holds a lock only for a 
   `testing::Render`: silence pulled before the player thread acted consumes nothing and makes
   positions look late.
 - Fixture and test strings use neutral Chinese text ("測試"), never a real artist or song name.
-- The media remote's runs (15-22) depend on Windows' media sessions at that moment and failed
-  intermittently on 2026-11-14 (also on main's own commit). When they fail while every loader
-  and music check passes, run the suite again before suspecting the music engine.
+- The media remote's runs (15-22, and 41) depend on Windows' media sessions at that moment and
+  failed intermittently on 2026-11-14 (also on main's own commit). When they fail while every
+  loader and music check passes, run the suite again before suspecting the music engine. On
+  2026-11-15 18 full runs on `integrate` saw no media failure; two engine test cases failed
+  once or twice each (a missing `testing::Sync`, a 50 ms window misread at a loop restart) and
+  were fixed in their own commits.
+- Every panel run (25-38, 40, 41) waits after the host closes its window for the music shutdown
+  lines ("music: stopped and saved"), so the panel runs take a few seconds longer than before.

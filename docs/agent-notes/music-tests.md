@@ -10,7 +10,10 @@ type: reference
 engine's `mod.log` lines (started / ended / list finished, a skip with "file not found", the
 watchdog restart, a Chinese file name written in full, and that only the manual and null outputs
 were opened). Run 24 checks the loader's settings reader with a `settings.ini` that holds only
-`[music]`.
+`[music]`. `musictest.exe --fixtures <folder>` (no tests, used by end-to-end run 40) writes four
+20 s songs with the same fixture writers (FLAC and MP3 through Media Foundation, tagged Opus and
+OGG Vorbis) into `<folder>\music` and a WAV into `<folder>\add`; a missing encoder falls back to
+a WAV under the same name and says so.
 
 `musictest.exe` links the same engine objects as `version.dll` (not the DLL itself: the engine is
 not wired into the worker yet). It sets `RACING_MASTER_MOD_TEST_HOST=1` for itself, so even a test
@@ -32,6 +35,11 @@ silence). Gapless is checked as "no sample step above the sine's own, no run of 
 exact boundary frame, at 48 kHz and through the resampler from 44.1 kHz. One case runs the null
 device in real time (about 7 s), including a simulated device loss that the watchdog must cure
 without losing the position.
+
+Two cases were flaky and fixed on 2026-11-15: "removing the only track" pulled audio without
+`testing::Sync`, and "loop one set late" labelled a 50 ms window that straddled A's restart as
+the 500 Hz G; it now labels against the two songs it plays only. When a case labels windows,
+give it only the tones it can hear.
 
 Gotchas: call `testing::Sync` after a command and before pulling audio (silence pulled before the
 player acted consumes nothing and makes positions look late); a WAV cut in half is not "damaged"

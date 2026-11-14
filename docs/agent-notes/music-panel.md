@@ -4,10 +4,11 @@ description: How the in-game music panel (src/ui) was built on 2026-11-14, where
 type: decision
 ---
 
-Built on branch `music/panel`, on top of the media remote (`src/remote`). "My files" runs against
-a stand-in music player (`src/ui/standalone/`) because the music engine is built in parallel;
+Built on branch `music/panel`, on top of the media remote (`src/remote`), against a stand-in
+music player while the engine was built in parallel. Since the merge on branch `integrate`
+(2026-11-15, `integration.md`) "My files" is the real music engine and the stand-in is gone;
 "Other app" uses the real remote through `other_app.cpp`, with an example app in the test host
-(the real remote reads every media session on the PC). Design brief:
+(the real remote reads every media session on the PC) except in the end-to-end run 41. Design brief:
 `local/design/imgui-overlay.md` (machine-local); its checker notes are all applied (error
 callback, `CreateDeviceObjects` at start-up, `CompactCache` in the atlas valve, `MouseCursorScale`
 last in `ApplyScale`, `static_assert` on `ImWchar`, `YuGothM.ttc`, `ClearInputMouse` after a gap,
@@ -31,6 +32,8 @@ one consumer for the input queue).
 - **Settings row behind a "Settings" button** at the end of row 1 (and "Hide" next to it), so the
   bar stays three rows. The owner listed a settings row without saying when it shows.
 - **Corner: top-right** by default (`[panel] corner=`).
+- **Add files / Add folder greyed** with the reason while a file window is already open and in
+  exclusive full screen (the full-screen reason names the music folder). Added at integration.
 - **Short notices** in the corner when the panel is closed: for 10 s after start "Music panel:
   press Insert to show it", after F9 what now repeats, and the reason when a key cannot act (no
   songs, the other app refuses). Nothing fails silently.
@@ -58,7 +61,7 @@ one consumer for the input queue).
 - Kept as written: hotkey parser, fonts (mapped chain, valve with `CompactCache`), scaling,
   `imconfig_mod.h`, the `[panel]`/`[keys]` reader.
 
-## Verified (test host, 2026-11-14; runs 23-36 of the 81 checks)
+## Verified (test host, 2026-11-14 on the panel branch; runs 25-38 since the merge)
 
 Rendering in the game's swap-chain layout, English and draft Chinese, three text sizes, four
 resolutions (PNGs in `out\screens`); 14 pieces of pipeline state unchanged after every present;
@@ -69,6 +72,12 @@ Insert, F5-F9, auto-repeat, hotkeys with the panel closed; `ClearInputMouse` aft
 drop-down closing on an outside click; text-field keys; `WM_ACTIVATEAPP` passed on; media keys
 taken only for "My files"; the heartbeat; the settings writer keeping other lines; import gate
 (KERNEL32 eager, USER32 and D3DCOMPILER_47 delay-loaded).
+
+Since the merge (2026-11-15), on the real engine: every panel run lists generated songs from the
+music folder; run 40 plays FLAC, MP3, Opus and OGG Vorbis through the panel (click, F7, F8, F9,
+Add files through the picker, focus pausing) with the position advancing; run 41 drives the real
+remote against the silent fake player; every panel run checks the music shutdown when its window
+closes.
 
 ## Not verified (needs the real game, or not testable here)
 
@@ -81,10 +90,8 @@ taken only for "My files"; the heartbeat; the settings writer keeping other line
   never-seen glyphs; not exercised.
 - The panel following a new Direct3D device (in `DrawFrame`), HDR (`R16G16B16A16_FLOAT` skip), `_SRGB` back
   buffers, the 120-failure back-off: written, not exercised.
-- The real music module: only the agreed interface was coded against.
-- The panel driving the **real** remote: the remote is tested on its own (runs 15-22) and the
-  panel against the example app; the two together (`RACING_MASTER_MOD_TEST_REMOTE=real` with the
-  fake player) were not run.
+- Exclusive full screen and a file window that stays open (both grey the Add buttons): the
+  hidden host can reach neither.
 - Runs 15-22 (media remote) failed twice on this PC while Windows listed a second session with
   the fake player's app id, then passed (81 of 81) once it was gone. Probable cause (a guess, not
   checked): another agent running the same tests at the same time. If they fail, wait a minute and
