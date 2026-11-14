@@ -10,7 +10,7 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 - **Version 0.3.0 integrated on branch `integrate` (not merged to main, not pushed), test host
   only.** The music panel (`src/ui`), the music engine (`src/music`) and the media remote
-  (`src/remote`) are wired into one `version.dll`: 44 hidden runs, 342 checks in
+  (`src/remote`) are wired into one `version.dll`: 44 hidden runs, 343 checks in
   `tools\run-host-test.ps1`, including two end-to-end runs (40 "My files", 41 "Other app" against
   the silent fake player). How the parts are wired: "How the parts are wired" below and
   `docs/agent-notes/integration.md`. **Not in the real game yet**: the owner tries it on the
@@ -104,7 +104,7 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.dll, testhost.exe, bystander.exe, musictest.exe
-powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 44 hidden runs, 342 checks, exit 0 = pass (about 2 min)
+powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 44 hidden runs, 343 checks, exit 0 = pass (about 2 min)
 ```
 
 The test script copies the panel screenshots to `out\screens\*.png` (bar, list, settings row,
@@ -345,7 +345,8 @@ Details and the reasons: `docs/agent-notes/integration.md`.
   an ImGui assertion on the next panel frame), `_TEST_TEXT_FIELD=1` (adds a text field to the settings row), `_TEST_REMOTE=limited|full|none|real`
   (the example "Other app", or the real remote), `_TEST_PICKER_FILES=<path>|<path>` (a suppressed
   file dialog reports these instead of a cancel), and for `testhost.exe` itself
-  `_TEST_FAKE_PLAYER=1` (panel mode publishes the silent fake player). In the test host the mod writes `%LOCALAPPDATA%\RacingMasterMod\test-layout.txt`
+  `_TEST_FAKE_PLAYER=1` (panel mode publishes the silent fake player) and
+  `_TEST_FAKE_PLAYER_ID` (the fake player's app id, new for every run; see the media gotcha below). In the test host the mod writes `%LOCALAPPDATA%\RacingMasterMod\test-layout.txt`
   (state, window rectangles, widget centres) whenever it changes; the host reads it to aim its
   posted messages. Never in the game.
 - The test host's own window procedure counts what "the game" receives; panel runs also check 14
@@ -386,11 +387,14 @@ Details and the reasons: `docs/agent-notes/integration.md`.
   `testing::Render`: silence pulled before the player thread acted consumes nothing and makes
   positions look late.
 - Fixture and test strings use neutral Chinese text ("測試"), never a real artist or song name.
-- The media remote's runs (15-22, and 41) depend on Windows' media sessions at that moment and
-  failed intermittently on 2026-11-14 (also on main's own commit). When they fail while every
-  loader and music check passes, run the suite again before suspecting the music engine. On
-  2026-11-15 18 full runs on `integrate` saw no media failure; two engine test cases failed
-  once or twice each (a missing `testing::Sync`, a 50 ms window misread at a loop restart) and
-  were fixed in their own commits.
+- **Every media run's fake player has its own app id** (`RacingMasterMod.TestHost.FakePlayer.<12
+  hex>`, from `New-FakeId` in the script). Do not go back to one fixed id: Windows tells sessions
+  apart by app id only, so a fake player from another test run on this PC took the run's commands.
+  That was the cause of the intermittent failures in runs 15-22 and 41 (2026-11-14/15; reproduced
+  with a second fake player: 14 checks failed). Before each media run the script waits up to 10 s
+  for other runs' fake players to leave and otherwise prints a plain NOTE in the summary. Details:
+  `docs/agent-notes/test-host.md`, items 12-14. Still run only one suite at a time on this PC.
+- Two engine test cases failed once or twice each on 2026-11-15 (a missing `testing::Sync`, a
+  50 ms window misread at a loop restart) and were fixed in their own commits.
 - Every panel run (25-38, 40, 41) waits after the host closes its window for the music shutdown
   lines ("music: stopped and saved"), so the panel runs take a few seconds longer than before.

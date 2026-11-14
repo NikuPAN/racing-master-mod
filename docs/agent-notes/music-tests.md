@@ -45,9 +45,9 @@ Gotchas: call `testing::Sync` after a command and before pulling audio (silence 
 player acted consumes nothing and makes positions look late); a WAV cut in half is not "damaged"
 (miniaudio trims its stated length to the bytes present), a FLAC cut in half is.
 
-Runs 15-22 (the media remote, from main) depend on Windows' media sessions at that moment and
-failed intermittently on this PC on 2026-11-14, also on main's own commit with no music code; a
-media failure next to all-green music checks is not a music engine problem.
+Runs 15-22 (the media remote, from main) failed intermittently on this PC on 2026-11-14, also on
+main's own commit with no music code. The cause was another test run's fake player under the same
+app id, fixed on 2026-11-15 (`test-host.md`, items 12-14); it was never a music engine problem.
 
 **Not checked here (needs a person or the game):** sound quality on real hardware, WASAPI and the
 Windows mixer, unplugging a headset (real re-routing), the file dialog once shown, the engine

@@ -8,7 +8,8 @@ The rule: **no command may ever reach a real media session on the developer's PC
 are tested only against a silent fake player inside `testhost.exe`.
 
 - `tools/testhost/fake_player.cpp` publishes a media session (app id
-  `RacingMasterMod.TestHost.FakePlayer`) on a window that is never shown, plays nothing, records
+  `RacingMasterMod.TestHost.FakePlayer.<12 hex>`, new for every run, from
+  `RACING_MASTER_MOD_TEST_FAKE_PLAYER_ID`; why: `test-host.md`, items 12-14) on a window that is never shown, plays nothing, records
   every button and loop request, and applies them on the host's main thread. Behaviours: apply
   everything, ignore pause, offer neither loop nor next, close its session on pause.
 - The host sets its app id and calls `RoInitialize` (single-threaded) on its main thread before
@@ -23,8 +24,9 @@ are tested only against a silent fake player inside `testhost.exe`.
   (the DLL exports nothing for it) and the script logs `music apps test: finished`, which the
   host waits for.
 - `tools/run-host-test.ps1` runs 15-22: basic, ignore-pause, no-repeat, vanish, late, guard,
-  lifecycle, and media mode with the flag unset. Every command line in the log must name the
-  fake player, and no fake title may appear in the log.
+  lifecycle, and media mode with the flag unset. Every command line in the log must name that
+  run's own fake player, and no fake title may appear in the log. Before each run the script waits
+  (at most 10 s, then a plain NOTE) until no other run's fake player is listed.
 - Run 41 (end to end) drives the same fake player from the panel: the host publishes it in panel
   mode with `RACING_MASTER_MOD_TEST_FAKE_PLAYER=1`, the worker starts the remote because
   `source=other_app`, and `other_app` pins the remote to `RACING_MASTER_MOD_TEST_MEDIA_APP` so a
@@ -40,4 +42,5 @@ anything.
 guard makes that a property of the code, not of test discipline.
 
 **How to apply:** a new command path gets a scenario here and goes through `Engine::Send`. Never
-run `testhost.exe` with the test flag against the real `LOCALAPPDATA` (see `test-host.md`).
+run `testhost.exe` with the test flag against the real `LOCALAPPDATA` (see `test-host.md`). A new
+run with a fake player gets an id from `New-FakeId` and checks against that id, never a fixed one.

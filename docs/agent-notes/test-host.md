@@ -1,6 +1,6 @@
 ---
 name: test-host
-description: How tools/run-host-test.ps1 and testhost.exe check the loader and the music panel without the game, and the conditions that make a flip-model frame readable
+description: How tools/run-host-test.ps1 and testhost.exe check the loader and the music panel without the game, the conditions that make a flip-model frame readable, and why every media run has its own fake player id
 type: reference
 ---
 
@@ -90,3 +90,40 @@ code 1 for both "no marker" and "forwarding failed"; the review showed what it d
 
 **How to apply:** a new panel feature gets a step in `ScriptInput` (behaviour) or a shot (look);
 keep every message in-process and every window hidden. Nothing here may use `SendInput`.
+
+## Media runs (15-22, 41): one fake player id per run
+
+**Cause of the intermittent media failures (found 2026-11-15).** Until then every run published
+its fake player as `RacingMasterMod.TestHost.FakePlayer`. Windows tells media sessions apart by
+app id only, and the mod picks (and its test guard allows) the first listed session with the
+wanted id. When another test run on this PC (another agent, another worktree) had its fake player
+up at the same time, Windows listed two sessions with that id; the older one came first, so the
+mod sent this run's commands to the other process. Reproduced on purpose: one extra fake player
+with the fixed id kept alive during the full suite made 14 checks fail (runs 15-21 and 41) and
+received every command the suite sent; a run with the same code alone passed. Not the cause:
+leftovers after a run ends. Windows dropped a fake player's session within about 100 ms of its
+process exiting, also when the process was killed. No module change was needed.
+
+**The rule now:**
+
+12. **Every media run gets its own id**: `RacingMasterMod.TestHost.FakePlayer.<12 hex>`, made by
+    `New-FakeId` in the script and handed to `testhost.exe` as
+    `RACING_MASTER_MOD_TEST_FAKE_PLAYER_ID` and to the mod's guard as
+    `RACING_MASTER_MOD_TEST_MEDIA_APP` (run 20 points the guard elsewhere and picks the run's id).
+    The host prints `fake player: app id ...`; without the variable it appends its process id, so
+    even a manual run never shares an id. Checks compare against the run's own id (`$run.Id`),
+    never a fixed one. The panel's end-to-end check (O3, O4) builds its log text from
+    `fake_player::AppIdUtf8()`.
+13. **Before each media run the script waits for other runs' fake players to leave**
+    (`Wait-NoOtherFakePlayers`): it reads Windows' session list from PowerShell (app ids only,
+    nothing sent, no titles), waits up to 10 s while any id starting with the prefix is listed, and
+    otherwise writes one plain NOTE (shown in the summary) and goes ahead. A player that outlasted
+    the wait is not waited for again in the same suite. Sessions of other apps are ignored.
+14. **The tests never follow Windows' current session.** The media script picks the run's id, and
+    `other_app` pins the remote to it in run 41. A browser or player that is playing on the PC is
+    listed in the log (`N apps found (ids)`) and never commanded; the guard refuses anything else.
+
+Checked after the fix: the full suite with a fixed-id fake player and a player under an unrelated
+id (standing in for a browser) alive throughout passed 343 of 343, and neither received anything.
+Still true: only one suite should run on this PC at a time (both runs would make their own fake
+player Windows' current session, and the media keys would point at whichever came last).

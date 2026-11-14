@@ -52,7 +52,8 @@ panel's tests need a running engine. The stand-in (`src/ui/standalone`) was remo
 no test needed it.
 
 **Test-only hooks added:** `RACING_MASTER_MOD_TEST_PICKER_FILES` (a suppressed dialog reports
-those paths), `RACING_MASTER_MOD_TEST_FAKE_PLAYER=1` (panel mode publishes the fake player), and
+those paths), `RACING_MASTER_MOD_TEST_FAKE_PLAYER=1` (panel mode publishes the fake player, under
+the id in `RACING_MASTER_MOD_TEST_FAKE_PLAYER_ID`, new for every run), and
 with `RACING_MASTER_MOD_TEST_REMOTE=real` the remote follows only `RACING_MASTER_MOD_TEST_MEDIA_APP`.
 `musictest.exe --fixtures <folder>` writes the end-to-end songs. All need the test-host flag.
 

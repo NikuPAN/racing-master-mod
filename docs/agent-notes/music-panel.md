@@ -99,9 +99,9 @@ example app answers at once, and run 41 sends single presses).
 - Exclusive full screen and a file window that stays open (both grey the Add buttons): the
   hidden host can reach neither.
 - Runs 15-22 (media remote) failed twice on this PC while Windows listed a second session with
-  the fake player's app id, then passed (81 of 81) once it was gone. Probable cause (a guess, not
-  checked): another agent running the same tests at the same time. If they fail, wait a minute and
-  run again before suspecting the code.
+  the fake player's app id. Cause found and fixed on 2026-11-15: another test run's fake player
+  under the same fixed id took the commands; every run now has its own id (`test-host.md`,
+  items 12-14).
 
 **Why:** a later agent needs to know which behaviours are the owner's decisions, which are this
 build's suggestions, and which claims rest on the test host only.
