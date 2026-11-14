@@ -4,8 +4,9 @@
 // every file that includes imgui.h (the build script adds it to the panel's flag list).
 //
 // An ImGui assertion must never open a dialog or abort the game: it is logged once and the panel
-// switches itself off at the end of the current frame. The build does not define NDEBUG, so
-// without this override IM_ASSERT would be the C runtime assert.
+// switches itself off at the end of the current frame. The panel is built with /DNDEBUG, so
+// without this override IM_ASSERT would be the C runtime's assert compiled to nothing, which
+// hides panel mistakes; keep the override (imgui_errors.cpp has the policy).
 void ModImGuiAssertFail(const char* expression, const char* file, int line);
 #define IM_ASSERT(_EXPR) ((void)((!!(_EXPR)) || (ModImGuiAssertFail(#_EXPR, __FILE__, __LINE__), 0)))
 
