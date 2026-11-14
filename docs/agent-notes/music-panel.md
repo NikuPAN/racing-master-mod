@@ -1,0 +1,97 @@
+---
+name: music-panel
+description: How the in-game music panel (src/ui) was built on 2026-11-14, where it departs from the design brief and why, what is verified in the test host and what only the game can show
+type: decision
+---
+
+Built on branch `music/panel`, on top of the media remote (`src/remote`). "My files" runs against
+a stand-in music player (`src/ui/standalone/`) because the music engine is built in parallel;
+"Other app" uses the real remote through `other_app.cpp`, with an example app in the test host
+(the real remote reads every media session on the PC). Design brief:
+`local/design/imgui-overlay.md` (machine-local); its checker notes are all applied (error
+callback, `CreateDeviceObjects` at start-up, `CompactCache` in the atlas valve, `MouseCursorScale`
+last in `ApplyScale`, `static_assert` on `ImWchar`, `YuGothM.ttc`, `ClearInputMouse` after a gap,
+one consumer for the input queue).
+
+## Departures from the brief, and why
+
+| Brief | Built | Why |
+|---|---|---|
+| Panel owns the whole mouse while open | Clicks outside the panel go to the game; hit test on the window thread against the panel's window rectangles from the last drawn frame | Owner's decision 10 (`design-decisions.md`). A drag stays with whoever got the button-down; a click that goes to the game closes an open drop-down |
+| Rollout stages 3 and 4 via `stage=` | `[panel] mode=off|display|on` (default on), `stage` keeps 0/1/2 | Keeps the existing settings checks and log wording unchanged; `display` is the brief's stage 3, `on` its stage 4 |
+| Hotkeys need the exact modifier state | Modifiers a hotkey names must be held; others are ignored | Shift is turbo and Ctrl/Alt are game controls: F7 must work while the player holds Shift |
+| Focus from `WM_KILLFOCUS` / `WM_ACTIVATEAPP` | `WM_ACTIVATEAPP` only | The file picker is a window of the game process; choosing files must not count as "game not in focus" |
+| Remove the queued `WM_CHAR` after every hotkey | Only for keys that make a character | F-keys and Insert queue none; an unconditional `PeekMessage(PM_REMOVE)` could take someone else's |
+| Draw only on ordinary presents | Start-up waits for an ordinary present; drawing also happens on `DO_NOT_SEQUENCE` | The test host's flip-model read-back rule needs it; Unreal does not use the flag |
+| `[hotkeys]` section | `[keys]` | Owner's wording in the task |
+| Text fields out of scope | No text field in the panel; the keyboard path for one exists and is tested with a test-only field | The owner's rule names "the keys ImGui needs while a text field is focused" |
+
+## Choices made here that the owner may want to change
+
+- **Settings row behind a "Settings" button** at the end of row 1 (and "Hide" next to it), so the
+  bar stays three rows. The owner listed a settings row without saying when it shows.
+- **Corner: top-right** by default (`[panel] corner=`).
+- **Short notices** in the corner when the panel is closed: for 10 s after start "Music panel:
+  press Insert to show it", after F9 what now repeats, and the reason when a key cannot act (no
+  songs, the other app refuses). Nothing fails silently.
+- **"Other app" mode**: no volume field and no list button (another app has neither here);
+  controls the app does not allow are greyed with the reason; a timeline is shown as a progress
+  line when the app reports one (the remote interface has no seek, so it cannot be dragged). The
+  panel has no app picker yet, so `Remote::SelectApp` is unused and the remote follows Windows'
+  current session.
+- **Look** after the owner's preview review: opaque grey-blue fields, a 150-unit volume slider
+  with the word in front, a divider between the two source buttons, row texts on the buttons'
+  baseline, disabled controls at 40 % opacity.
+- The chosen source is remembered in `settings.ini` (`source=`).
+- The Traditional Chinese column of `src/ui/strings.h` is a **draft** for layout only.
+
+## Changes to the previous builder's WIP (commit 718f9ff, never built)
+
+- Window procedure rewritten for the owner's pass-through rule (moves over the panel kept, drags
+  stay with their side, click-outside closes drop-downs, text-field keys), `windowsx.h` was
+  missing, its own SEH guard added, publish order of the subclass slot fixed.
+- Settings writer: the frame thread took an SRW lock; now one atomic word and an event.
+- `external_interfaces.h` moved to `standalone/interfaces.h` behind `media_api.h`; once the real
+  remote landed on main, its stand-in was replaced by `other_app.cpp`.
+- Bug found by the input test and fixed: list rows used `ImGuiSelectableFlags_AllowOverlap`,
+  which made them ignore clicks; the remove button sits beside the row, so the flag is not needed.
+- Kept as written: hotkey parser, fonts (mapped chain, valve with `CompactCache`), scaling,
+  `imconfig_mod.h`, the `[panel]`/`[keys]` reader.
+
+## Verified (test host, 2026-11-14; runs 23-36 of the 81 checks)
+
+Rendering in the game's swap-chain layout, English and draft Chinese, three text sizes, four
+resolutions (PNGs in `out\screens`); 14 pieces of pipeline state unchanged after every present;
+`ResizeBuffers` at four sizes while drawing; a fault between the two state swaps restores the
+game's state, leaks nothing (`ResizeBuffers` S_OK) and gives every key and click back; display
+mode takes nothing; clicks over the panel kept and outside forwarded; moves and wheel likewise;
+Insert, F5-F9, auto-repeat, hotkeys with the panel closed; `ClearInputMouse` after a gap; the
+drop-down closing on an outside click; text-field keys; `WM_ACTIVATEAPP` passed on; media keys
+taken only for "My files"; the heartbeat; the settings writer keeping other lines; import gate
+(KERNEL32 eager, USER32 and D3DCOMPILER_47 delay-loaded).
+
+## Not verified (needs the real game, or not testable here)
+
+- Anything in the game: whether NetEase's protection tolerates ImGui drawing and the window
+  subclass (start with `mode=display`, then `on`, on the throwaway account), which thread
+  presents, whether F5-F9 and Insert are free in the game's Lua UI, media keys reaching the window.
+- The software cursor (`io.MouseDrawCursor` when the game hides the system cursor): the test host
+  never draws it, and hiding the real cursor on this PC was not allowed.
+- The atlas valve (`ClearFonts` + reload + `CompactCache` past 4096 px): needs thousands of
+  never-seen glyphs; not exercised.
+- The panel following a new Direct3D device (in `DrawFrame`), HDR (`R16G16B16A16_FLOAT` skip), `_SRGB` back
+  buffers, the 120-failure back-off: written, not exercised.
+- The real music module: only the agreed interface was coded against.
+- The panel driving the **real** remote: the remote is tested on its own (runs 15-22) and the
+  panel against the example app; the two together (`RACING_MASTER_MOD_TEST_REMOTE=real` with the
+  fake player) were not run.
+- Runs 15-22 (media remote) failed twice on this PC while Windows listed a second session with
+  the fake player's app id, then passed (81 of 81) once it was gone. Probable cause (a guess, not
+  checked): another agent running the same tests at the same time. If they fail, wait a minute and
+  run again before suspecting the code.
+
+**Why:** a later agent needs to know which behaviours are the owner's decisions, which are this
+build's suggestions, and which claims rest on the test host only.
+
+**How to apply:** keep the owner's rules; ask before changing the suggestions above; treat every
+"not verified" line as open until a game run or a test covers it.

@@ -26,11 +26,16 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 - **Media remote built and verified in the test host only** (`src/remote`, branch
   `music/remote`, 2026-11-14): reads Windows media sessions and sends play, pause, stop,
   next, previous and loop to other apps, tested against a silent fake player (runs 15-22 of
-  `tools\run-host-test.ps1`). Not started anywhere in the game yet: the music panel calls
-  `remote::Remote::Get().Start()` itself. Whether it works from the elevated game is open
+  `tools\run-host-test.ps1`). Whether it works from the elevated game is open
   (`docs/agent-notes/media-remote-elevated-game.md`).
-- **In design:** music panel and DLSS (verified design briefs are being written in
-  `docs/agent-notes/local/design/`).
+- **Music panel built on branch `music/panel` (2026-11-14), test host only.** Dear ImGui 1.93.0
+  drawn from the Present hook, window-procedure subclass for clicks and hotkeys, the bar / list /
+  settings row, English and a DRAFT Traditional Chinese table. "Other app" uses the real media
+  remote (the panel starts it when "Other app" is chosen); "My files" still uses a stand-in music
+  player (`src/ui/standalone/`) because the music engine is being built in parallel. Runs 23-36
+  of `tools\run-host-test.ps1`, PNGs in `out\screens`. **Not in the real game yet**; see
+  `docs/agent-notes/music-panel.md` for what is verified and what is not.
+- **In design:** DLSS (verified design briefs in `docs/agent-notes/local/design/`).
 
 ## Order of work
 
@@ -80,11 +85,16 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.dll, out\testhost.exe, out\bystander.exe
-powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 22 hidden-window runs, 52 checks, exit 0 = pass (about 3 min)
+powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 36 hidden-window runs, 81 checks, exit 0 = pass (about 2 min)
 ```
 
+The test script copies the panel screenshots to `out\screens\*.png` (bar, list, settings row,
+"Other app", each text size, English and draft Chinese, four resolutions, display mode, after a
+fault). Look at them with the Read tool after any panel change; the owner reviews the Chinese there.
+
 `build\fetch-deps.ps1` downloads the Windows SDK (Microsoft NuGet packages, SHA-256 pinned in
-the script) into `.deps\`. With `-MsvcCrt` it also downloads the Visual C++ runtime headers and
+the script) and Dear ImGui 1.93.0 (13 files from the tagged source tree, each SHA-256 pinned;
+staged in `imgui-1.93.0.partial` and renamed only when every file matched) into `.deps\`. With `-MsvcCrt` it also downloads the Visual C++ runtime headers and
 libraries; `build.ps1` asks for that automatically when Visual Studio has the compiler but no
 headers. The build also writes `out\version.pdb` and `out\version.map` for turning a fault
 offset from the log into a source line. **Never ship the PDB next to the DLL.**
@@ -109,6 +119,32 @@ heading other than `[mod]`, no `key=value` lines) is applied as empty but gets a
 so and naming `[mod]`; it does not switch the mod off. `GetPrivateProfile*` is not used: it
 misses a section after a BOM and turns `-1` into 4294967295.
 
+The music panel adds two sections (a bad value keeps the default and gets a log line quoting it;
+it never switches the mod off):
+
+```ini
+[panel]
+mode=on              ; off | display | on   (display: drawn and always open, cannot be clicked, no keys,
+                     ;                       the game window is not touched - for the staged first game run)
+language=auto        ; auto | en | zh-TW    (auto: Windows UI language zh-TW, zh-HK or zh-MO -> Chinese)
+text_size=medium     ; small | medium | large  (never pixels)
+pause_when_unfocused=0
+source=my_files      ; my_files | other_app
+corner=top-right     ; top-left | top-right | bottom-left | bottom-right
+[keys]
+panel=Insert         ; the owner's choices; [Ctrl+][Shift+][Alt+]Name, or none
+stop=F5
+previous=F6
+play_pause=F7
+next=F8
+loop=F9
+media_keys=1         ; the keyboard's media keys, only while "My files" is the source
+```
+
+The panel writes `language`, `text_size`, `pause_when_unfocused` and `source` back to the
+per-user `settings.ini` when the player changes them (`src/ui/ui_settings.cpp`: own thread, every
+other line kept, written to `settings.ini.new` and swapped in). It never writes the ini beside the DLL.
+
 ## Layout
 
 - `src/loader/` — `version.dll` stand-in: `dllmain.cpp` (decide and start the worker, nothing
@@ -123,8 +159,18 @@ misses a section after a BOM and turns `-1` into 4294967295.
   `remote.h` is the panel's interface (plain types; `Snapshot` with a `Message` id for
   translation); `remote.cpp` is the only file that includes the WinRT ABI headers. See
   `docs/agent-notes/media-remote-design.md`.
+- `src/ui/` — the music panel. `overlay` (start-up, per-frame sequence inside a swapped device
+  context state, input feed, fault latch, test layout file), `panel` (the only file that calls
+  ImGui widgets: bar, list, settings row, notices, what hotkeys do), `input_wndproc` + `input_queue.h`
+  (window-procedure subclass, lock-free hand-off), `hotkeys`, `fonts` (mapped Windows fonts),
+  `scale`, `strings.h` (every visible word; Chinese column is a DRAFT), `ui_settings` (writes
+  `[panel]` back), `imgui_errors` (assert and error policy), `imconfig_mod.h`, `media_api.h` (the
+  one switch between the stand-in and the real music player), `other_app` (the panel's way to the
+  media remote, with an example app in the test host), `standalone/` (stand-in music player,
+  compiled only with `RMM_UI_STANDALONE`).
 - `tools/testhost/` — `testhost.cpp`: Direct3D 11 program with a never-shown window that stands
-  in for the game (game layout, worker render thread, checks T1-T8; `media` mode for the remote);
+  in for the game (game layout, worker render thread, checks T1-T8; `media` mode for the remote; `panel`
+  mode with the scripts `shots`, `shot1`, `resize`, `fault`, `display`, `input`);
   `fake_player.cpp`: a silent media session the remote tests command; `bystander.cpp`: a
   kernel32-only console program that must see plain forwarding and nothing else.
 - `build/` — build and dependency scripts. No CMake, no solution file.
@@ -135,7 +181,9 @@ misses a section after a BOM and turns `-1` into 4294967295.
 |---|---|---|---|
 | Loader (under the loader lock) | `DllMain` | read exe name and one environment variable, load the real `version.dll`, `CreateThread` | wait, log, read files |
 | Worker (`ModThread`) | start-up, settings, hook install, watchdog, periodic log | file I/O, `user32`, device creation, sleeping | touch the game's device context or swap chain |
-| Game's present thread | `HookedPresent` -> `GuardedOnFrame` | Direct3D on the swap chain it was handed, atomics, a one-off log line | file flushes, sleeping, periodic logging, waiting on a lock the worker holds during slow work |
+| Game's present thread | `HookedPresent` -> `GuardedOnFrame` -> `PanelOnFrame` | Direct3D on the swap chain it was handed, ImGui, popping the input queue, calling the players (quick calls only), atomics, a one-off log line | file flushes, sleeping, periodic logging, waiting on a lock the worker holds during slow work |
+| Game's window thread | `PanelWndProc` (subclass) | atomics, pushing the input queue, `PostCommand`, `Player::OnGameFocusChanged` | ImGui, Direct3D, files, locks, per-message logging |
+| Panel settings writer | `WriterThread` in `ui_settings.cpp` | read and rewrite `settings.ini`, log | anything else |
 | Any game thread | forwarding stubs | jump | anything else |
 | Media (`MediaThread`, created by `Remote::Start`) | every WinRT call, session reading, commands | COM in the multithreaded apartment, waits with deadlines, logging | leave the apartment in the game (`RoUninitialize` is test host only) |
 | Windows' COM threads | media change notices | set an event and return | anything else |
@@ -158,9 +206,65 @@ misses a section after a BOM and turns `-1` into 4294967295.
   (exception code, module, offset) and stays off until the game restarts. It does not retry.
 - `PatchSlot` (`vtable_patch.cpp`) publishes the original pointer **before** switching the table
   entry. Every later hook goes through it; do not inline a table write elsewhere.
-- Any `user32` function the frame thread calls must first have been called once on the worker
-  (delay-load thunk resolution). Today that is `GetWindowThreadProcessId`, `GetClientRect`,
-  `IsWindowVisible`; `ModThread` warms them up right after the window is found.
+- Any delay-loaded function the frame thread or the window thread calls must be resolved on the
+  worker first. `ModThread` warms up `GetWindowThreadProcessId`, `GetClientRect`,
+  `IsWindowVisible`; `PanelStart` then resolves **all** of user32 and d3dcompiler_47 with
+  `__HrLoadAllImportsForDll`, whose DLL-name match is **case-sensitive** (the names tried are
+  `USER32.dll`/`user32.dll` and `d3dcompiler_47.dll`/`D3DCOMPILER_47.dll`; a miss is logged).
+  `d3dcompiler_47.dll` is loaded by full path from System32 first, so a missing file is a log
+  line, not a delay-load fault.
+
+## Music panel (src/ui)
+
+- **Owner's rules the code follows, do not "fix" them back to the design brief:** clicks outside
+  the panel go to the game (the brief's "panel owns the mouse" was turned down); keyboard is only
+  taken for hotkeys and while a panel text field has focus; Insert toggles; F5-F9 stop, previous,
+  play/pause, next, repeat. Details and the other choices: `docs/agent-notes/music-panel.md`.
+- **Click pass-through** = hit test on the window thread: the frame thread publishes the
+  rectangles of the panel's clickable ImGui windows (client coordinates, popups included) after
+  each frame; a mouse message inside one is queued and consumed, anything else is forwarded. A
+  drag stays with the side that got its button-down. A heartbeat (last drawn frame < 500 ms)
+  hands the mouse back whenever the panel is not being drawn.
+- **Drawing:** `SwapDeviceContextState(ours)`, stock DX11 backend, `ClearState()`,
+  `SwapDeviceContextState(game's)`, then `refs.gameState` is released and **nulled**: the fault
+  handler's `RestoreGameStateAfterFault` acts only while it is non-null (between the swaps). Never
+  leave `gameState` set after the second swap, or a later fault would `ClearState` the game.
+- The panel also draws on `DXGI_PRESENT_DO_NOT_SEQUENCE` presents (start-up waits for an ordinary
+  one). The test host's read-back rule depends on it; Unreal does not use that flag.
+- **ImGui error policy** (`imgui_errors.cpp`): `IM_ASSERT` logs once and switches the panel off;
+  the `ErrorCallback` is mandatory with the three recovery outputs off (else ImGui asserts every
+  frame, in the game only). The test host sets `ConfigErrorRecoveryEnableAssert` so mistakes fail
+  tests; every panel run checks its log for `IMGUI ASSERT` and "reported a mistake".
+- **Standalone build:** `build.ps1` defines `RMM_UI_STANDALONE` while `src\music\player.h` does
+  not exist, and compiles `src\ui\standalone\stubs.cpp` (four example songs, or ten with
+  `RACING_MASTER_MOD_TEST_PLAYLIST=long`; no sound; every call logged as `test player:`). The
+  panel shows "Test build: ..." in that build.
+- **"Other app" = the real media remote** (`src/remote`), reached only through `other_app.cpp`.
+  The panel calls `remote::Remote::Get().Start()` when "Other app" is chosen and at start-up when
+  it was the saved choice; nothing else starts it in the game. In the **test host** `other_app`
+  uses an example app instead (a web browser that allows play and pause; logged as `test app:`),
+  because the real remote reads every media session on the PC and panel screenshots would show the
+  developer's own music. `RACING_MASTER_MOD_TEST_REMOTE=real` switches the host to the real one;
+  the remote's own tests (runs 15-22) do not go through `other_app`. The remote's status line is
+  shown by its `Message` id from the table in `strings.h` (a `static_assert` in `panel.cpp` keeps
+  the count in step with `remote::Message`).
+- **Integrating the music module:** its headers must match `src/ui/standalone/interfaces.h`
+  exactly. `build.ps1` stops with a message once `src\music\player.h` exists: add the module's
+  sources to the build and drop the stop; `media_api.h` then includes the real headers. Who calls
+  `Player::Start()` is the integrator's decision; the panel only calls `SetPauseWhenGameUnfocused`
+  on its first frame and `OnGameFocusChanged` on `WM_ACTIVATEAPP` (window thread). The picker's
+  `done` callback may run on any thread.
+- The panel files are compiled with `/EHsc /utf-8 /DIMGUI_USER_CONFIG=<imconfig_mod.h>`; the core
+  keeps `/EHs-c-`. A C++ exception thrown inside panel code is caught by `GuardedOnFrame`'s SEH
+  guard and switches the mod off like any fault.
+- **Test-only switches** (read only with the test-host flag): `RACING_MASTER_MOD_PANEL=open`,
+  `_LANG`, `_TEXT_SIZE`, `_SOURCE`, `_LIST=open`, `_SETTINGS_ROW=open`, `_TEST_PANEL_FAULT=<panel
+  frame>`, `_TEST_TEXT_FIELD=1` (adds a text field to the settings row), `_TEST_REMOTE=limited|full|none|real`
+  (the example "Other app", or the real remote), `_TEST_PLAYLIST=long` (stand-in player). In the test host the mod writes `%LOCALAPPDATA%\RacingMasterMod\test-layout.txt`
+  (state, window rectangles, widget centres) whenever it changes; the host reads it to aim its
+  posted messages. Never in the game.
+- The test host's own window procedure counts what "the game" receives; panel runs also check 14
+  pieces of the host's pipeline state after every Present.
 - No `%ls` under `src\`: `build.ps1` refuses it. Wide strings go through `LogUtf8()` and `%s`
   (the static CRT's default locale drops a whole `vsnprintf` line on a Chinese path).
 - `Log()` must not be called while holding another lock, and no lock may be held across a call
