@@ -12,6 +12,13 @@
 //   legacy  The old layout (640x360, B8G8R8A8_UNORM, 1 buffer, SEQUENTIAL): marker check only (T8).
 //   quick   Game layout; presents for [seconds] and prints whether the marker appeared. Exits 0 if
 //           forwarding works and the stand-in is in use; the caller decides what the marker means.
+//   media   testhost.exe media <output folder> <seconds> <scenario>. No rendering. Publishes the
+//           silent fake player (fake_player.h) and waits up to [seconds] for the mod's media test
+//           script (RACING_MASTER_MOD_TEST_MEDIA_SCRIPT) to log "music apps test: finished", then
+//           prints what the fake player received. Scenarios: basic, ignore-pause, no-repeat,
+//           vanish, late (the player appears 2 s after start), guard, lifecycle. The mod's test
+//           script decides what is sent; the scenario decides how the fake player behaves.
+//           Exits 0 if the script finished.
 //
 // Reading a flip-model frame back: the hook draws into buffer 0 before the real Present runs.
 // A normal Present then rotates the buffers, so the host clears buffer 0 and presents it with
@@ -22,6 +29,8 @@
 
 #include <d3d11.h>
 #include <dxgi1_2.h>
+
+#include "fake_player.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -505,17 +514,114 @@ HWND MakeHiddenWindow(const wchar_t* className, int width, int height) {
                            nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
 }
 
+
+// ---- media mode ------------------------------------------------------------------------------------
+
+// True when the mod's log in this run's LOCALAPPDATA contains the text. The mod keeps the file
+// open for writing and allows reading.
+bool ModLogContains(const char* text) {
+    wchar_t path[MAX_PATH] = L"";
+    const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", path, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH - 40) return false;
+    lstrcatW(path, L"\\RacingMasterMod\\mod.log");
+    const HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                                    FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return false;
+    std::vector<char> data(1 << 20);
+    DWORD read = 0;
+    const BOOL ok = ReadFile(file, data.data(), static_cast<DWORD>(data.size() - 1), &read, nullptr);
+    CloseHandle(file);
+    if (!ok) return false;
+    data[read] = '\0';
+    return strstr(data.data(), text) != nullptr;
+}
+
+void PumpMessages() {
+    MSG message;
+    while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+        DispatchMessageW(&message);
+    }
+}
+
+// The fake player lives on this (main) thread, which pumps its messages; nothing is rendered.
+int RunMedia(const char* scenario, int seconds, bool forwardingOk, bool standInOk) {
+    fake_player::Behaviour behaviour = fake_player::Behaviour::ApplyAll;
+    bool late = false;
+    if (strcmp(scenario, "ignore-pause") == 0) behaviour = fake_player::Behaviour::IgnorePause;
+    else if (strcmp(scenario, "no-repeat") == 0) behaviour = fake_player::Behaviour::NoRepeatNoNext;
+    else if (strcmp(scenario, "vanish") == 0) behaviour = fake_player::Behaviour::VanishOnPause;
+    else if (strcmp(scenario, "late") == 0) late = true;
+    else if (strcmp(scenario, "basic") != 0 && strcmp(scenario, "guard") != 0 && strcmp(scenario, "lifecycle") != 0) {
+        printf("unknown media scenario %s\n", scenario);
+        return 2;
+    }
+
+    // Before any window: the process app id and this thread's COM apartment.
+    if (!fake_player::PrepareProcess()) return 1;
+
+    // A window the size of the game's, so the mod's start-up finds "the game window" as usual.
+    WNDCLASSEXW windowClass = {sizeof(windowClass)};
+    windowClass.lpfnWndProc = DefWindowProcW;
+    windowClass.hInstance = GetModuleHandleW(nullptr);
+    windowClass.lpszClassName = L"RacingMasterModTestHost";
+    RegisterClassExW(&windowClass);
+    const HWND window = MakeHiddenWindow(windowClass.lpszClassName, 2558, 1360);
+
+    const ULONGLONG start = GetTickCount64();
+    bool published = false;
+    if (!late) {
+        published = fake_player::Start(behaviour);
+        printf("fake player published at start: %s\n", published ? "yes" : "no");
+    }
+    bool finished = false;
+    ULONGLONG lastLook = 0;
+    while (GetTickCount64() - start < static_cast<ULONGLONG>(seconds) * 1000) {
+        PumpMessages();
+        const ULONGLONG now = GetTickCount64();
+        if (late && !published && now - start >= 2000) {
+            published = fake_player::Start(behaviour);
+            printf("fake player published after %llu ms: %s\n", now - start, published ? "yes" : "no");
+        }
+        if (now - lastLook >= 100) {
+            lastLook = now;
+            if (ModLogContains("music apps test: finished")) {
+                finished = true;
+                break;
+            }
+        }
+        Sleep(5);
+    }
+    // Apply anything still queued before reporting.
+    const ULONGLONG settle = GetTickCount64();
+    while (GetTickCount64() - settle < 200) {
+        PumpMessages();
+        Sleep(5);
+    }
+    printf("fake player received: %s\n", fake_player::Received()[0] ? fake_player::Received() : "nothing");
+    printf("fake player state at the end: %s\n", fake_player::StatusWord());
+    printf("mod test script finished: %s (after %llu ms)\n", finished ? "yes" : "no", GetTickCount64() - start);
+    fake_player::Stop();
+    DestroyWindow(window);
+    fake_player::FinishProcess();
+
+    const bool ok = forwardingOk && standInOk && published && finished;
+    printf("result: %s\n", ok ? "PASS" : "FAIL");
+    return ok ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     SetConsoleOutputCP(CP_UTF8);
     if (argc < 3) {
-        printf("usage: testhost.exe <game|legacy|quick> <output folder> [seconds]\n");
+        printf("usage: testhost.exe <game|legacy|quick> <output folder> [seconds]\n"
+               "       testhost.exe media <output folder> <seconds> <scenario>\n");
         return 2;
     }
     const char* mode = argv[1];
-    if (strcmp(mode, "game") != 0 && strcmp(mode, "legacy") != 0 && strcmp(mode, "quick") != 0) {
+    if (strcmp(mode, "game") != 0 && strcmp(mode, "legacy") != 0 && strcmp(mode, "quick") != 0 &&
+        strcmp(mode, "media") != 0) {
         printf("unknown mode %s\n", mode);
         return 2;
     }
@@ -523,6 +629,10 @@ int main(int argc, char** argv) {
 
     const bool forwardingOk = CheckForwarding();
     const bool standInOk = CheckStandInInUse();
+
+    if (strcmp(mode, "media") == 0) {
+        return RunMedia(argc > 4 ? argv[4] : "basic", seconds, forwardingOk, standInOk);
+    }
 
     WNDCLASSEXW windowClass = {sizeof(windowClass)};
     windowClass.lpfnWndProc = DefWindowProcW;

@@ -20,6 +20,11 @@
 #  13. ini without [mod], CR-only  keys before any heading count as [mod]; CR-only line endings split
 #  14. ini under a wrong heading   the log says the file changed nothing and names [mod]
 #
+# Media remote (src\remote), against the silent fake player in testhost.exe media mode. Each run
+# publishes the fake player for a few seconds; while it exists it is Windows' current media
+# session (media keys and the Windows flyout point at it).
+#  22. media, flag unset: the mod stays dormant, no log folder, nothing sent
+#
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
 
@@ -201,6 +206,26 @@ try {
     $log = Read-Log $run.Log
     Record 'ini under a wrong heading: log says the file changed nothing and names [mod]' ($log.Contains('changed nothing, because none of its lines is a key=value line under a [mod] heading'))
 
+    # --- media remote ---------------------------------------------------------------------------------
+    $fakeId = 'RacingMasterMod.TestHost.FakePlayer'
+    # Runs one media scenario. The mod's script sets what is sent; the scenario sets how the fake
+    # player behaves. Returns the run plus what the fake player received.
+    function Invoke-Media([string]$Title, [string]$Scenario, [string]$Script, [string]$Folder, [hashtable]$Extra = @{}, [bool]$WithFlag = $true, [int]$Seconds = 40) {
+        $environment = @{ RACING_MASTER_MOD_TEST_MEDIA_APP = $fakeId; RACING_MASTER_MOD_TEST_MEDIA_SCRIPT = $Script }
+        if ($WithFlag) { $environment.RACING_MASTER_MOD_TEST_HOST = '1' }
+        foreach ($key in $Extra.Keys) { $environment[$key] = $Extra[$key] }
+        $run = Invoke-Run $Title (Join-Path $work 'testhost.exe') @('media', $work, "$Seconds", $Scenario) $environment (Join-Path $work $Folder)
+        $received = ''
+        foreach ($line in $run.Lines) { if ($line -match '^fake player received: (.*)$') { $received = $Matches[1] } }
+        $run.Received = $received
+        $run.Text = Read-Log $run.Log
+        return $run
+    }
+
+    # 22. Without the test flag the mod stays dormant: no media code runs, nothing is sent.
+    $run = Invoke-Media '22. media mode, flag unset: mod must stay dormant' 'basic' 'play;pause' 'lad-media-dormant' @{} $false 4
+    Record 'media dormant: the fake player was published, no log folder, nothing received' ((@($run.Lines -match '^fake player published at start: yes').Count -eq 1) -and -not (Test-Path (Join-Path $run.LogRoot 'RacingMasterMod')) -and $run.Received -eq 'nothing')
+
     Write-Host ''
     Write-Host 'Summary'
     foreach ($r in $results) { Write-Host ("  " + $(if ($r.Ok) { 'PASS' } else { 'FAIL' }) + "  $($r.Name)") }
@@ -210,6 +235,9 @@ try {
 } finally {
     Remove-Item Env:\RACING_MASTER_MOD_TEST_HOST -ErrorAction SilentlyContinue
     Remove-Item Env:\RACING_MASTER_MOD_TEST_FAULT -ErrorAction SilentlyContinue
+    foreach ($name in 'APP', 'SCRIPT', 'PICK') {
+        Remove-Item "Env:\RACING_MASTER_MOD_TEST_MEDIA_$name" -ErrorAction SilentlyContinue
+    }
     $env:LOCALAPPDATA = $realLocalAppData
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }

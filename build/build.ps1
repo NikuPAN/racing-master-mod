@@ -158,7 +158,11 @@ $hostFlags = @('/nologo', '/c', '/std:c++20', '/O2', '/W4', '/WX', '/EHsc', '/MT
     '/DNOMINMAX', '/D_CRT_SECURE_NO_WARNINGS')
 $hostObject = Join-Path $obj 'testhost.obj'
 Invoke-Tool $cl ($hostFlags + @("/Fo$hostObject", (Join-Path $root 'tools\testhost\testhost.cpp')))
-Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'testhost.exe')", '/SUBSYSTEM:CONSOLE', $hostObject)
+# The silent fake media player for the remote-control tests (runtimeobject.lib and shell32.lib
+# come in through #pragma comment in fake_player.cpp).
+$fakeObject = Join-Path $obj 'fake_player.obj'
+Invoke-Tool $cl ($hostFlags + @("/Fo$fakeObject", (Join-Path $root 'tools\testhost\fake_player.cpp')))
+Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'testhost.exe')", '/SUBSYSTEM:CONSOLE', $hostObject, $fakeObject)
 
 $bystanderObject = Join-Path $obj 'bystander.obj'
 Invoke-Tool $cl ($hostFlags + @("/Fo$bystanderObject", (Join-Path $root 'tools\testhost\bystander.cpp')))
