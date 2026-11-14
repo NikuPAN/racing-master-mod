@@ -54,6 +54,7 @@ using MediaProperties = wmc::IGlobalSystemMediaTransportControlsSessionMediaProp
 using PlaybackStatus = wmc::GlobalSystemMediaTransportControlsSessionPlaybackStatus;
 using RepeatMode = wm::MediaPlaybackAutoRepeatMode;
 using SessionList = wfc::IVectorView<wmc::GlobalSystemMediaTransportControlsSession*>;
+using BoolOperation = wf::IAsyncOperation<bool>;
 
 constexpr PlaybackStatus kClosed = wmc::GlobalSystemMediaTransportControlsSessionPlaybackStatus_Closed;
 constexpr PlaybackStatus kStopped = wmc::GlobalSystemMediaTransportControlsSessionPlaybackStatus_Stopped;
@@ -62,14 +63,20 @@ constexpr PlaybackStatus kPaused = wmc::GlobalSystemMediaTransportControlsSessio
 
 constexpr DWORD kManagerTimeoutMs = 3000;   // RequestAsync
 constexpr DWORD kTitleTimeoutMs = 2000;     // TryGetMediaPropertiesAsync
+constexpr DWORD kCommandTimeoutMs = 1500;   // Try...Async
+constexpr DWORD kConfirmTimeoutMs = 2500;   // the expected change after an accepted command
 constexpr DWORD kRefreshMs = 500;           // periodic refresh while running
 constexpr ULONGLONG kTitleRefreshMs = 5000;
+constexpr ULONGLONG kResultShownMs = 5000;
+constexpr ULONGLONG kDoubleClickMs = 150;
 constexpr unsigned kQueueSize = 8;
 constexpr unsigned kMaxApps = 16;
 constexpr unsigned kAppIdChars = 132;       // an app id may be 128 characters, plus room
 
-// Only the app picker so far; playback commands are not sent yet.
-enum class Command { PickApp, FollowWindows };
+// Returned by Send() when the test-host guard refused; never a code Windows returns.
+constexpr HRESULT kRefusedByTestGuard = MAKE_HRESULT(SEVERITY_ERROR, FACILITY_ITF, 0x0201);
+
+enum class Command { Play, Pause, Toggle, Stop, Next, Previous, RepeatOff, RepeatOne, RepeatAll, PickApp, FollowWindows };
 
 // ---- functions resolved at run time ----------------------------------------------------------------
 
@@ -217,6 +224,8 @@ SRWLOCK g_queueLock = SRWLOCK_INIT;
 Queued g_queue[kQueueSize];
 unsigned g_queueHead = 0;
 unsigned g_queueCount = 0;
+Command g_lastQueued = Command::FollowWindows;
+ULONGLONG g_lastQueuedTick = 0;
 
 volatile LONG g_started = 0;       // Start() created the thread (or tried to)
 volatile LONG g_dropLogged = 0;
@@ -232,19 +241,27 @@ void Post(Command command, const wchar_t* appId) {
         }
         return;
     }
+    const ULONGLONG now = GetTickCount64();
     bool queued = false;
     AcquireSRWLockExclusive(&g_queueLock);
-    if (g_queueCount < kQueueSize) {
-        Queued& slot = g_queue[(g_queueHead + g_queueCount) % kQueueSize];
-        slot.command = command;
-        slot.appId[0] = L'\0';
-        if (appId) {
-            lstrcpynW(slot.appId, appId, kAppIdChars);
+    // The same button twice within 150 ms is one click (double-click guard).
+    const bool duplicate = command == g_lastQueued && now - g_lastQueuedTick < kDoubleClickMs &&
+                           command != Command::PickApp && command != Command::FollowWindows;
+    if (!duplicate) {
+        if (g_queueCount < kQueueSize) {
+            Queued& slot = g_queue[(g_queueHead + g_queueCount) % kQueueSize];
+            slot.command = command;
+            slot.appId[0] = L'\0';
+            if (appId) {
+                lstrcpynW(slot.appId, appId, kAppIdChars);
+            }
+            ++g_queueCount;
+            g_lastQueued = command;
+            g_lastQueuedTick = now;
+            queued = true;
+        } else {
+            InterlockedIncrement(&g_queueDrops);   // logged by the media thread
         }
-        ++g_queueCount;
-        queued = true;
-    } else {
-        InterlockedIncrement(&g_queueDrops);   // logged by the media thread
     }
     ReleaseSRWLockExclusive(&g_queueLock);
     if (queued) {
@@ -287,6 +304,47 @@ const char* StatusWord(PlaybackStatus status) {
         case wmc::GlobalSystemMediaTransportControlsSessionPlaybackStatus_Paused: return "paused";
     }
     return "unknown";
+}
+
+const char* RepeatWord(RepeatMode mode) {
+    switch (mode) {
+        case wm::MediaPlaybackAutoRepeatMode_None: return "off";
+        case wm::MediaPlaybackAutoRepeatMode_Track: return "one";
+        case wm::MediaPlaybackAutoRepeatMode_List: return "all";
+    }
+    return "unknown";
+}
+
+const char* CommandWord(Command command) {
+    switch (command) {
+        case Command::Play: return "play";
+        case Command::Pause: return "pause";
+        case Command::Toggle: return "play/pause";
+        case Command::Stop: return "stop";
+        case Command::Next: return "next track";
+        case Command::Previous: return "previous track";
+        case Command::RepeatOff: return "loop off";
+        case Command::RepeatOne: return "loop one";
+        case Command::RepeatAll: return "loop all";
+        case Command::PickApp: return "pick app";
+        case Command::FollowWindows: return "follow Windows";
+    }
+    return "?";
+}
+
+const char* ResultWord(Result result) {
+    switch (result) {
+        case Result::None: return "none";
+        case Result::Pending: return "pending";
+        case Result::Done: return "done";
+        case Result::NotOffered: return "not offered";
+        case Result::Refused: return "refused";
+        case Result::NoReply: return "no reply";
+        case Result::NoEffect: return "no effect";
+        case Result::SessionGone: return "session gone";
+        case Result::NoSession: return "no session";
+    }
+    return "?";
 }
 
 const char* StateWord(State state) {
@@ -368,6 +426,8 @@ std::wstring Text(Message id, const std::wstring& app) {
 
 // ---- the media thread's engine --------------------------------------------------------------------------
 
+enum class Expect { Nothing, StatusIs, StoppedOrGone, RepeatIs };
+enum class Call { Play, Pause, Toggle, Stop, Next, Previous, Repeat };
 
 // What one session looked like at one moment.
 struct Reading {
@@ -389,6 +449,7 @@ private:
     bool ListSessions(std::vector<App>* apps, std::vector<Session*>* objects, SessionManager* manager);
     std::wstring CurrentSessionId(SessionManager* manager);
     bool ReadStatusOf(Session* session, Reading* reading);
+    Reading ReadNow(const std::wstring& id);
     void SwitchTarget(Session* session, const std::wstring& id);
     void ReleaseSession();
     void DropTarget();
@@ -399,10 +460,14 @@ private:
     void ScheduleRetry(HRESULT hr);
     void LogStartFacts();
     std::wstring AppName(const std::wstring& id);
+    bool RepeatBlocked(const std::wstring& id) const;
 
-    // the app picker
+    // commands
     void DrainCommands();
     void Execute(const Queued& queued);
+    HRESULT Send(Call call, RepeatMode mode, boolean* accepted);
+    Result Confirm(Expect expect, PlaybackStatus wantStatus, RepeatMode wantMode, ULONGLONG* tookMs);
+    void SetResult(Result result, Message message, const std::wstring& app);
 
     // publishing
     void Publish();
@@ -426,6 +491,7 @@ private:
     std::wstring title_, artist_;
     bool titleDirty_ = true;
     ULONGLONG titleTick_ = 0;
+    int repeatMisses_ = 0;
 
     std::vector<App> apps_;
     bool following_ = true;
@@ -438,7 +504,14 @@ private:
     bool announced_ = false;
     int elevated_ = -1;            // 1 yes, 0 no, -1 could not tell
 
+    Result result_ = Result::None;
+    Message resultMessage_ = Message::None;
+    std::wstring resultApp_;
+    ULONGLONG resultTick_ = 0;
+    unsigned resultSequence_ = 0;
+
     std::vector<std::pair<std::wstring, std::wstring>> names_;   // app id -> friendly name
+    std::vector<std::wstring> repeatBlocked_;                     // apps that ignored looping twice
 };
 
 void Engine::Run() {
@@ -662,6 +735,25 @@ bool Engine::ReadStatusOf(Session* session, Reading* reading) {
     return true;
 }
 
+// The target app as the long-lived manager sees it now: present only if it is still listed and
+// not closed.
+Reading Engine::ReadNow(const std::wstring& id) {
+    Reading reading;
+    std::vector<App> apps;
+    std::vector<Session*> objects;
+    if (manager_ && ListSessions(&apps, &objects, manager_)) {
+        for (size_t i = 0; i < apps.size() && !reading.present; ++i) {
+            if (apps[i].id == id && ReadStatusOf(objects[i], &reading)) {
+                reading.present = reading.status != kClosed;
+            }
+        }
+    }
+    for (Session* object : objects) {
+        object->Release();
+    }
+    return reading;
+}
+
 // Start menu lookup of the friendly name ("Chrome" -> "Google Chrome"); for an id Windows does not
 // know (a player that uses its file name), a tidied version of the id. Cached per id.
 std::wstring Engine::AppName(const std::wstring& id) {
@@ -710,6 +802,15 @@ std::wstring Engine::AppName(const std::wstring& id) {
     return name;
 }
 
+bool Engine::RepeatBlocked(const std::wstring& id) const {
+    for (const std::wstring& blocked : repeatBlocked_) {
+        if (blocked == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Holds a new session object. When it belongs to the app already targeted (a new object for the
 // same app), what is known about the app is kept.
 void Engine::SwitchTarget(Session* session, const std::wstring& id) {
@@ -719,6 +820,7 @@ void Engine::SwitchTarget(Session* session, const std::wstring& id) {
         ForgetTarget();
         targetId_ = id;
         targetName_ = AppName(id);
+        repeatMisses_ = 0;
         char id8[kAppIdChars * 3], name8[256];
         Log("music apps: now controlling %s, shown as \"%s\" (%s)", Utf8(id, id8, sizeof(id8)),
             Utf8(targetName_, name8, sizeof(name8)), following_ ? "Windows' choice" : "picked in the panel");
@@ -909,6 +1011,73 @@ void Engine::DrainCommands() {
     }
 }
 
+void Engine::SetResult(Result result, Message message, const std::wstring& app) {
+    result_ = result;
+    resultMessage_ = message;
+    resultApp_ = app;
+    resultTick_ = GetTickCount64();
+    ++resultSequence_;
+}
+
+// Polls until the expected change shows or 2.5 s pass.
+Result Engine::Confirm(Expect expect, PlaybackStatus wantStatus, RepeatMode wantMode, ULONGLONG* tookMs) {
+    const ULONGLONG start = GetTickCount64();
+    const ULONGLONG deadline = start + kConfirmTimeoutMs;
+    for (;;) {
+        const Reading now = ReadNow(targetId_);
+        *tookMs = GetTickCount64() - start;
+        if (expect == Expect::StoppedOrGone) {
+            if (!now.present || now.status == kStopped) {
+                return Result::Done;
+            }
+        } else if (expect == Expect::StatusIs && now.present && now.status == wantStatus) {
+            return Result::Done;
+        } else if (expect == Expect::RepeatIs && now.present && now.repeatReported && now.repeatMode == wantMode) {
+            return Result::Done;
+        }
+        if (GetTickCount64() >= deadline) {
+            return Result::NoEffect;
+        }
+        Sleep(50);
+    }
+}
+
+// The one function that sends anything to another program.
+//
+// Hard guard for the developer test host: the only session a test may ever command is the host's
+// own silent player, named in RACING_MASTER_MOD_TEST_MEDIA_APP. A real Spotify or browser session
+// on the developer's PC cannot receive a test command, even when Windows calls it current.
+HRESULT Engine::Send(Call call, RepeatMode mode, boolean* accepted) {
+    *accepted = 0;
+    if (g_testHost && (g_testApp[0] == L'\0' || targetId_ != g_testApp)) {
+        return kRefusedByTestGuard;
+    }
+    if (!session_) {
+        return E_POINTER;
+    }
+    BoolOperation* op = nullptr;
+    HRESULT hr = S_OK;
+    switch (call) {
+        case Call::Play: hr = session_->TryPlayAsync(&op); break;
+        case Call::Pause: hr = session_->TryPauseAsync(&op); break;
+        case Call::Toggle: hr = session_->TryTogglePlayPauseAsync(&op); break;
+        case Call::Stop: hr = session_->TryStopAsync(&op); break;
+        case Call::Next: hr = session_->TrySkipNextAsync(&op); break;
+        case Call::Previous: hr = session_->TrySkipPreviousAsync(&op); break;
+        case Call::Repeat: hr = session_->TryChangeAutoRepeatModeAsync(mode, &op); break;
+    }
+    if (SUCCEEDED(hr) && op) {
+        hr = WaitAsync(op, kCommandTimeoutMs);
+        if (SUCCEEDED(hr)) {
+            hr = op->GetResults(accepted);
+        }
+        op->Release();
+    } else if (SUCCEEDED(hr)) {
+        hr = E_POINTER;
+    }
+    return hr;
+}
+
 void Engine::Execute(const Queued& queued) {
     if (queued.command == Command::PickApp) {
         following_ = false;
@@ -925,11 +1094,195 @@ void Engine::Execute(const Queued& queued) {
         pickedName_.clear();
         Log("music apps: the panel follows Windows' choice again");
         Refresh();
+        return;
     }
+
+    const Command command = queued.command;
+    const char* word = CommandWord(command);
+    if (!session_ || state_ != State::Ready) {
+        Log("music apps: \"%s\" requested but no music app is being controlled", word);
+        if (!following_ && !pickedName_.empty()) {
+            SetResult(Result::NoSession, Message::PickedNotRunning, pickedName_);
+        } else {
+            SetResult(Result::NoSession, Message::NoApp, L"");
+        }
+        Publish();
+        return;
+    }
+    const std::wstring app = targetName_;
+    char id8[kAppIdChars * 3];
+    Utf8(targetId_, id8, sizeof(id8));
+
+    // Which call, what counts as "it worked", and why it might not be sent at all.
+    Call call = Call::Play;
+    Expect expect = Expect::Nothing;
+    PlaybackStatus wantStatus = kPlaying;
+    RepeatMode wantMode = wm::MediaPlaybackAutoRepeatMode_None;
+    Message notOffered = Message::None;
+    Message already = Message::None;
+    switch (command) {
+        case Command::Play:
+            if (status_ == kPlaying) already = Message::AlreadyPlaying;
+            else if (!play_) notOffered = Message::NoPlay;
+            call = Call::Play;
+            expect = Expect::StatusIs;
+            break;
+        case Command::Pause:
+            if (status_ == kPaused) already = Message::AlreadyPaused;
+            else if (!pause_) notOffered = Message::NoPause;
+            call = Call::Pause;
+            expect = Expect::StatusIs;
+            wantStatus = kPaused;
+            break;
+        case Command::Toggle:
+            // Explicit calls first: a toggle does the opposite of what was meant when the snapshot
+            // is a moment out of date. The toggle itself only when neither is offered.
+            if (status_ == kPlaying && pause_) {
+                call = Call::Pause;
+                expect = Expect::StatusIs;
+                wantStatus = kPaused;
+            } else if (status_ != kPlaying && play_) {
+                call = Call::Play;
+                expect = Expect::StatusIs;
+            } else if (toggle_) {
+                call = Call::Toggle;
+                expect = (status_ == kPlaying || status_ == kPaused) ? Expect::StatusIs : Expect::Nothing;
+                wantStatus = status_ == kPlaying ? kPaused : kPlaying;
+            } else {
+                notOffered = Message::NoPlayPause;
+            }
+            break;
+        case Command::Stop:
+            if (!stop_) notOffered = Message::NoStop;   // never replaced by pause without the player's say
+            call = Call::Stop;
+            expect = Expect::StoppedOrGone;
+            break;
+        case Command::Next:
+            if (!next_) notOffered = Message::NoNext;
+            call = Call::Next;
+            break;
+        case Command::Previous:
+            if (!previous_) notOffered = Message::NoPrevious;
+            call = Call::Previous;
+            break;
+        case Command::RepeatOff:
+        case Command::RepeatOne:
+        case Command::RepeatAll:
+            call = Call::Repeat;
+            expect = Expect::RepeatIs;
+            wantMode = command == Command::RepeatOff   ? wm::MediaPlaybackAutoRepeatMode_None
+                       : command == Command::RepeatOne ? wm::MediaPlaybackAutoRepeatMode_Track
+                                                       : wm::MediaPlaybackAutoRepeatMode_List;
+            if (!repeatAllowed_) {
+                notOffered = Message::LoopNotAllowed;
+            } else if (RepeatBlocked(targetId_)) {
+                notOffered = Message::LoopIgnored;
+            }
+            break;
+        default:
+            return;
+    }
+    if (already != Message::None) {
+        Log("music apps: \"%s\" not sent to %s: it is already in that state", word, id8);
+        SetResult(Result::Done, already, app);
+        Publish();
+        return;
+    }
+    if (notOffered != Message::None) {
+        Log("music apps: \"%s\" is not offered by %s right now", word, id8);
+        SetResult(Result::NotOffered, notOffered, app);
+        Publish();
+        return;
+    }
+
+    SetResult(Result::Pending, Message::Sending, app);
+    Publish();
+
+    const PlaybackStatus statusAtSend = status_;
+    boolean accepted = 0;
+    const HRESULT hr = Send(call, wantMode, &accepted);
+    if (hr == kRefusedByTestGuard) {
+        Log("music apps: refused to send \"%s\" to %s: the test host may only command the test player", word, id8);
+        SetResult(Result::Refused, Message::TestGuard, app);
+        Publish();
+        return;
+    }
+    if (hr == HRESULT_FROM_WIN32(ERROR_TIMEOUT)) {
+        Log("music apps: \"%s\" sent to %s: no reply after %lu ms", word, id8, kCommandTimeoutMs);
+        SetResult(Result::NoReply, Message::NoReply, app);
+        Refresh();
+        return;
+    }
+    if (FAILED(hr) || !accepted) {
+        if (FAILED(hr)) {
+            Log("music apps: \"%s\" sent to %s: failed (0x%08lx)", word, id8, static_cast<unsigned long>(hr));
+        } else {
+            Log("music apps: \"%s\" sent to %s: refused", word, id8);
+        }
+        SetResult(Result::Refused, Message::Refused, app);
+        Refresh();
+        return;
+    }
+
+    ULONGLONG tookMs = 0;
+    const Result result = expect == Expect::Nothing ? Result::Done : Confirm(expect, wantStatus, wantMode, &tookMs);
+    if (call == Call::Next || call == Call::Previous) {
+        titleDirty_ = true;   // no reliable signal for a skip; re-read the title
+    }
+
+    switch (result) {
+        case Result::Done: {
+            if (expect == Expect::Nothing) {
+                Log("music apps: \"%s\" sent to %s: accepted", word, id8);
+            } else {
+                Log("music apps: \"%s\" sent to %s: accepted, confirmed after %llu ms", word, id8, tookMs);
+            }
+            Message done = Message::DonePlayPause;
+            if (call == Call::Repeat) {
+                repeatMisses_ = 0;
+                done = wantMode == wm::MediaPlaybackAutoRepeatMode_None    ? Message::DoneLoopOff
+                       : wantMode == wm::MediaPlaybackAutoRepeatMode_Track ? Message::DoneLoopOne
+                                                                             : Message::DoneLoopAll;
+            } else if (call == Call::Next) {
+                done = Message::DoneNext;
+            } else if (call == Call::Previous) {
+                done = Message::DonePrevious;
+            } else if (call == Call::Stop) {
+                done = Message::DoneStopped;
+            } else if (expect != Expect::Nothing) {
+                done = wantStatus == kPlaying ? Message::DonePlaying : Message::DonePaused;
+            }
+            SetResult(Result::Done, done, app);
+            break;
+        }
+        case Result::NoEffect:
+            if (call == Call::Repeat) {
+                const Reading now = ReadNow(targetId_);
+                Log("music apps: \"%s\" sent to %s: accepted, but it still reports looping \"%s\" after %.1f s", word,
+                    id8, now.repeatReported ? RepeatWord(now.repeatMode) : "not reported", kConfirmTimeoutMs / 1000.0);
+                // Two misses in a row: the button stays off with this reason for the rest of the run.
+                if (++repeatMisses_ >= 2 && !RepeatBlocked(targetId_)) {
+                    repeatBlocked_.push_back(targetId_);
+                    Log("music apps: looping in %s cannot be changed from the panel for the rest of this run", id8);
+                }
+                SetResult(Result::NoEffect, Message::LoopIgnored, app);
+            } else {
+                const Reading now = ReadNow(targetId_);
+                Log("music apps: \"%s\" sent to %s: accepted, but it still reports \"%s\" after %.1f s (it was \"%s\")",
+                    word, id8, now.present ? StatusWord(now.status) : "closed", kConfirmTimeoutMs / 1000.0,
+                    StatusWord(statusAtSend));
+                SetResult(Result::NoEffect, Message::NoEffect, app);
+            }
+            break;
+        default:
+            SetResult(result, Message::None, L"");
+            break;
+    }
+    Refresh();
 }
 
 // Which line the panel shows when no title is showing, and for which app.
-void Engine::ComposeMessage(ULONGLONG, Message* id, std::wstring* app) {
+void Engine::ComposeMessage(ULONGLONG now, Message* id, std::wstring* app) {
     *app = L"";
     switch (state_) {
         case State::Off: *id = Message::None; return;
@@ -938,6 +1291,13 @@ void Engine::ComposeMessage(ULONGLONG, Message* id, std::wstring* app) {
         case State::Starting: *id = Message::LookingForApps; return;
         case State::Faulted: *id = Message::Faulted; return;
         default: break;
+    }
+    // The outcome of the last command first, for a few seconds (a pending one until it settles).
+    if (result_ == Result::Pending ||
+        (resultMessage_ != Message::None && now - resultTick_ < kResultShownMs)) {
+        *id = resultMessage_;
+        *app = resultApp_;
+        return;
     }
     if (!following_ && !session_) {
         *id = Message::WaitingForApp;
@@ -968,6 +1328,8 @@ void Engine::Publish() {
     s.available = session_ != nullptr && state_ == State::Ready;
     s.followingWindows = following_;
     s.apps = apps_;
+    s.lastResult = result_;
+    s.resultSequence = resultSequence_;
     if (s.available) {
         s.status = ToStatus(status_);
         s.app = targetName_;
@@ -978,7 +1340,7 @@ void Engine::Publish() {
                    : repeatMode_ == wm::MediaPlaybackAutoRepeatMode_None  ? Repeat::Off
                    : repeatMode_ == wm::MediaPlaybackAutoRepeatMode_Track ? Repeat::One
                                                                             : Repeat::All;
-        s.controls = {play_, pause_, stop_, next_, previous_, repeatAllowed_};
+        s.controls = {play_, pause_, stop_, next_, previous_, repeatAllowed_ && !RepeatBlocked(targetId_)};
         s.hasTimeline = hasTimeline_;
         if (hasTimeline_) {
             fresh.positionTicks = positionTicks_;
@@ -1094,15 +1456,21 @@ void Remote::Shutdown() {
     // Not built yet: the media thread runs until the process ends.
 }
 
-// Not built yet: nothing is sent to other apps.
-void Remote::Play() {}
-void Remote::Pause() {}
-void Remote::TogglePlayPause() {}
-void Remote::Stop() {}
-void Remote::Next() {}
-void Remote::Previous() {}
+void Remote::Play() { Post(Command::Play, nullptr); }
+void Remote::Pause() { Post(Command::Pause, nullptr); }
+void Remote::TogglePlayPause() { Post(Command::Toggle, nullptr); }
+void Remote::Stop() { Post(Command::Stop, nullptr); }
+void Remote::Next() { Post(Command::Next, nullptr); }
+void Remote::Previous() { Post(Command::Previous, nullptr); }
 
-void Remote::SetRepeat(Repeat) {}
+void Remote::SetRepeat(Repeat r) {
+    switch (r) {
+        case Repeat::Off: Post(Command::RepeatOff, nullptr); break;
+        case Repeat::One: Post(Command::RepeatOne, nullptr); break;
+        case Repeat::All: Post(Command::RepeatAll, nullptr); break;
+        default: break;
+    }
+}
 
 void Remote::SelectApp(const std::wstring& appId) {
     if (!appId.empty() && appId.size() < kAppIdChars) {
@@ -1184,7 +1552,9 @@ bool WaitFor(DWORD timeoutMs, F predicate) {
     }
 }
 
-// Runs the steps of RACING_MASTER_MOD_TEST_MEDIA_SCRIPT one after another.
+// Runs the steps of RACING_MASTER_MOD_TEST_MEDIA_SCRIPT one after another. The next step goes out
+// only once the previous one has settled (up to 1.5 s for a reply plus 2.5 s for the
+// confirmation), then 400 ms later.
 DWORD WINAPI TestScriptThread(LPVOID) {
     Remote& remote = Remote::Get();
     wchar_t script[1024] = L"";
@@ -1257,7 +1627,35 @@ DWORD WINAPI TestScriptThread(LPVOID) {
             Sleep(400);
             continue;
         }
-        Log("music apps test: step %u \"%s\": unknown step, skipped", step, name8);
+        const unsigned before = remote.GetSnapshot().resultSequence;
+        if (lstrcmpW(name, L"play") == 0) remote.Play();
+        else if (lstrcmpW(name, L"pause") == 0) remote.Pause();
+        else if (lstrcmpW(name, L"toggle") == 0) remote.TogglePlayPause();
+        else if (lstrcmpW(name, L"stop") == 0) remote.Stop();
+        else if (lstrcmpW(name, L"next") == 0) remote.Next();
+        else if (lstrcmpW(name, L"previous") == 0) remote.Previous();
+        else if (lstrcmpW(name, L"repeat-off") == 0) remote.SetRepeat(Repeat::Off);
+        else if (lstrcmpW(name, L"repeat-one") == 0) remote.SetRepeat(Repeat::One);
+        else if (lstrcmpW(name, L"repeat-all") == 0) remote.SetRepeat(Repeat::All);
+        else {
+            Log("music apps test: step %u \"%s\": unknown step, skipped", step, name8);
+            continue;
+        }
+        Snapshot snapshot;
+        const bool settled = WaitFor(8000, [&] {
+            snapshot = remote.GetSnapshot();
+            return snapshot.resultSequence != before && snapshot.lastResult != Result::Pending;
+        });
+        if (!settled) {
+            Log("music apps test: step %u \"%s\": no outcome after 8 s", step, name8);
+        } else {
+            // The message never holds a title (only app names), so it may go into the log.
+            char message8[512];
+            Log("music apps test: step %u \"%s\": %s; state: %s; message: \"%s\"", step, name8,
+                ResultWord(snapshot.lastResult), StateWord(snapshot.state),
+                LogUtf8(snapshot.message.c_str(), message8, sizeof(message8)));
+        }
+        Sleep(400);
     }
     Log("music apps test: finished; the media thread keeps running");
     return 0;
