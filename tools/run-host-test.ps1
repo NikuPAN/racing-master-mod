@@ -33,8 +33,16 @@
 #                  freshness check, and rebuild mode (the fallback when change notices stop)
 #  22. media, flag unset: the mod stays dormant, no log folder, nothing sent
 #
-# Music panel (src\ui):
+# Music panel (src\ui), against a stand-in music player and an example "Other app" inside the
+# mod (no real media session is read or sent anything). Screenshots are copied to out\screens
+# before the temporary folder is removed.
 #  23. [panel] and [keys] values   good values accepted, bad ones refused with a reason, mod keeps running
+#  25-30. screenshots              English and draft Chinese, small/medium/large text: bar, list,
+#                                  settings row, "Other app"; PNG files with pixel checks
+#  31-32. "Other app" variants     an app that allows everything, and no app at all
+#  33. panel and ResizeBuffers     four sizes with the panel and list drawing
+#  34. fault inside the panel      game state put back, nothing leaked, mouse and keys back to the game
+#  35. [panel] mode=display        drawn, but nothing taken from the game
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
@@ -104,6 +112,21 @@ function Write-Ini([string]$Path, [string[]]$Lines, [string]$Encoding) {
 }
 
 $flag = @{ RACING_MASTER_MOD_TEST_HOST = '1' }
+
+# One music panel run (testhost.exe panel ...). marker_seconds=0 so nothing but the panel is on
+# screen; each run is also checked for a Dear ImGui assertion or reported mistake in its log.
+function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashtable]$Environment, [string[]]$Ini) {
+    $logRoot = Join-Path $work ('lad-panel-' + ($Title -replace '[^A-Za-z0-9]+', '-'))
+    Write-Ini (Join-Path $logRoot 'RacingMasterMod\settings.ini') (@('[mod]', 'marker_seconds=0') + $Ini) 'utf8'
+    $arguments = @('panel', $work, '10', $Script)
+    if ($Name) { $arguments += $Name }
+    $result = Invoke-Run $Title (Join-Path $work 'testhost.exe') $arguments ($flag + $Environment) $logRoot
+    $text = Read-Log $result.Log
+    Record "$($Title): host checks pass" ($result.Exit -eq 0)
+    Record "$($Title): no Dear ImGui assertion or reported mistake in the log" (-not ($text -match 'IMGUI ASSERT|reported a mistake'))
+    return @{ Exit = $result.Exit; Log = $text; Lines = $result.Lines }
+}
+$gameFirstFrame = 'first frame: 2558x1360, format 24, buffers 2, swap effect 4, windowed 1, samples 1'
 
 try {
     # 1. Game layout, mod active.
@@ -298,6 +321,30 @@ try {
     $log = Read-Log $run.Log
     Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, display or on') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2, marker for 3 s') -and ($run.Lines -match '^marker: found').Count -eq 1)
 
+    # 25-30. Screenshots: English and the draft Chinese at each text size.
+    foreach ($language in 'en', 'zh-TW') {
+        foreach ($size in 'small', 'medium', 'large') {
+            $prefix = "panel-$language-$size"
+            Invoke-PanelRun "panel screenshots, $language, $size text" 'shots' $prefix @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = $language; RACING_MASTER_MOD_TEXT_SIZE = $size } @() | Out-Null
+        }
+    }
+
+    # 31-32. "Other app": an app that allows everything and reports a timeline, and no app at all.
+    Invoke-PanelRun 'panel, Other app allowing everything' 'shot1' 'panel-en-medium-other-app-full' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_SOURCE = 'other_app'; RACING_MASTER_MOD_TEST_REMOTE = 'full' } @() | Out-Null
+    Invoke-PanelRun 'panel, Other app with nothing playing' 'shot1' 'panel-zh-TW-medium-other-app-none' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'zh-TW'; RACING_MASTER_MOD_SOURCE = 'other_app'; RACING_MASTER_MOD_TEST_REMOTE = 'none' } @() | Out-Null
+
+    # 33. ResizeBuffers while the panel and its list are drawn.
+    # The long example list (Japanese, Korean, CJK Extension B, a file that cannot be played, a long title).
+    Invoke-PanelRun 'panel and ResizeBuffers' 'resize' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LIST = 'open'; RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_PLAYLIST = 'long' } @() | Out-Null
+
+    # 34. A fault inside the panel, between its two state swaps.
+    $panelRun = Invoke-PanelRun 'panel fault' 'fault' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_TEST_PANEL_FAULT = '60' } @()
+    Record 'panel fault: one log line names the exception and the module and says the mod switched itself off' ($panelRun.Log -match 'frame code failed \(exception 0x[0-9A-Fa-f]{8} at .+version\.dll\+0x[0-9a-f]+\) and has switched itself off')
+
+    # 35. [panel] mode=display: drawn, but no window procedure and no keys.
+    $panelRun = Invoke-PanelRun 'panel display mode' 'display' '' @{} @('[panel]', 'mode=display')
+    Record 'panel display mode: the log says so and the game window is not watched' ($panelRun.Log.Contains('mode display only') -and -not $panelRun.Log.Contains('watching the game window'))
+
     Write-Host ''
     Write-Host 'Summary'
     foreach ($r in $results) { Write-Host ("  " + $(if ($r.Ok) { 'PASS' } else { 'FAIL' }) + "  $($r.Name)") }
@@ -311,6 +358,14 @@ try {
         Remove-Item "Env:\RACING_MASTER_MOD_TEST_MEDIA_$name" -ErrorAction SilentlyContinue
     }
     $env:LOCALAPPDATA = $realLocalAppData
+    # The panel screenshots outlive the temporary folder (out\ is not committed).
+    $shots = Join-Path $work 'screens'
+    if (Test-Path $shots) {
+        $kept = Join-Path $root 'out\screens'
+        New-Item -ItemType Directory -Force $kept | Out-Null
+        Copy-Item (Join-Path $shots '*.png') $kept -Force
+        Write-Host "Panel screenshots: $kept"
+    }
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }
 if ($failed) { exit 1 } else { exit 0 }

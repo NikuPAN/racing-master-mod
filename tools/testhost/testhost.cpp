@@ -12,6 +12,8 @@
 //   legacy  The old layout (640x360, B8G8R8A8_UNORM, 1 buffer, SEQUENTIAL): marker check only (T8).
 //   quick   Game layout; presents for [seconds] and prints whether the marker appeared. Exits 0 if
 //           forwarding works and the stand-in is in use; the caller decides what the marker means.
+//   panel   Game layout; the music panel. testhost.exe panel <output folder> <seconds> <script> [name]
+//           (scripts and checks: see "music panel runs" below). Screenshots go to <output folder>\screens.
 //   media   testhost.exe media <output folder> <seconds> <scenario>. No rendering. Publishes the
 //           silent fake player (fake_player.h) and waits up to [seconds] for the mod's media test
 //           script (RACING_MASTER_MOD_TEST_MEDIA_SCRIPT) to log "music apps test: finished", then
@@ -28,20 +30,29 @@
 #include <windows.h>
 
 #include <d3d11.h>
+#include <d3dcompiler.h>
 #include <dxgi1_2.h>
+#include <wincodec.h>
 
 #include "fake_player.h"
 
+#include <atomic>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <cwchar>
+#include <map>
+#include <string>
 #include <vector>
 
 #pragma comment(lib, "version.lib")
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "user32.lib")
+#pragma comment(lib, "d3dcompiler.lib")
+#pragma comment(lib, "windowscodecs.lib")
+#pragma comment(lib, "ole32.lib")
 
 namespace {
 
@@ -57,6 +68,8 @@ const Layout kGameLayout = {2558, 1360, DXGI_FORMAT_R10G10B10A2_UNORM, 2, DXGI_S
 const Layout kLegacyLayout = {640, 360, DXGI_FORMAT_B8G8R8A8_UNORM, 1, DXGI_SWAP_EFFECT_SEQUENTIAL};
 
 const FLOAT kClearColour[4] = {0.10f, 0.20f, 0.45f, 1.0f};
+const FLOAT kPanelClearColour[4] = {0.45f, 0.45f, 0.45f, 1.0f};   // mid-grey behind the panel screenshots
+const FLOAT* g_clearColour = kClearColour;
 
 bool g_allPassed = true;
 
@@ -182,7 +195,7 @@ void ReleaseBackBuffer(Host& host) {
 }
 
 void Clear(Host& host) {
-    host.context->ClearRenderTargetView(host.view, kClearColour);
+    host.context->ClearRenderTargetView(host.view, g_clearColour);
 }
 
 HRESULT Present(Host& host, UINT flags) {
@@ -324,6 +337,8 @@ struct RenderJob {
     const char* mode;
     const char* outputFolder;
     int seconds;
+    const char* script;   // panel mode
+    const char* name;     // panel mode
     volatile LONG done;
 };
 
@@ -486,11 +501,644 @@ void RunQuick(Host& host, int seconds) {
     ReleaseBackBuffer(host);
 }
 
+// ---- music panel runs -------------------------------------------------------------------------------
+//
+// testhost.exe panel <output folder> <seconds> <script> [name]
+//   shots   <prefix>  bar, list, settings row and "Other app" screenshots (PNG) with pixel checks
+//   shot1   <name>    one screenshot of the state the environment sets up
+//   resize            ResizeBuffers to four sizes with the panel and list open
+//   fault             a fault inside the panel code (RACING_MASTER_MOD_TEST_PANEL_FAULT)
+//   display           [panel] mode=display: drawn, nothing taken from the game
+//
+// Every message is posted to this program's own hidden window with PostMessageW: it goes through
+// the mod's window procedure exactly as the game's messages would. Nothing leaves the process and
+// nothing is shown. The mod reports its state and widget centres in test-layout.txt.
+//
+// Before every Present the host binds a set of "game" pipeline state and checks afterwards that
+// all of it is still bound (the panel draws inside its own swapped state).
+
+std::atomic<int> g_gotKeyDown[256];
+std::atomic<int> g_gotKeyUp[256];
+std::atomic<int> g_gotLDown{0}, g_gotLUp{0}, g_gotMove{0}, g_gotWheel{0}, g_gotChar{0}, g_gotActivateApp{0};
+std::atomic<unsigned> g_gotSync{0};
+constexpr UINT kSyncMessage = WM_APP + 7;
+
+// The host window's own procedure: what "the game" receives after the mod's window procedure.
+LRESULT CALLBACK HostWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+        case WM_KEYDOWN: case WM_SYSKEYDOWN: if (wParam < 256) ++g_gotKeyDown[wParam]; break;
+        case WM_KEYUP: case WM_SYSKEYUP: if (wParam < 256) ++g_gotKeyUp[wParam]; break;
+        case WM_CHAR: ++g_gotChar; break;
+        case WM_LBUTTONDOWN: ++g_gotLDown; break;
+        case WM_LBUTTONUP: ++g_gotLUp; break;
+        case WM_MOUSEMOVE: ++g_gotMove; break;
+        case WM_MOUSEWHEEL: ++g_gotWheel; break;
+        case WM_ACTIVATEAPP: ++g_gotActivateApp; break;
+        case kSyncMessage: g_gotSync.store(static_cast<unsigned>(wParam)); return 0;
+        default: break;
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+struct GameState {
+    ID3D11RasterizerState* rasterizer = nullptr;
+    ID3D11BlendState* blend = nullptr;
+    ID3D11DepthStencilState* depthStencil = nullptr;
+    ID3D11ComputeShader* compute = nullptr;
+    ID3D11SamplerState* sampler = nullptr;
+    ID3D11Buffer* constants = nullptr;
+    ID3D11Texture2D* sceneTexture = nullptr;
+    ID3D11RenderTargetView* sceneTarget = nullptr;
+};
+
+GameState g_game;
+int g_stateChecks = 0;
+int g_stateFailures = 0;
+unsigned g_syncSequence = 0;
+const FLOAT kBlendFactor[4] = {0.1f, 0.2f, 0.3f, 0.4f};
+const D3D11_VIEWPORT kViewport = {3.0f, 5.0f, 17.0f, 19.0f, 0.25f, 0.75f};
+const D3D11_RECT kScissor = {1, 2, 33, 44};
+
+bool CreateGameState(Host& host) {
+    D3D11_RASTERIZER_DESC rasterizer = {};
+    rasterizer.FillMode = D3D11_FILL_WIREFRAME;
+    rasterizer.CullMode = D3D11_CULL_FRONT;
+    D3D11_BLEND_DESC blend = {};
+    blend.RenderTarget[0].BlendEnable = TRUE;
+    blend.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+    blend.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
+    blend.RenderTarget[0].BlendOp = D3D11_BLEND_OP_MAX;
+    blend.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+    blend.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+    blend.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_MAX;
+    blend.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_RED;
+    D3D11_DEPTH_STENCIL_DESC depth = {};
+    depth.DepthEnable = TRUE;
+    depth.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+    depth.DepthFunc = D3D11_COMPARISON_GREATER;
+    depth.StencilEnable = TRUE;
+    depth.StencilReadMask = 0x0f;
+    depth.StencilWriteMask = 0xff;
+    depth.FrontFace.StencilFunc = D3D11_COMPARISON_EQUAL;
+    depth.FrontFace.StencilPassOp = depth.FrontFace.StencilFailOp = depth.FrontFace.StencilDepthFailOp =
+        D3D11_STENCIL_OP_KEEP;
+    depth.BackFace = depth.FrontFace;
+    D3D11_SAMPLER_DESC sampler = {};
+    sampler.Filter = D3D11_FILTER_ANISOTROPIC;
+    sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D11_TEXTURE_ADDRESS_MIRROR;
+    sampler.MaxAnisotropy = 8;
+    sampler.ComparisonFunc = D3D11_COMPARISON_NEVER;
+    sampler.MaxLOD = D3D11_FLOAT32_MAX;
+    D3D11_BUFFER_DESC buffer = {};
+    buffer.ByteWidth = 64;
+    buffer.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    D3D11_TEXTURE2D_DESC texture = {};
+    texture.Width = texture.Height = 64;
+    texture.MipLevels = texture.ArraySize = 1;
+    texture.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    texture.SampleDesc.Count = 1;
+    texture.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    static const char kCompute[] = "[numthreads(1,1,1)] void main() {}";
+    ID3DBlob* blob = nullptr;
+    HRESULT hr = D3DCompile(kCompute, sizeof(kCompute) - 1, nullptr, nullptr, nullptr, "main", "cs_5_0", 0, 0, &blob,
+                            nullptr);
+    if (SUCCEEDED(hr)) {
+        hr = host.device->CreateComputeShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, &g_game.compute);
+    }
+    if (blob) blob->Release();
+    if (SUCCEEDED(hr)) hr = host.device->CreateRasterizerState(&rasterizer, &g_game.rasterizer);
+    if (SUCCEEDED(hr)) hr = host.device->CreateBlendState(&blend, &g_game.blend);
+    if (SUCCEEDED(hr)) hr = host.device->CreateDepthStencilState(&depth, &g_game.depthStencil);
+    if (SUCCEEDED(hr)) hr = host.device->CreateSamplerState(&sampler, &g_game.sampler);
+    if (SUCCEEDED(hr)) hr = host.device->CreateBuffer(&buffer, nullptr, &g_game.constants);
+    if (SUCCEEDED(hr)) hr = host.device->CreateTexture2D(&texture, nullptr, &g_game.sceneTexture);
+    if (SUCCEEDED(hr)) hr = host.device->CreateRenderTargetView(g_game.sceneTexture, nullptr, &g_game.sceneTarget);
+    return SUCCEEDED(hr);
+}
+
+void SetGameState(ID3D11DeviceContext* context) {
+    context->OMSetRenderTargets(1, &g_game.sceneTarget, nullptr);
+    context->RSSetState(g_game.rasterizer);
+    context->RSSetViewports(1, &kViewport);
+    context->RSSetScissorRects(1, &kScissor);
+    context->OMSetBlendState(g_game.blend, kBlendFactor, 0x0000ffff);
+    context->OMSetDepthStencilState(g_game.depthStencil, 7);
+    context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST_ADJ);
+    context->CSSetShader(g_game.compute, nullptr, 0);
+    context->PSSetSamplers(0, 1, &g_game.sampler);
+    context->PSSetSamplers(2, 1, &g_game.sampler);
+    context->VSSetConstantBuffers(0, 1, &g_game.constants);
+    context->VSSetConstantBuffers(1, 1, &g_game.constants);
+}
+
+// The 14 pieces of state SetGameState bound, read back after Present.
+bool GameStateIntact(ID3D11DeviceContext* context) {
+    bool ok = true;
+    ID3D11RenderTargetView* target = nullptr;
+    ID3D11DepthStencilView* depthView = nullptr;
+    context->OMGetRenderTargets(1, &target, &depthView);
+    ok = ok && target == g_game.sceneTarget && depthView == nullptr;
+    if (target) target->Release();
+    if (depthView) depthView->Release();
+    ID3D11RasterizerState* rasterizer = nullptr;
+    context->RSGetState(&rasterizer);
+    ok = ok && rasterizer == g_game.rasterizer;
+    if (rasterizer) rasterizer->Release();
+    UINT count = 1;
+    D3D11_VIEWPORT viewport = {};
+    context->RSGetViewports(&count, &viewport);
+    ok = ok && count == 1 && memcmp(&viewport, &kViewport, sizeof(viewport)) == 0;
+    count = 1;
+    D3D11_RECT scissor = {};
+    context->RSGetScissorRects(&count, &scissor);
+    ok = ok && count == 1 && memcmp(&scissor, &kScissor, sizeof(scissor)) == 0;
+    ID3D11BlendState* blend = nullptr;
+    FLOAT factor[4] = {};
+    UINT mask = 0;
+    context->OMGetBlendState(&blend, factor, &mask);
+    ok = ok && blend == g_game.blend && memcmp(factor, kBlendFactor, sizeof(factor)) == 0 && mask == 0x0000ffff;
+    if (blend) blend->Release();
+    ID3D11DepthStencilState* depth = nullptr;
+    UINT stencilRef = 0;
+    context->OMGetDepthStencilState(&depth, &stencilRef);
+    ok = ok && depth == g_game.depthStencil && stencilRef == 7;
+    if (depth) depth->Release();
+    D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+    context->IAGetPrimitiveTopology(&topology);
+    ok = ok && topology == D3D11_PRIMITIVE_TOPOLOGY_LINELIST_ADJ;
+    ID3D11ComputeShader* compute = nullptr;
+    context->CSGetShader(&compute, nullptr, nullptr);
+    ok = ok && compute == g_game.compute;
+    if (compute) compute->Release();
+    ID3D11SamplerState* samplers[3] = {};
+    context->PSGetSamplers(0, 3, samplers);
+    ok = ok && samplers[0] == g_game.sampler && samplers[1] == nullptr && samplers[2] == g_game.sampler;
+    for (ID3D11SamplerState* s : samplers) if (s) s->Release();
+    ID3D11Buffer* buffers[2] = {};
+    context->VSGetConstantBuffers(0, 2, buffers);
+    ok = ok && buffers[0] == g_game.constants && buffers[1] == g_game.constants;
+    for (ID3D11Buffer* b : buffers) if (b) b->Release();
+    ID3D11VertexShader* vertex = nullptr;
+    context->VSGetShader(&vertex, nullptr, nullptr);
+    ok = ok && vertex == nullptr;
+    if (vertex) vertex->Release();
+    ID3D11PixelShader* pixel = nullptr;
+    context->PSGetShader(&pixel, nullptr, nullptr);
+    ok = ok && pixel == nullptr;
+    if (pixel) pixel->Release();
+    ID3D11InputLayout* layout = nullptr;
+    context->IAGetInputLayout(&layout);
+    ok = ok && layout == nullptr;
+    if (layout) layout->Release();
+    ID3D11ShaderResourceView* views[4] = {};
+    context->PSGetShaderResources(0, 4, views);
+    ok = ok && !views[0] && !views[1] && !views[2] && !views[3];
+    for (ID3D11ShaderResourceView* v : views) if (v) v->Release();
+    return ok;
+}
+
+// One "game frame" on the main chain: clear, bind the game's state, present, check the state.
+HRESULT PanelFrame(Host& host, UINT flags) {
+    Clear(host);
+    SetGameState(host.context);
+    const HRESULT hr = Present(host, flags);
+    ++g_stateChecks;
+    if (!GameStateIntact(host.context)) {
+        ++g_stateFailures;
+    }
+    return hr;
+}
+
+void Pump(Host& host, int frames) {
+    for (int i = 0; i < frames; ++i) {
+        PanelFrame(host, 0);
+        Sleep(2);
+    }
+}
+
+// Waits until the window thread has handled every message posted before this call, presenting
+// frames meanwhile (or not, to let the panel's heartbeat lapse), then lets the panel run a few
+// frames so it has taken the queued input in.
+bool Sync(Host& host, bool present = true) {
+    const unsigned sequence = ++g_syncSequence;
+    PostMessageW(host.window, kSyncMessage, sequence, 0);
+    const ULONGLONG end = GetTickCount64() + 3000;
+    while (g_gotSync.load() != sequence && GetTickCount64() < end) {
+        if (present) PanelFrame(host, 0);
+        Sleep(2);
+    }
+    if (present) Pump(host, 6);
+    return g_gotSync.load() == sequence;
+}
+
+struct LayoutFile {
+    std::map<std::string, std::string> values;
+    std::map<std::string, POINT> items;
+    std::vector<RECT> windows;   // back-buffer pixels
+    std::vector<RECT> hits;      // client coordinates
+    bool ok = false;
+    int Int(const char* key, int fallback = -999) const {
+        auto it = values.find(key);
+        return it == values.end() ? fallback : atoi(it->second.c_str());
+    }
+    std::string Text(const char* key) const {
+        auto it = values.find(key);
+        return it == values.end() ? std::string() : it->second;
+    }
+    bool Has(const char* item) const { return items.count(item) != 0; }
+};
+
+std::wstring ModFolder() {
+    wchar_t base[MAX_PATH] = L"";
+    GetEnvironmentVariableW(L"LOCALAPPDATA", base, MAX_PATH);
+    return std::wstring(base) + L"\\RacingMasterMod";
+}
+
+std::string ReadWholeFile(const std::wstring& path) {
+    std::string text;
+    const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                    nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return text;
+    char buffer[16384];
+    DWORD read = 0;
+    while (ReadFile(file, buffer, sizeof(buffer), &read, nullptr) && read > 0) text.append(buffer, read);
+    CloseHandle(file);
+    return text;
+}
+
+LayoutFile ReadLayout() {
+    LayoutFile layout;
+    const std::string text = ReadWholeFile(ModFolder() + L"\\test-layout.txt");
+    if (text.empty()) return layout;
+    layout.ok = true;
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos) end = text.size();
+        const std::string line = text.substr(start, end - start);
+        start = end + 1;
+        const size_t space = line.find(' ');
+        if (space == std::string::npos) continue;
+        const std::string key = line.substr(0, space);
+        const std::string rest = line.substr(space + 1);
+        if (key == "item") {
+            char name[64] = "";
+            int x = 0, y = 0;
+            if (sscanf_s(rest.c_str(), "%63s %d %d", name, static_cast<unsigned>(sizeof(name)), &x, &y) == 3) {
+                layout.items[name] = POINT{x, y};
+            }
+        } else if (key == "window" || key == "hit") {
+            int x = 0, y = 0, w = 0, h = 0;
+            if (sscanf_s(rest.c_str(), "%d %d %d %d", &x, &y, &w, &h) == 4) {
+                (key == "window" ? layout.windows : layout.hits).push_back(RECT{x, y, x + w, y + h});
+            }
+        } else {
+            layout.values[key] = rest;
+        }
+    }
+    return layout;
+}
+
+// Presents frames until the layout file satisfies `condition` or the time runs out.
+template <typename Condition>
+bool WaitLayout(Host& host, Condition condition, int milliseconds = 4000) {
+    const ULONGLONG end = GetTickCount64() + static_cast<ULONGLONG>(milliseconds);
+    for (;;) {
+        const LayoutFile layout = ReadLayout();
+        if (layout.ok && condition(layout)) return true;
+        if (GetTickCount64() >= end) return false;
+        PanelFrame(host, 0);
+        Sleep(3);
+    }
+}
+
+POINT Item(const char* name) {
+    const LayoutFile layout = ReadLayout();
+    auto it = layout.items.find(name);
+    if (it == layout.items.end()) {
+        printf("  (no widget named %s in the layout file)\n", name);
+        return POINT{-1, -1};
+    }
+    return it->second;
+}
+
+void PostKey(Host& host, UINT vk, bool down, bool repeat = false) {
+    LPARAM l = 1 | (static_cast<LPARAM>(MapVirtualKeyW(vk, MAPVK_VK_TO_VSC)) << 16);
+    if (repeat) l |= 1LL << 30;
+    if (!down) l |= (1LL << 30) | (1LL << 31);
+    PostMessageW(host.window, down ? WM_KEYDOWN : WM_KEYUP, vk, l);
+}
+
+void Key(Host& host, UINT vk) {
+    PostKey(host, vk, true);
+    PostKey(host, vk, false);
+    Sync(host);
+}
+
+void Move(Host& host, POINT p) {
+    PostMessageW(host.window, WM_MOUSEMOVE, 0, MAKELPARAM(p.x, p.y));
+}
+
+// While the panel is open, waits until it has published its clickable rectangles: on its first
+// drawn frame ImGui keeps auto-sized windows hidden, so nothing is clickable yet (correctly: nothing
+// is on screen either), and a click posted then goes to the game.
+void Click(Host& host, POINT p) {
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") != 1 || !l.hits.empty(); }, 1000);
+    Move(host, p);
+    PostMessageW(host.window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(p.x, p.y));
+    PostMessageW(host.window, WM_LBUTTONUP, 0, MAKELPARAM(p.x, p.y));
+    Sync(host);
+}
+
+// A point in the client area that no panel window covers.
+POINT OutsidePanel() {
+    return POINT{120, 700};
+}
+
+// ---- screenshots ----
+
+std::wstring g_screensFolder;
+
+bool SavePng(const std::vector<uint32_t>& bgra, UINT width, UINT height, const std::wstring& path) {
+    IWICImagingFactory* factory = nullptr;
+    IWICStream* stream = nullptr;
+    IWICBitmapEncoder* encoder = nullptr;
+    IWICBitmapFrameEncode* frame = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, __uuidof(IWICImagingFactory),
+                                  reinterpret_cast<void**>(&factory));
+    if (SUCCEEDED(hr)) hr = factory->CreateStream(&stream);
+    if (SUCCEEDED(hr)) hr = stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE);
+    if (SUCCEEDED(hr)) hr = factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder);
+    if (SUCCEEDED(hr)) hr = encoder->Initialize(stream, WICBitmapEncoderNoCache);
+    if (SUCCEEDED(hr)) hr = encoder->CreateNewFrame(&frame, nullptr);
+    if (SUCCEEDED(hr)) hr = frame->Initialize(nullptr);
+    if (SUCCEEDED(hr)) hr = frame->SetSize(width, height);
+    WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
+    if (SUCCEEDED(hr)) hr = frame->SetPixelFormat(&format);
+    if (SUCCEEDED(hr)) {
+        hr = frame->WritePixels(height, width * 4, static_cast<UINT>(bgra.size() * 4),
+                                reinterpret_cast<BYTE*>(const_cast<uint32_t*>(bgra.data())));
+    }
+    if (SUCCEEDED(hr)) hr = frame->Commit();
+    if (SUCCEEDED(hr)) hr = encoder->Commit();
+    if (frame) frame->Release();
+    if (encoder) encoder->Release();
+    if (stream) stream->Release();
+    if (factory) factory->Release();
+    return SUCCEEDED(hr);
+}
+
+struct ShotResult {
+    bool saved = false;
+    long long stray = 0;          // pixels outside every panel window that are not the clear colour
+    double changedInside = 0.0;   // share of pixels inside the panel windows that differ from it
+    long long bright = 0;         // near-white pixels inside (text)
+    size_t windows = 0;
+    UINT width = 0, height = 0;
+};
+
+// The host's read-back rule for a flip-model chain: one ordinary Present, then a cleared buffer 0
+// presented without sequencing (the mod draws into it, DXGI does not rotate), then a copy of
+// buffer 0. The layout file written by that last frame says where the panel's windows are.
+ShotResult Shoot(Host& host, const char* name) {
+    ShotResult result;
+    PanelFrame(host, 0);
+    PanelFrame(host, DXGI_PRESENT_DO_NOT_SEQUENCE);
+    const LayoutFile layout = ReadLayout();
+    result.windows = layout.windows.size();
+    ID3D11Texture2D* buffer = nullptr;
+    if (FAILED(host.chain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&buffer)))) return result;
+    D3D11_TEXTURE2D_DESC desc = {};
+    buffer->GetDesc(&desc);
+    const DXGI_FORMAT format = desc.Format;
+    desc.Usage = D3D11_USAGE_STAGING;
+    desc.BindFlags = 0;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    desc.MiscFlags = 0;
+    ID3D11Texture2D* staging = nullptr;
+    std::vector<uint32_t> raw;
+    if (SUCCEEDED(host.device->CreateTexture2D(&desc, nullptr, &staging))) {
+        host.context->CopyResource(staging, buffer);
+        D3D11_MAPPED_SUBRESOURCE mapped = {};
+        if (SUCCEEDED(host.context->Map(staging, 0, D3D11_MAP_READ, 0, &mapped))) {
+            raw.resize(static_cast<size_t>(desc.Width) * desc.Height);
+            for (UINT y = 0; y < desc.Height; ++y) {
+                memcpy(raw.data() + static_cast<size_t>(y) * desc.Width,
+                       static_cast<const BYTE*>(mapped.pData) + static_cast<size_t>(y) * mapped.RowPitch, desc.Width * 4);
+            }
+            host.context->Unmap(staging, 0);
+        }
+        staging->Release();
+    }
+    buffer->Release();
+    if (raw.empty()) return result;
+    result.width = desc.Width;
+    result.height = desc.Height;
+    const bool r10 = format == DXGI_FORMAT_R10G10B10A2_UNORM;
+    auto channels = [&](uint32_t v, int* r, int* g, int* b) {
+        if (r10) {
+            *r = static_cast<int>(((v & 1023) * 255 + 511) / 1023);
+            *g = static_cast<int>((((v >> 10) & 1023) * 255 + 511) / 1023);
+            *b = static_cast<int>((((v >> 20) & 1023) * 255 + 511) / 1023);
+        } else {
+            *b = static_cast<int>(v & 255);
+            *g = static_cast<int>((v >> 8) & 255);
+            *r = static_cast<int>((v >> 16) & 255);
+        }
+    };
+    const uint32_t clearValue = raw[static_cast<size_t>(desc.Height - 2) * desc.Width + 1];   // bottom-left corner
+    long long inside = 0, changed = 0;
+    std::vector<uint32_t> bgra(raw.size());
+    for (UINT y = 0; y < desc.Height; ++y) {
+        for (UINT x = 0; x < desc.Width; ++x) {
+            const uint32_t v = raw[static_cast<size_t>(y) * desc.Width + x];
+            int r, g, b;
+            channels(v, &r, &g, &b);
+            bgra[static_cast<size_t>(y) * desc.Width + x] =
+                0xFF000000u | (static_cast<uint32_t>(r) << 16) | (static_cast<uint32_t>(g) << 8) | static_cast<uint32_t>(b);
+            bool inWindow = false;
+            for (const RECT& w : layout.windows) {
+                if (static_cast<LONG>(x) >= w.left - 2 && static_cast<LONG>(x) < w.right + 2 &&
+                    static_cast<LONG>(y) >= w.top - 2 && static_cast<LONG>(y) < w.bottom + 2) {
+                    inWindow = true;
+                    break;
+                }
+            }
+            if (inWindow) {
+                ++inside;
+                if (v != clearValue) ++changed;
+                if (r > 200 && g > 200 && b > 200) ++result.bright;
+            } else if (v != clearValue) {
+                ++result.stray;
+            }
+        }
+    }
+    result.changedInside = inside ? static_cast<double>(changed) / static_cast<double>(inside) : 0.0;
+    const std::wstring path = g_screensFolder + L"\\" + std::wstring(name, name + strlen(name)) + L".png";
+    result.saved = SavePng(bgra, desc.Width, desc.Height, path);
+    int cr, cg, cb;
+    channels(clearValue, &cr, &cg, &cb);
+    printf("  shot %s: %ux%u, %zu panel window(s), %.1f%% of panel pixels drawn, %lld text pixels, %lld stray pixels "
+           "outside the panel, clear colour %d %d %d, %s\n",
+           name, desc.Width, desc.Height, result.windows, result.changedInside * 100.0, result.bright, result.stray, cr,
+           cg, cb, result.saved ? "saved" : "NOT SAVED");
+    return result;
+}
+
+void CheckShot(const char* label, const ShotResult& shot, bool expectPanel) {
+    char name[160];
+    if (expectPanel) {
+        snprintf(name, sizeof(name), "%s: panel drawn (saved, over 90%% of its pixels drawn, text present, nothing "
+                 "drawn outside it)", label);
+        Check(name, shot.saved && shot.windows >= 1 && shot.changedInside > 0.9 && shot.bright > 150 && shot.stray == 0);
+    } else {
+        snprintf(name, sizeof(name), "%s: nothing drawn anywhere", label);
+        Check(name, shot.saved && shot.stray == 0 && shot.bright == 0 && shot.changedInside == 0.0);
+    }
+}
+
+void MoveAway(Host& host) {
+    Move(host, OutsidePanel());
+    Sync(host);
+}
+
+bool PanelReady(Host& host, int seconds) {
+    return WaitLayout(host, [](const LayoutFile& l) { return l.values.count("open") != 0; }, seconds * 1000);
+}
+
+void ScriptShots(Host& host, const std::string& prefix) {
+    const bool ready = WaitLayout(host, [](const LayoutFile& l) { return l.Int("drawn") == 1 && l.Has("list"); });
+    Check("S0 the panel opens and reports its layout", ready);
+    if (!ready) return;
+    MoveAway(host);
+    CheckShot("S1 bar", Shoot(host, (prefix + "-bar").c_str()), true);
+
+    Click(host, Item("list"));
+    Check("S2 Show list opens the list", WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 1 && l.Has("row0"); }));
+    MoveAway(host);
+    CheckShot("S2 list", Shoot(host, (prefix + "-list").c_str()), true);
+    Click(host, Item("list"));
+
+    Click(host, Item("settings"));
+    Check("S3 Settings opens the settings row",
+          WaitLayout(host, [](const LayoutFile& l) { return l.Int("settings") == 1 && l.Int("list") == 0 && l.Has("language"); }));
+    MoveAway(host);
+    CheckShot("S3 settings row", Shoot(host, (prefix + "-settings").c_str()), true);
+    Click(host, Item("settings"));
+
+    Click(host, Item("source_other_app"));
+    Check("S4 Other app is selected",
+          WaitLayout(host, [](const LayoutFile& l) { return l.Int("source") == 1 && l.Int("settings") == 0; }));
+    MoveAway(host);
+    CheckShot("S4 other app", Shoot(host, (prefix + "-other-app").c_str()), true);
+}
+
+void ScriptShot1(Host& host, const std::string& name) {
+    const bool ready = WaitLayout(host, [](const LayoutFile& l) { return l.Int("drawn") == 1 && l.Has("next"); });
+    Check("S0 the panel opens and reports its layout", ready);
+    if (!ready) return;
+    MoveAway(host);
+    CheckShot(("S5 " + name).c_str(), Shoot(host, name.c_str()), true);
+}
+
+void ScriptResize(Host& host) {
+    const bool ready = WaitLayout(host, [](const LayoutFile& l) { return l.Int("drawn") == 1 && l.Has("row0"); });
+    Check("R0 the panel and its list are drawn", ready);
+    if (!ready) return;
+    const UINT sizes[4][2] = {{1920, 1080}, {3840, 2160}, {1280, 720}, {2558, 1360}};
+    for (const auto& size : sizes) {
+        Pump(host, 2);
+        ReleaseBackBuffer(host);
+        const HRESULT hr = host.chain->ResizeBuffers(kGameLayout.buffers, size[0], size[1], DXGI_FORMAT_UNKNOWN, 0);
+        char name[128];
+        snprintf(name, sizeof(name), "R1 ResizeBuffers to %ux%u with the panel drawing (0x%08lx)", size[0], size[1],
+                 static_cast<unsigned long>(hr));
+        const bool resized = SUCCEEDED(hr) && AcquireBackBuffer(host);
+        Check(name, resized);
+        if (!resized) return;
+        Pump(host, 8);
+        char shot[64];
+        snprintf(shot, sizeof(shot), "resize-%ux%u", size[0], size[1]);
+        const ShotResult result = Shoot(host, shot);
+        snprintf(name, sizeof(name), "R2 at %ux%u", size[0], size[1]);
+        CheckShot(name, result, true);
+        Check("R2 the screenshot has the new size", result.width == size[0] && result.height == size[1]);
+    }
+}
+
+void ScriptFault(Host& host) {
+    const bool ready = WaitLayout(host, [](const LayoutFile& l) { return l.Int("drawn") == 1 && l.Has("next"); });
+    Check("F0 the panel is drawn before the fault", ready);
+    if (!ready) return;
+    const POINT next = Item("next");
+    Pump(host, 120);   // the fault is scheduled for panel frame 60
+    CheckShot("F1 after the fault", Shoot(host, "after-fault"), false);
+    Check("F2 the game's pipeline state was intact after every frame, the faulting one included", g_stateFailures == 0);
+    ReleaseBackBuffer(host);
+    const HRESULT hr = host.chain->ResizeBuffers(kGameLayout.buffers, 1920, 1080, DXGI_FORMAT_UNKNOWN, 0);
+    printf("  ResizeBuffers after the panel fault: 0x%08lx\n", static_cast<unsigned long>(hr));
+    Check("F3 ResizeBuffers succeeds after the panel fault (no back-buffer reference leaked)", SUCCEEDED(hr));
+    if (SUCCEEDED(hr)) AcquireBackBuffer(host);
+    const int insertDown = g_gotKeyDown[VK_INSERT].load();
+    const int lDown = g_gotLDown.load();
+    Key(host, VK_INSERT);
+    Click(host, next);
+    Check("F4 after the fault the game gets every key and click again (Insert and a click on the old panel spot)",
+          g_gotKeyDown[VK_INSERT].load() == insertDown + 1 && g_gotLDown.load() == lDown + 1);
+}
+
+void ScriptDisplay(Host& host) {
+    const bool ready = WaitLayout(host, [](const LayoutFile& l) { return l.Int("drawn") == 1 && l.Has("next"); });
+    Check("D0 display mode: the panel is drawn without being asked", ready);
+    if (!ready) return;
+    CheckShot("D1 display mode", Shoot(host, "display-mode"), true);
+    const LayoutFile layout = ReadLayout();
+    const int insertDown = g_gotKeyDown[VK_INSERT].load();
+    const int lDown = g_gotLDown.load();
+    Key(host, VK_INSERT);
+    Click(host, Item("next"));
+    Check("D2 display mode takes nothing from the game (Insert and a click on the panel reach it)",
+          layout.Int("enabled") == 0 && g_gotKeyDown[VK_INSERT].load() == insertDown + 1 && g_gotLDown.load() == lDown + 1);
+}
+
+void RunPanel(Host& host, const char* outputFolder, int seconds, const char* script, const char* name) {
+    host.chain = CreateChain(host, host.window, kGameLayout);
+    if (!host.chain || !AcquireBackBuffer(host) || !CreateGameState(host)) {
+        g_allPassed = false;
+        return;
+    }
+    host.format = kGameLayout.format;
+    g_clearColour = kPanelClearColour;
+    wchar_t folder[MAX_PATH];
+    MultiByteToWideChar(CP_ACP, 0, outputFolder, -1, folder, MAX_PATH);
+    g_screensFolder = std::wstring(folder) + L"\\screens";
+    CreateDirectoryW(g_screensFolder.c_str(), nullptr);
+    if (!PanelReady(host, seconds)) {
+        Check("the panel started (test-layout.txt appeared)", false);
+    } else {
+        const std::string what = script;
+        if (what == "shots") ScriptShots(host, name ? name : "panel");
+        else if (what == "shot1") ScriptShot1(host, name ? name : "panel");
+        else if (what == "resize") ScriptResize(host);
+        else if (what == "fault") ScriptFault(host);
+        else if (what == "display") ScriptDisplay(host);
+        else Check("known panel script", false);
+    }
+    printf("  game pipeline state checked after %d presents, %d differed\n", g_stateChecks, g_stateFailures);
+    if (strcmp(script, "fault") != 0) {
+        Check("P1 the game's pipeline state is unchanged after every present with the panel", g_stateFailures == 0);
+    }
+    ReleaseBackBuffer(host);
+}
+
 DWORD WINAPI RenderThread(LPVOID param) {
     auto* job = static_cast<RenderJob*>(param);
     Host& host = *job->host;
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);   // PNG writing (Windows Imaging Component)
     if (CreateDeviceAndFactory(host)) {
-        if (strcmp(job->mode, "game") == 0) {
+        if (strcmp(job->mode, "panel") == 0) {
+            RunPanel(host, job->outputFolder, job->seconds, job->script, job->name);
+        } else if (strcmp(job->mode, "game") == 0) {
             RunGameChecks(host, job->outputFolder, job->seconds);
         } else if (strcmp(job->mode, "legacy") == 0) {
             RunLegacyCheck(host, job->seconds);
@@ -615,13 +1263,13 @@ int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     SetConsoleOutputCP(CP_UTF8);
     if (argc < 3) {
-        printf("usage: testhost.exe <game|legacy|quick> <output folder> [seconds]\n"
+        printf("usage: testhost.exe <game|legacy|quick|panel> <output folder> [seconds] [panel script] [name]\n"
                "       testhost.exe media <output folder> <seconds> <scenario>\n");
         return 2;
     }
     const char* mode = argv[1];
     if (strcmp(mode, "game") != 0 && strcmp(mode, "legacy") != 0 && strcmp(mode, "quick") != 0 &&
-        strcmp(mode, "media") != 0) {
+        strcmp(mode, "media") != 0 && strcmp(mode, "panel") != 0) {
         printf("unknown mode %s\n", mode);
         return 2;
     }
@@ -635,7 +1283,7 @@ int main(int argc, char** argv) {
     }
 
     WNDCLASSEXW windowClass = {sizeof(windowClass)};
-    windowClass.lpfnWndProc = DefWindowProcW;
+    windowClass.lpfnWndProc = HostWndProc;   // counts what reaches "the game" past the mod's window procedure
     windowClass.hInstance = GetModuleHandleW(nullptr);
     windowClass.lpszClassName = L"RacingMasterModTestHost";
     RegisterClassExW(&windowClass);
@@ -648,7 +1296,7 @@ int main(int argc, char** argv) {
 
     // Direct3D runs on a worker thread, as the engine's render thread does; this thread owns the
     // windows and pumps their messages.
-    RenderJob job = {&host, mode, argv[2], seconds, 0};
+    RenderJob job = {&host, mode, argv[2], seconds, argc > 4 ? argv[4] : "", argc > 5 ? argv[5] : nullptr, 0};
     const HANDLE thread = CreateThread(nullptr, 0, RenderThread, &job, 0, nullptr);
     while (!job.done) {
         MSG message;

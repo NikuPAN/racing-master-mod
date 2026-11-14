@@ -213,10 +213,12 @@ $hostFlags = @('/nologo', '/c', '/std:c++20', '/O2', '/W4', '/WX', '/EHsc', '/MT
 $hostObject = Join-Path $obj 'testhost.obj'
 Invoke-Tool $cl ($hostFlags + @("/Fo$hostObject", (Join-Path $root 'tools\testhost\testhost.cpp')))
 # The silent fake media player for the remote-control tests (runtimeobject.lib and shell32.lib
-# come in through #pragma comment in fake_player.cpp).
+# come in through #pragma comment in fake_player.cpp). The panel's screenshots need
+# windowscodecs and ole32, its pipeline-state check d3dcompiler.
 $fakeObject = Join-Path $obj 'fake_player.obj'
 Invoke-Tool $cl ($hostFlags + @("/Fo$fakeObject", (Join-Path $root 'tools\testhost\fake_player.cpp')))
-Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'testhost.exe')", '/SUBSYSTEM:CONSOLE', $hostObject, $fakeObject)
+Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'testhost.exe')", '/SUBSYSTEM:CONSOLE', $hostObject, $fakeObject,
+    'd3dcompiler.lib', 'windowscodecs.lib', 'ole32.lib')
 
 $bystanderObject = Join-Path $obj 'bystander.obj'
 Invoke-Tool $cl ($hostFlags + @("/Fo$bystanderObject", (Join-Path $root 'tools\testhost\bystander.cpp')))
