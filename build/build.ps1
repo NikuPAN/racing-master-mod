@@ -329,7 +329,8 @@ Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'bystander.exe')", '/SUBSY
 # One file per area of the engine; each registers its own cases (see musictest.h).
 $musicTestSources = @(
     'tools\testhost\musictest.cpp',
-    'tools\testhost\musictest_text.cpp'
+    'tools\testhost\musictest_text.cpp',
+    'tools\testhost\musictest_logic.cpp'
 )
 $musicTestObjects = Build-Objects $musicTestSources ($musicIncludes + @("/I$(Join-Path $root 'src')", "/I$(Join-Path $vorbisDir 'include')"))
 $engineObjects = @($musicObjects | Where-Object { [IO.Path]::GetFileName($_) -ne 'link_anchor.obj' })

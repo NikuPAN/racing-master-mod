@@ -11,3 +11,4 @@ One fact per file. Machine-specific notes live in `local/` (gitignored).
 - [media-remote-design.md](media-remote-design.md) — how src/remote controls other music apps, and the choices that must not be undone
 - [media-remote-tests.md](media-remote-tests.md) — the silent fake player, the test guard, the media scenarios and their side effect on the PC
 - [media-remote-elevated-game.md](media-remote-elevated-game.md) — open question: media sessions from the elevated game, and the log lines that answer it
+- [music-engine-playlist-table.md](music-engine-playlist-table.md) — the 50-row playlist state machine table and where each row is tested
