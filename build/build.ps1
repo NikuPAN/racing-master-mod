@@ -14,7 +14,11 @@
 #      the same reason; calling one of their functions directly would fail this gate.
 #   2. No "%ls" under src\: log lines are UTF-8 and wide strings go through LogUtf8().
 #
-# The music panel (src\ui) uses Dear ImGui (.deps\imgui-1.93.0, fetched by fetch-deps.ps1).
+# The music panel (src\ui) uses Dear ImGui (.deps\imgui-1.93.0, fetched by fetch-deps.ps1). While
+# the music module is not in the tree (no src\music\player.h), the panel is built with
+# RMM_UI_STANDALONE: a stand-in music player with an example list and no sound
+# (src\ui\standalone\stubs.cpp). The media remote (src\remote) is always the real one. The
+# script prints which kind of build it made.
 
 $ErrorActionPreference = 'Stop'
 
@@ -102,11 +106,16 @@ $imgui = Join-Path $root '.deps\imgui-1.93.0'
 if (-not (Test-Path (Join-Path $imgui 'imgui.h'))) {
     throw "Dear ImGui is missing from $imgui. Run build\fetch-deps.ps1."
 }
+$uiStandalone = -not (Test-Path (Join-Path $root 'src\music\player.h'))
+if (-not $uiStandalone) {
+    throw 'src\music\player.h exists: the real music module is in the tree. Add its sources to $uiSources below and remove this stop; see CLAUDE.md, "Integrating the music panel".'
+}
 $uiFlags = @('/nologo', '/c', '/std:c++20', '/O2', '/W4', '/WX', '/EHsc', '/GR-', '/MT', '/GS', '/guard:cf',
              '/Zi', "/Fd$(Join-Path $obj 'vc.pdb')",
              '/DUNICODE', '/D_UNICODE', '/DWIN32_LEAN_AND_MEAN', '/DNOMINMAX', '/D_CRT_SECURE_NO_WARNINGS',
              '/utf-8', '/DIMGUI_USER_CONFIG=<imconfig_mod.h>',
              "/I$(Join-Path $root 'src\ui')", "/I$imgui", "/I$(Join-Path $imgui 'backends')")
+if ($uiStandalone) { $uiFlags += '/DRMM_UI_STANDALONE' }
 
 # --- version.dll ----------------------------------------------------------------------------------
 $sources = @(
@@ -134,6 +143,7 @@ $uiSources = @(
     (Join-Path $imgui 'backends\imgui_impl_dx11.cpp'),
     (Join-Path $root 'src\ui\imgui_errors.cpp')
 )
+if ($uiStandalone) { $uiSources += (Join-Path $root 'src\ui\standalone\stubs.cpp') }
 foreach ($source in $uiSources) {
     $object = Join-Path $obj ([IO.Path]::GetFileNameWithoutExtension($source) + '.obj')
     Invoke-Tool $cl ($uiFlags + @("/Fo$object", $source))
@@ -201,6 +211,9 @@ Invoke-Tool $cl ($hostFlags + @("/Fo$bystanderObject", (Join-Path $root 'tools\t
 Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'bystander.exe')", '/SUBSYSTEM:CONSOLE', $bystanderObject)
 
 Write-Host ''
+if ($uiStandalone) {
+    Write-Host 'Music panel: STANDALONE build (stand-in music player with an example list, no sound; src\music is not in the tree)'
+}
 Write-Host "Built: $dll"
 Write-Host "Built: $(Join-Path $out 'testhost.exe')"
 Write-Host "Built: $(Join-Path $out 'bystander.exe')"
