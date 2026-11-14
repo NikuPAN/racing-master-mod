@@ -12,9 +12,12 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   real `version.dll` functions, wakes up only inside `g112-Win64-Shipping.exe`, hooks
   `IDXGISwapChain::Present`/`Present1`, draws a marker square for 20 s and writes
   `%LOCALAPPDATA%\RacingMasterMod\mod.log`.
-- **Not yet verified:** that the real game loads it and stays online. This is the gate for
-  everything else. The owner runs that test in person on a throwaway account.
-- **Not started:** music panel, DLSS.
+- **Verified in the real game (2026-11-14, throwaway account):** the game loads the DLL, the
+  launcher leaves the file in place, the marker shows on the login screen, the hook reports
+  about 60 fps. Swap chain: 2558x1360, DXGI format 24 (R10G10B10A2_UNORM), 2 buffers, swap
+  effect 4 (FLIP_DISCARD), windowed. The game's own log shows no reaction. This does not rule
+  out a ban issued later.
+- **In design:** music panel and DLSS (verified design briefs are being written).
 
 ## Order of work
 

@@ -20,6 +20,13 @@ The owner's choices, made with the trade-offs in front of them:
 6. **Repository:** private under the owner's GitHub account first, public later; MIT; README in
    English and Traditional Chinese.
 
+7. **Panel key: Insert.** Free in the game's bindings (Tab, F11, BackSpace and Delete are
+   taken). Must stay changeable in the settings file.
+8. **Panel layout: a compact bar in a corner, playlist on demand.** One row for source and
+   current track, one for previous / play-pause / stop / next, loop mode and volume, one for
+   the seek line and a button that drops the playlist down with "Add files" and "Add folder".
+   The larger always-open window was turned down because it covers more of the game.
+
 Conditions I attached and the owner accepted by choosing option 2:
 
 - First test on a throwaway account.
