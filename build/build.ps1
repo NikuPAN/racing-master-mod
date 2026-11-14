@@ -49,7 +49,10 @@ $env:INCLUDE = @(
     (Join-Path $crt 'include'),
     (Join-Path $sdkInclude.FullName 'ucrt'),
     (Join-Path $sdkInclude.FullName 'um'),
-    (Join-Path $sdkInclude.FullName 'shared')
+    (Join-Path $sdkInclude.FullName 'shared'),
+    # Raw WinRT ABI headers (windows.media.control.h) for src\remote. Not cppwinrt: C++/WinRT
+    # needs C++ exceptions, and the mod is built without them.
+    (Join-Path $sdkInclude.FullName 'winrt')
 ) -join ';'
 $env:LIB = @(
     (Join-Path $crt 'lib\x64'),
@@ -96,7 +99,8 @@ $sources = @(
     'src\core\vtable_patch.cpp',
     'src\core\dxgi_probe.cpp',
     'src\core\present_hook.cpp',
-    'src\core\worker.cpp'
+    'src\core\worker.cpp',
+    'src\remote\remote.cpp'
 )
 $objects = @()
 foreach ($source in $sources) {
