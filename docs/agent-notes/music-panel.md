@@ -80,6 +80,10 @@ remote against the silent fake player; every panel run checks the music shutdown
 closes. After the integration review: a slider drag let go outside the game window (its release
 went to another window) ends at the next mouse message, whose button flags show nothing held
 (run 38, I19-I21; before the fix the volume followed the cursor and the next click was the panel's).
+Two quick F9 presses step the repeat mode twice (I22): the panel remembers what it last asked for
+(`Pending` in `panel.cpp`) until the engine shows it, at most 1.5 s. The same is done for the
+repeat button and F7 with "Other app"; that path is not covered by a double-press test (the
+example app answers at once, and run 41 sends single presses).
 
 ## Not verified (needs the real game, or not testable here)
 

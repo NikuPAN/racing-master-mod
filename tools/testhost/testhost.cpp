@@ -1238,6 +1238,18 @@ void ScriptInput(Host& host) {
     Key(host, VK_F9);
     Check("I7 F9 changes what repeats",
           WaitLayout(host, [&](const LayoutFile& l) { return l.Int("loop") == (loop + 1) % 3; }));
+    // Two presses before the engine has published its new state: both must count.
+    const int loopBefore = ReadLayout().Int("loop");
+    PostKey(host, VK_F9, true);
+    PostKey(host, VK_F9, false);
+    PostKey(host, VK_F9, true);
+    PostKey(host, VK_F9, false);
+    Sync(host);
+    const bool reached = WaitLayout(host, [&](const LayoutFile& l) { return l.Int("loop") == (loopBefore + 2) % 3; });
+    Pump(host, 20);   // and it stays there
+    printf("  repeat mode before %d, after two quick F9 presses %d\n", loopBefore, ReadLayout().Int("loop"));
+    Check("I22 F9 pressed twice quickly steps what repeats twice",
+          reached && ReadLayout().Int("loop") == (loopBefore + 2) % 3);
     Key(host, VK_F7);   // back to playing, so Stop has something to stop
     Key(host, VK_F5);
     Check("I7 F5 stops", WaitLayout(host, [](const LayoutFile& l) { return l.Int("state") == 0; }));

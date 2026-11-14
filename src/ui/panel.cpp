@@ -290,6 +290,46 @@ remote::Repeat NextRepeat(remote::Repeat repeat) {
     }
 }
 
+// What the panel last asked for, until the engine or the other app shows it. Two presses of F9
+// (or of the repeat button) before the new state is published would otherwise both start from
+// the old one, and the second press would be lost; the same for F7 with "Other app", which
+// decides between play and pause from what the app last reported. A request the app never
+// carries out is dropped after 1.5 s, and the panel follows what is shown again. Frame thread only.
+struct Pending {
+    int target = -1;   // the requested value; -1 = nothing pending
+    ULONGLONG until = 0;
+
+    int Effective(int shown) {
+        if (target >= 0 && (shown == target || GetTickCount64() >= until)) {
+            target = -1;
+        }
+        return target >= 0 ? target : shown;
+    }
+    void Set(int value) {
+        target = value;
+        until = GetTickCount64() + 1500;
+    }
+};
+Pending g_pendingLoop;      // My files: music::LoopMode
+Pending g_pendingRepeat;    // Other app: remote::Repeat
+Pending g_pendingPlaying;   // Other app: 1 playing, 0 not
+
+music::LoopMode EffectiveLoop(const music::Snapshot& snapshot) {
+    return static_cast<music::LoopMode>(g_pendingLoop.Effective(static_cast<int>(snapshot.loop)));
+}
+
+remote::Repeat EffectiveRepeat(const remote::Snapshot& snapshot) {
+    return static_cast<remote::Repeat>(g_pendingRepeat.Effective(static_cast<int>(snapshot.repeat)));
+}
+
+// My files: the next repeat mode after what was last asked for, asked for now.
+music::LoopMode StepLoop(const music::Snapshot& snapshot) {
+    const music::LoopMode next = NextLoop(EffectiveLoop(snapshot));
+    g_pendingLoop.Set(static_cast<int>(next));
+    music::Player::Get().SetLoop(next);
+    return next;
+}
+
 // The calls the panel makes on "Other app", all through other_app (the real remote in the game).
 struct OtherAppCalls {
     void Play() { other_app::Play(); }
@@ -297,7 +337,18 @@ struct OtherAppCalls {
     void Stop() { other_app::Stop(); }
     void Next() { other_app::Next(); }
     void Previous() { other_app::Previous(); }
-    void SetRepeat(remote::Repeat repeat) { other_app::SetRepeat(repeat); }
+    // Play or pause, remembered until the app shows it (see Pending).
+    void PlayOrPause(bool pause) {
+        g_pendingPlaying.Set(pause ? 0 : 1);
+        if (pause) other_app::Pause(); else other_app::Play();
+    }
+    // The next repeat mode after what was last asked for. Returns it.
+    remote::Repeat StepRepeat(const remote::Snapshot& snapshot) {
+        const remote::Repeat next = NextRepeat(EffectiveRepeat(snapshot));
+        g_pendingRepeat.Set(static_cast<int>(next));
+        other_app::SetRepeat(next);
+        return next;
+    }
 };
 
 // The remote's status line in the panel's language, with the app's name put in; empty when the
@@ -326,7 +377,8 @@ const char* RemoteMessageLine(const remote::Snapshot& snapshot, char* buffer, in
 
 struct RemoteView {
     bool session;
-    bool playing;
+    bool playing;       // as the app reports
+    bool wantPlaying;   // as last asked for (play or pause) until the app shows it, else `playing`
     char reason[256];   // why a control the app refuses is greyed out
 };
 
@@ -334,6 +386,7 @@ RemoteView ViewOf(const remote::Snapshot& snapshot) {
     RemoteView view = {};
     view.session = snapshot.available && snapshot.status != remote::Status::NoSession;
     view.playing = snapshot.status == remote::Status::Playing;
+    view.wantPlaying = g_pendingPlaying.Effective(view.playing ? 1 : 0) == 1;
     if (!view.session) {
         strcpy_s(view.reason, S().reasonNoApp);
     } else if (snapshot.app.empty()) {
@@ -534,8 +587,8 @@ void ControlsMyFiles(const music::Snapshot& snapshot, float width, bool displayO
     if (IconButton("##next", Icon::Next, any, s.next, reason)) player.Next();
     Mark("next");
     ImGui::SameLine();
-    if (LoopButton(LoopLabel(snapshot.loop), !displayOnly, s.loopHint, s.reasonDisplayOnly)) {
-        player.SetLoop(NextLoop(snapshot.loop));
+    if (LoopButton(LoopLabel(EffectiveLoop(snapshot)), !displayOnly, s.loopHint, s.reasonDisplayOnly)) {
+        StepLoop(snapshot);
     }
     ImGui::SameLine();
     // A fixed width (150 units, about 150 px at 1080p with medium text), at the right end of the
@@ -570,10 +623,10 @@ void ControlsOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, 
     if (IconButton("##previous", Icon::Previous, live && c.previous, s.previous, reason)) app.Previous();
     Mark("previous");
     ImGui::SameLine();
-    const bool canToggle = live && (view.playing ? c.pause : c.play);
-    if (IconButton("##play_pause", view.playing ? Icon::Pause : Icon::Play, canToggle, view.playing ? s.pause : s.play,
-                   reason)) {
-        if (view.playing) app.Pause(); else app.Play();
+    const bool canToggle = live && (view.wantPlaying ? c.pause : c.play);
+    if (IconButton("##play_pause", view.wantPlaying ? Icon::Pause : Icon::Play, canToggle,
+                   view.wantPlaying ? s.pause : s.play, reason)) {
+        app.PlayOrPause(view.wantPlaying);
     }
     Mark("play_pause");
     ImGui::SameLine();
@@ -583,13 +636,14 @@ void ControlsOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, 
     if (IconButton("##next", Icon::Next, live && c.next, s.next, reason)) app.Next();
     Mark("next");
     ImGui::SameLine();
-    const bool unknown = snapshot.repeat == remote::Repeat::Unknown;
+    const remote::Repeat repeat = EffectiveRepeat(snapshot);
+    const bool unknown = repeat == remote::Repeat::Unknown;
     const bool canRepeat = live && c.repeat;
     // Greyed: what the app does not allow, and (when it does not say) that it does not say; never
     // "click to change".
     const char* repeatHint = canRepeat ? (unknown ? s.loopUnknownHint : s.loopHint) : (unknown ? s.loopUnknownInfo : nullptr);
-    if (LoopButton(RepeatLabel(snapshot.repeat), canRepeat, repeatHint, reason)) {
-        app.SetRepeat(NextRepeat(snapshot.repeat));
+    if (LoopButton(RepeatLabel(repeat), canRepeat, repeatHint, reason)) {
+        app.StepRepeat(snapshot);
     }
     // No volume here: another app's volume is set in that app.
     (void)width;
@@ -968,8 +1022,7 @@ void RunMusicCommand(Command command) {
             case Command::PlayPause: player.TogglePlayPause(); break;
             case Command::Next: player.Next(); break;
             case Command::LoopMode: {
-                const music::LoopMode next = NextLoop(snapshot.loop);
-                player.SetLoop(next);
+                const music::LoopMode next = StepLoop(snapshot);
                 if (!open) ShowToast(LoopLabel(next));
                 break;
             }
@@ -985,7 +1038,7 @@ void RunMusicCommand(Command command) {
     switch (command) {
         case Command::Stop: allowed = c.stop; break;
         case Command::Previous: allowed = c.previous; break;
-        case Command::PlayPause: allowed = view.playing ? c.pause : c.play; break;
+        case Command::PlayPause: allowed = view.wantPlaying ? c.pause : c.play; break;
         case Command::Next: allowed = c.next; break;
         case Command::LoopMode: allowed = c.repeat; break;
         default: break;
@@ -997,11 +1050,10 @@ void RunMusicCommand(Command command) {
     switch (command) {
         case Command::Stop: app.Stop(); break;
         case Command::Previous: app.Previous(); break;
-        case Command::PlayPause: if (view.playing) app.Pause(); else app.Play(); break;
+        case Command::PlayPause: app.PlayOrPause(view.wantPlaying); break;
         case Command::Next: app.Next(); break;
         case Command::LoopMode: {
-            const remote::Repeat next = NextRepeat(snapshot.repeat);
-            app.SetRepeat(next);
+            const remote::Repeat next = app.StepRepeat(snapshot);
             if (!open) ShowToast(RepeatLabel(next));
             break;
         }
