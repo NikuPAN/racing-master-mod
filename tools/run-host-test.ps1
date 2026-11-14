@@ -433,6 +433,10 @@ try {
     $panelRun = Invoke-PanelRun 'panel input' 'input' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_TEXT_FIELD = '1' } @()
     Record 'panel input: the music engine and the other app were told what the keys and clicks asked for' ($panelRun.Log.Contains('test app: pause') -and -not $panelRun.Log.Contains('test app: next') -and -not $panelRun.Log.Contains('test app: stop') -and $panelRun.Log.Contains('music: started 02 Beta') -and $panelRun.Log.Contains('music: file dialog suppressed (test mode)') -and $panelRun.Log.Contains('panel: settings saved to'))
     Record 'panel input: the music engine played through the null device only (no sound card opened)' ($panelRun.Log.Contains('music: output opened (null') -and -not $panelRun.Log.Contains('output opened (shared mode'))
+    # The panel ([panel] values) and the music engine ([music] section) both rewrite settings.ini
+    # during this run; neither may undo the other's lines.
+    $inputIni = [IO.File]::ReadAllText((Join-Path $work 'lad-panel-panel-input\RacingMasterMod\settings.ini'), [Text.Encoding]::UTF8)
+    Record 'panel input: settings.ini keeps the panel''s and the music engine''s values side by side' ($inputIni.Contains('marker_seconds=0') -and $inputIni.Contains('[panel]') -and $inputIni.Contains('language=en') -and $inputIni.Contains('source=my_files') -and $inputIni.Contains('[music]') -and $inputIni -match 'volume=\d+')
     Record 'panel input: the worker logged the music player start with the full path of the music folder' ($panelRun.Log.Contains('music: the player for your own songs has started; songs copied into ' + (Join-Path $work 'lad-panel-panel-input\RacingMasterMod\music') + ' are added at every start'))
 
     # --- integration ------------------------------------------------------------------------------

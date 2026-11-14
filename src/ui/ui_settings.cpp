@@ -1,6 +1,7 @@
 #include "ui_settings.h"
 
 #include "../core/log.h"
+#include "../core/settings_file_lock.h"
 
 #include <windows.h>
 
@@ -150,22 +151,17 @@ void MergePanelKeys(const char* text, uint32_t packed, char* out, int outSize) {
     }
 }
 
-void WriteSettings(uint32_t packed) {
-    const wchar_t* path = UserSettingsPath();
-    if (path[0] == L'\0') {
-        Log("panel: the panel's settings cannot be saved because the settings folder is unknown");
-        return;
-    }
-    char path8[MAX_PATH * 3];
-    LogUtf8(path, path8, sizeof(path8));
+enum class SaveResult { Saved, Unreadable, NotCreated, NotWritten };
+
+// Reads, merges and replaces the file. Runs under the settings file lock (the music engine
+// rewrites its [music] section in the same file), so it does not log; the caller does.
+SaveResult ReplaceSettingsFile(const wchar_t* path, uint32_t packed, DWORD* error) {
     static char text[16384];
     static char merged[16384 + 512];
-    DWORD error = 0;
     bool bom = false;
-    const IniFileState state = LoadIniFileText(path, text, sizeof(text), &error, &bom);
+    const IniFileState state = LoadIniFileText(path, text, sizeof(text), error, &bom);
     if (state == IniFileState::Unreadable) {
-        Log("panel: the panel's settings were not saved because %s could not be read (error %lu)", path8, error);
-        return;
+        return SaveResult::Unreadable;
     }
     if (state == IniFileState::Missing) {
         text[0] = '\0';
@@ -181,9 +177,8 @@ void WriteSettings(uint32_t packed) {
     lstrcatW(temporary, L".new");
     const HANDLE file = CreateFileW(temporary, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) {
-        Log("panel: the panel's settings were not saved because a new copy of %s could not be created (error %lu)",
-            path8, GetLastError());
-        return;
+        *error = GetLastError();
+        return SaveResult::NotCreated;
     }
     DWORD writtenBytes = 0;
     bool ok = true;
@@ -198,11 +193,42 @@ void WriteSettings(uint32_t packed) {
         ok = MoveFileExW(temporary, path, MOVEFILE_REPLACE_EXISTING) != FALSE;
     }
     if (!ok) {
-        Log("panel: the panel's settings were not saved to %s (error %lu)", path8, GetLastError());
+        *error = GetLastError();
         DeleteFileW(temporary);
+        return SaveResult::NotWritten;
+    }
+    return SaveResult::Saved;
+}
+
+void WriteSettings(uint32_t packed) {
+    const wchar_t* path = UserSettingsPath();
+    if (path[0] == L'\0') {
+        Log("panel: the panel's settings cannot be saved because the settings folder is unknown");
         return;
     }
-    Log("panel: settings saved to %s", path8);
+    char path8[MAX_PATH * 3];
+    LogUtf8(path, path8, sizeof(path8));
+    DWORD error = 0;
+    SaveResult result;
+    {
+        const SettingsFileLock lock;
+        result = ReplaceSettingsFile(path, packed, &error);
+    }
+    switch (result) {
+        case SaveResult::Saved:
+            Log("panel: settings saved to %s", path8);
+            break;
+        case SaveResult::Unreadable:
+            Log("panel: the panel's settings were not saved because %s could not be read (error %lu)", path8, error);
+            break;
+        case SaveResult::NotCreated:
+            Log("panel: the panel's settings were not saved because a new copy of %s could not be created (error %lu)",
+                path8, error);
+            break;
+        case SaveResult::NotWritten:
+            Log("panel: the panel's settings were not saved to %s (error %lu)", path8, error);
+            break;
+    }
 }
 
 DWORD WINAPI WriterThread(LPVOID) {

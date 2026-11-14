@@ -19,6 +19,7 @@
 #include "player.h"
 
 #include "../core/log.h"
+#include "../core/settings_file_lock.h"
 #include "atomic_file.h"
 #include "audio_output.h"
 #include "picker.h"
@@ -1518,6 +1519,7 @@ private:
     // Rewrites only the [music] section of settings.ini; the loader's [mod] lines and anything
     // else in the file stay as they are.
     static bool SaveSettings(const std::wstring& path, const MusicSettings& settings, unsigned long* error) {
+        const SettingsFileLock lock;  // the panel rewrites its [panel] lines in the same file
         std::string existing;
         ReadWholeFile(path, &existing, 1u << 20);
         return SaveFileAtomically(path, WriteMusicSection(existing, settings), error);
