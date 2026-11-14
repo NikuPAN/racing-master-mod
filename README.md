@@ -92,6 +92,10 @@ The second command runs the DLL inside a small test program with a window that i
 
 MIT. See [LICENSE](LICENSE).
 
+The in-game panel is drawn with [Dear ImGui](https://github.com/ocornut/imgui) by Omar Cornut
+(MIT). Its licence text is in `.deps\imgui-1.93.0\LICENSE.txt` after `build\fetch-deps.ps1` has
+run, and ships with every release.
+
 ---
 
 ## 繁體中文

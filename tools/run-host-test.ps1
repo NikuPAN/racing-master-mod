@@ -19,7 +19,6 @@
 #  12. settings.ini UTF-16 BE      T13: stage=0 switches the mod off; the log starts with "loaded into"
 #  13. ini without [mod], CR-only  keys before any heading count as [mod]; CR-only line endings split
 #  14. ini under a wrong heading   the log says the file changed nothing and names [mod]
-#
 # Media remote (src\remote), against the silent fake player in testhost.exe media mode. Each run
 # publishes the fake player for a few seconds; while it exists it is Windows' current media
 # session (media keys and the Windows flyout point at it). No command can reach any other
@@ -38,7 +37,19 @@
 #  23. musictest.exe               silent: decoding, playlist logic, gapless, persistence, picker.
 #                                  One check per PASS/FAIL line it prints; SKIPPED lines are listed
 #                                  with their reason and never count as passes.
-#  24. ini with only [music]       the music engine's section is not reported as "changed nothing\"
+#  24. ini with only [music]       the music engine's section is not reported as "changed nothing"
+# Music panel (src\ui), with an example "Other app" inside the mod (no real media session is read
+# or sent anything). Screenshots are copied to out\screens before the temporary folder is removed.
+#  25. [panel] and [keys] values   good values accepted, bad ones refused with a reason, mod keeps running
+#  26. [keys] chosen by the player the panel uses them; an unknown key name keeps the default and says why
+#  27-32. screenshots              English and draft Chinese, small/medium/large text: bar, list,
+#                                  settings row, "Other app"; PNG files with pixel checks
+#  33-34. "Other app" variants     an app that allows everything, and no app at all
+#  35. panel and ResizeBuffers     four sizes with the panel and list drawing
+#  36. fault inside the panel      game state put back, nothing leaked, mouse and keys back to the game
+#  37. [panel] mode=display        drawn, but nothing taken from the game
+#  38. panel input                 clicks, pass-through, hotkeys, Insert, wheel, ClearInputMouse after
+#                                  a gap, drop-down closing, text field, focus, "Other app", heartbeat
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
@@ -110,6 +121,60 @@ function Write-Ini([string]$Path, [string[]]$Lines, [string]$Encoding) {
 }
 
 $flag = @{ RACING_MASTER_MOD_TEST_HOST = '1' }
+
+# A quiet sine tone as a 16-bit mono WAV file (our own content, generated each run). The
+# frequency must divide the sample rate, so one period is a whole number of samples.
+function New-ToneWav([string]$Path, [int]$Frequency, [int]$Seconds) {
+    $rate = 22050
+    $period = [int]($rate / $Frequency)
+    $one = New-Object byte[] ($period * 2)
+    for ($i = 0; $i -lt $period; $i++) {
+        $value = [int][Math]::Round(0.25 * 32767 * [Math]::Sin(2 * [Math]::PI * $i / $period))
+        [BitConverter]::GetBytes([int16]$value).CopyTo($one, $i * 2)
+    }
+    $periods = [int]($rate * $Seconds / $period)
+    $dataBytes = $periods * $one.Length
+    $stream = New-Object IO.MemoryStream
+    $writer = New-Object IO.BinaryWriter($stream)
+    $writer.Write([Text.Encoding]::ASCII.GetBytes('RIFF')); $writer.Write([int](36 + $dataBytes))
+    $writer.Write([Text.Encoding]::ASCII.GetBytes('WAVEfmt ')); $writer.Write([int]16); $writer.Write([int16]1)
+    $writer.Write([int16]1); $writer.Write([int]$rate); $writer.Write([int]($rate * 2)); $writer.Write([int16]2)
+    $writer.Write([int16]16); $writer.Write([Text.Encoding]::ASCII.GetBytes('data')); $writer.Write([int]$dataBytes)
+    for ($p = 0; $p -lt $periods; $p++) { $writer.Write($one) }
+    $writer.Flush()
+    [IO.File]::WriteAllBytes($Path, $stream.ToArray())
+    $writer.Dispose()
+}
+
+# The songs every panel run finds in its music folder, which the real music engine scans at start.
+# Neutral names in several scripts (Traditional Chinese, Japanese, Korean, a character outside the
+# basic plane) and one long title, so the screenshots show how the panel draws them.
+$songs = Join-Path $work 'songs'
+New-Item -ItemType Directory -Force $songs | Out-Null
+$songNames = @(
+    @{ Name = '01 Alpha ' + [string][char]0x6E2C + [string][char]0x8A66 + '.wav'; Hz = 441 },
+    @{ Name = '02 Beta ' + [string][char]0x30C6 + [string][char]0x30B9 + [string][char]0x30C8 + '.wav'; Hz = 630 },
+    @{ Name = '03 Gamma ' + [string][char]0xD14C + [string][char]0xC2A4 + [string][char]0xD2B8 + '.wav'; Hz = 882 },
+    @{ Name = '04 Delta ' + [char]::ConvertFromUtf32(0x2070E) + '.wav'; Hz = 490 },
+    @{ Name = '05 A very long song title that keeps going well past the edge of the panel.wav'; Hz = 735 }
+)
+foreach ($song in $songNames) { New-ToneWav (Join-Path $songs $song.Name) $song.Hz 20 }
+
+# One music panel run (testhost.exe panel ...). marker_seconds=0 so nothing but the panel is on
+# screen; each run is also checked for a Dear ImGui assertion or reported mistake in its log.
+function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashtable]$Environment, [string[]]$Ini) {
+    $logRoot = Join-Path $work ('lad-panel-' + ($Title -replace '[^A-Za-z0-9]+', '-'))
+    Write-Ini (Join-Path $logRoot 'RacingMasterMod\settings.ini') (@('[mod]', 'marker_seconds=0') + $Ini) 'utf8'
+    New-Item -ItemType Directory -Force (Join-Path $logRoot 'RacingMasterMod\music') | Out-Null
+    Copy-Item (Join-Path $songs '*.wav') (Join-Path $logRoot 'RacingMasterMod\music')
+    $arguments = @('panel', $work, '10', $Script)
+    if ($Name) { $arguments += $Name }
+    $result = Invoke-Run $Title (Join-Path $work 'testhost.exe') $arguments ($flag + $Environment) $logRoot
+    $text = Read-Log $result.Log
+    Record "$($Title): host checks pass" ($result.Exit -eq 0)
+    Record "$($Title): no Dear ImGui assertion or reported mistake in the log" (-not ($text -match 'IMGUI ASSERT|reported a mistake'))
+    return @{ Exit = $result.Exit; Log = $text; Lines = $result.Lines }
+}
 $gameFirstFrame = 'first frame: 2558x1360, format 24, buffers 2, swap effect 4, windowed 1, samples 1'
 
 try {
@@ -323,6 +388,50 @@ try {
     $log = Read-Log $run.Log
     Record 'ini with only [music]: no "changed nothing" line, mod on' ($log.Contains('settings: read') -and -not $log.Contains('changed nothing') -and ($run.Lines -match '^marker: found').Count -eq 1)
 
+    # --- music panel ------------------------------------------------------------------------------
+    # 25. [panel] and [keys]: good values are taken, bad ones refused with a reason; the mod runs on.
+    $panelIniRoot = Join-Path $work 'lad-ini-panel'
+    Write-Ini (Join-Path $panelIniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=3', '[panel]', 'language=zh-TW', 'text_size=huge', 'mode=sometimes', 'source=other_app', 'colour=red', '[keys]', 'next=F2', 'jump=F3') 'utf8'
+    $run = Invoke-Run '25. settings.ini with [panel] and [keys] values' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $panelIniRoot
+    $log = Read-Log $run.Log
+    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, display or on') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2, marker for 3 s') -and ($run.Lines -match '^marker: found').Count -eq 1)
+
+    # 27-32. Screenshots: English and the draft Chinese at each text size.
+    foreach ($language in 'en', 'zh-TW') {
+        foreach ($size in 'small', 'medium', 'large') {
+            $prefix = "panel-$language-$size"
+            Invoke-PanelRun "panel screenshots, $language, $size text" 'shots' $prefix @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = $language; RACING_MASTER_MOD_TEXT_SIZE = $size } @() | Out-Null
+        }
+    }
+
+    # 33-34. "Other app": an app that allows everything and reports a timeline, and no app at all.
+    Invoke-PanelRun 'panel, Other app allowing everything' 'shot1' 'panel-en-medium-other-app-full' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_SOURCE = 'other_app'; RACING_MASTER_MOD_TEST_REMOTE = 'full' } @() | Out-Null
+    Invoke-PanelRun 'panel, Other app with nothing playing' 'shot1' 'panel-zh-TW-medium-other-app-none' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'zh-TW'; RACING_MASTER_MOD_SOURCE = 'other_app'; RACING_MASTER_MOD_TEST_REMOTE = 'none' } @() | Out-Null
+
+    # 35. ResizeBuffers while the panel and its list are drawn.
+    # The generated songs (Chinese, Japanese, Korean, CJK Extension B, a long title).
+    Invoke-PanelRun 'panel and ResizeBuffers' 'resize' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LIST = 'open'; RACING_MASTER_MOD_LANG = 'en' } @() | Out-Null
+
+    # 36. A fault inside the panel, between its two state swaps.
+    $panelRun = Invoke-PanelRun 'panel fault' 'fault' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_TEST_PANEL_FAULT = '60' } @()
+    Record 'panel fault: one log line names the exception and the module and says the mod switched itself off' ($panelRun.Log -match 'frame code failed \(exception 0x[0-9A-Fa-f]{8} at .+version\.dll\+0x[0-9a-f]+\) and has switched itself off')
+
+    # 37. [panel] mode=display: drawn, but no window procedure and no keys.
+    $panelRun = Invoke-PanelRun 'panel display mode' 'display' '' @{} @('[panel]', 'mode=display')
+    Record 'panel display mode: the log says so and the game window is not watched' ($panelRun.Log.Contains('mode display only') -and -not $panelRun.Log.Contains('watching the game window'))
+
+    # 26. Keys chosen in [keys]: taken by the panel; an unknown key name keeps the default and says why.
+    $keysRoot = Join-Path $work 'lad-ini-keys'
+    Write-Ini (Join-Path $keysRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=0', '[keys]', 'panel=none', 'next=Ctrl+F2', 'stop=Banana', 'media_keys=0') 'utf8'
+    $run = Invoke-Run '26. settings.ini with keys chosen by the player' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $keysRoot
+    $log = Read-Log $run.Log
+    Record 'keys: the chosen keys are used, an unknown name keeps the default with a reason' ($log.Contains('panel: keys none panel, F5 stop, F6 previous, F7 play or pause, Ctrl+F2 next, F9 repeat; media keys off') -and $log.Contains('"stop=Banana" under [keys] is not a key name the mod knows; the default stays'))
+
+    # 38. Input through the window procedure: clicks, pass-through, hotkeys, Insert and the rest.
+    $panelRun = Invoke-PanelRun 'panel input' 'input' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_TEXT_FIELD = '1' } @()
+    Record 'panel input: the music engine and the other app were told what the keys and clicks asked for' ($panelRun.Log.Contains('test app: pause') -and -not $panelRun.Log.Contains('test app: next') -and -not $panelRun.Log.Contains('test app: stop') -and $panelRun.Log.Contains('music: started 02 Beta') -and $panelRun.Log.Contains('music: file dialog suppressed (test mode)') -and $panelRun.Log.Contains('panel: settings saved to'))
+    Record 'panel input: the music engine played through the null device only (no sound card opened)' ($panelRun.Log.Contains('music: output opened (null') -and -not $panelRun.Log.Contains('output opened (shared mode'))
+
     Write-Host ''
     Write-Host 'Summary'
     foreach ($r in $results) { Write-Host ("  " + $(if ($r.Ok) { 'PASS' } else { 'FAIL' }) + "  $($r.Name)") }
@@ -337,6 +446,14 @@ try {
         Remove-Item "Env:\RACING_MASTER_MOD_TEST_MEDIA_$name" -ErrorAction SilentlyContinue
     }
     $env:LOCALAPPDATA = $realLocalAppData
+    # The panel screenshots outlive the temporary folder (out\ is not committed).
+    $shots = Join-Path $work 'screens'
+    if (Test-Path $shots) {
+        $kept = Join-Path $root 'out\screens'
+        New-Item -ItemType Directory -Force $kept | Out-Null
+        Copy-Item (Join-Path $shots '*.png') $kept -Force
+        Write-Host "Panel screenshots: $kept"
+    }
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }
 if ($failed) { exit 1 } else { exit 0 }

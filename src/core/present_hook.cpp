@@ -5,6 +5,8 @@
 #include "log.h"
 #include "vtable_patch.h"
 
+#include "../ui/overlay.h"
+
 #include <windows.h>
 
 #include <d3d11_1.h>
@@ -152,6 +154,9 @@ void OnFrame(IDXGISwapChain* swapChain, UINT flags, FrameRefs& refs) {
     if (now - g_firstFrameTick < g_markerMs) {
         DrawMarker(swapChain, refs, g_testFaultAtFrame != 0 && frame == static_cast<LONG64>(g_testFaultAtFrame));
     }
+    // The music panel (does nothing when [panel] mode=off). Runs after the marker, which has
+    // already given back everything it held.
+    PanelOnFrame(swapChain, flags, refs);
 }
 
 LONG FrameFaultFilter(EXCEPTION_POINTERS* info) {
@@ -197,10 +202,15 @@ void GuardedOnFrame(IDXGISwapChain* swapChain, UINT flags) {
         OnFrame(swapChain, flags, refs);
     } __except (FrameFaultFilter(GetExceptionInformation())) {
         InterlockedExchange(&g_frameWorkOff, 1);
+        // Order matters: the game's pipeline state goes back on the context first (if the fault
+        // came while the panel's own state was swapped in), then every reference is released,
+        // then the panel hands the mouse and keys back to the game.
+        RestoreGameStateAfterFault(refs);
         __try {
             ReleaseFrameRefs(refs);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
         }
+        PanelOnFault();
         ReportFault();
     }
 }
@@ -234,12 +244,27 @@ HRESULT STDMETHODCALLTYPE HookedPresent1(IDXGISwapChain1* swapChain, UINT syncIn
 }  // namespace
 
 void ReleaseFrameRefs(FrameRefs& refs) {
+    if (refs.gameState) refs.gameState->Release();
     if (refs.target) refs.target->Release();
     if (refs.backBuffer) refs.backBuffer->Release();
     if (refs.context1) refs.context1->Release();
     if (refs.context) refs.context->Release();
     if (refs.device) refs.device->Release();
     refs = FrameRefs{};
+}
+
+void RestoreGameStateAfterFault(FrameRefs& refs) {
+    if (!refs.gameState || !refs.context || !refs.context1) {
+        return;
+    }
+    __try {
+        refs.context->ClearState();   // the panel's state lets go of the back buffer
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+    __try {
+        refs.context1->SwapDeviceContextState(refs.gameState, nullptr);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
 }
 
 bool InstallPresentHook(const PresentHookOptions& options) {

@@ -10,12 +10,16 @@
 #   1. version.dll imports KERNEL32.dll only. Everything else is delay-loaded, so a bystander
 #      program that merely imports version.dll gets no extra DLL loaded. Only the DLLs in
 #      $delayLoads may be delay-loaded, and each of them must actually appear: an empty or
-#      unreadable dump, or a build that lost the music engine, fails instead of passing. The media
-#      remote (src\remote) resolves combase, shell32 and advapi32 with GetProcAddress at run time
-#      for the same reason; calling one of their functions directly would fail this gate.
+#      unreadable dump, or a build that lost the music engine or the panel, fails instead of
+#      passing. The media remote (src\remote) resolves combase, shell32 and advapi32 with
+#      GetProcAddress at run time for the same reason; calling one of their functions directly
+#      would fail this gate.
 #   2. No "%ls" under src\: log lines are UTF-8 and wide strings go through LogUtf8().
 #   3. No start-up constructor (dynamic initialiser) in the mod's own code: anything like that
 #      would run inside every program that loads version.dll, not only inside the game.
+#
+# The music panel (src\ui) uses Dear ImGui (.deps\imgui-1.93.0, fetched by fetch-deps.ps1) and is
+# compiled against the real music engine (src\music\player.h, picker.h) and the real media remote.
 
 $ErrorActionPreference = 'Stop'
 
@@ -231,7 +235,7 @@ $loaderSources = @(
     'src\core\worker.cpp',
     'src\remote\remote.cpp'
 )
-# The music engine. link_anchor.cpp keeps it inside version.dll until the panel calls it (see there).
+# The music engine. link_anchor.cpp keeps it inside version.dll until the loader calls it (see there).
 $musicSources = @(
     'src\music\player.cpp',
     'src\music\audio_output.cpp',
@@ -250,6 +254,33 @@ $musicSources = @(
 $loaderObjects = Build-Objects $loaderSources @()
 $musicObjects = @(Build-Objects $musicSources $musicIncludes)
 
+# The music panel and Dear ImGui. Same flags as the rest of the mod (so the standard library
+# types the panel shares with the engine and the remote are compiled the same way on both sides),
+# plus Dear ImGui's folders. IMGUI_USER_CONFIG selects src\ui\imconfig_mod.h for every file that
+# includes imgui.h (the angle-bracket form needs no quoting through PowerShell). Dear ImGui is
+# third-party code, but it compiles cleanly at /W4 /WX and is kept there.
+$imgui = Join-Path $deps 'imgui-1.93.0'
+if (-not (Test-Path (Join-Path $imgui 'imgui.h'))) {
+    throw "Dear ImGui is missing from $imgui. Run build\fetch-deps.ps1."
+}
+$uiIncludes = @('/DIMGUI_USER_CONFIG=<imconfig_mod.h>', "/I$(Join-Path $root 'src\ui')", "/I$imgui",
+                "/I$(Join-Path $imgui 'backends')")
+$imguiObjects = @(Build-Objects @('.deps\imgui-1.93.0\imgui.cpp', '.deps\imgui-1.93.0\imgui_draw.cpp',
+                                  '.deps\imgui-1.93.0\imgui_tables.cpp', '.deps\imgui-1.93.0\imgui_widgets.cpp',
+                                  '.deps\imgui-1.93.0\backends\imgui_impl_dx11.cpp') $uiIncludes)
+$uiSources = @(
+    'src\ui\imgui_errors.cpp',
+    'src\ui\fonts.cpp',
+    'src\ui\scale.cpp',
+    'src\ui\hotkeys.cpp',
+    'src\ui\input_wndproc.cpp',
+    'src\ui\ui_settings.cpp',
+    'src\ui\other_app.cpp',
+    'src\ui\panel.cpp',
+    'src\ui\overlay.cpp'
+)
+$uiObjects = @(Build-Objects $uiSources $uiIncludes)
+
 $asmObject = Join-Path $obj 'proxy_exports.obj'
 Invoke-Tool $ml64 @('/nologo', '/c', "/Fo$asmObject", (Join-Path $root 'src\loader\proxy_exports.asm'))
 $resObject = Join-Path $obj 'version.res'
@@ -258,25 +289,27 @@ Invoke-Tool $rc @('/nologo', "/fo$resObject", (Join-Path $root 'src\loader\versi
 # /DEBUG writes out\version.pdb so a fault offset from the log can be turned into a source line.
 # /PDBALTPATH keeps the build folder (and the user name in it) out of the published DLL.
 # /OPT:REF /OPT:ICF stay explicit because /DEBUG would otherwise switch them off.
-# Every system DLL beyond kernel32 is delay-loaded: user32 (the frame hook's window checks) and,
-# for the music engine, ole32 (COM), shell32 (file dialog), mfplat and mfreadwrite (M4A/AAC
-# through Media Foundation). They load only when the engine first needs them inside the game; a
-# bystander program that imports version.dll gets none of them. Media Foundation is absent on
-# Windows "N" editions: as a normal import it would stop version.dll, and so the game, from
+# Every system DLL beyond kernel32 is delay-loaded: user32 (the frame hook's window checks and the
+# panel's window procedure), d3dcompiler_47 (the panel's two shaders; the panel loads it by full
+# path from the worker) and, for the music engine, ole32 (COM), shell32 (file dialog), mfplat and
+# mfreadwrite (M4A/AAC through Media Foundation). They load only when first needed inside the
+# game; a bystander program that imports version.dll gets none of them. Media Foundation is absent
+# on Windows "N" editions: as a normal import it would stop version.dll, and so the game, from
 # loading there. Never ship the PDB.
 # The DLL names in the spelling the import dump prints them. Gate 1 below insists on exactly this
 # list, so a new delay-loaded DLL is a conscious change here.
-$delayLoads = @('USER32.dll', 'ole32.dll', 'SHELL32.dll', 'MFPlat.DLL', 'MFReadWrite.dll')
+$delayLoads = @('USER32.dll', 'ole32.dll', 'SHELL32.dll', 'MFPlat.DLL', 'MFReadWrite.dll', 'd3dcompiler_47.dll')
 $musicLibs = @('ole32.lib', 'shell32.lib', 'mfplat.lib', 'mfreadwrite.lib', 'mfuuid.lib', 'propsys.lib')
 # The music engine in the DLL, kept there by link_anchor.cpp (/INCLUDE) until the loader calls it.
 $dllMusic = @('/INCLUDE:MusicEngineLinkAnchor') + $musicLibs + $musicObjects + @($miniaudioObject, $stbObject, $xiphLib)
+$dllPanel = @('d3dcompiler.lib') + $uiObjects + $imguiObjects
 $dll = Join-Path $out 'version.dll'
 Invoke-Tool $link (@('/nologo', '/DLL', "/OUT:$dll",
     "/DEF:$(Join-Path $root 'src\loader\version.def')", "/IMPLIB:$(Join-Path $obj 'version_proxy.lib')",
     '/DEBUG', "/PDB:$(Join-Path $out 'version.pdb')", '/PDBALTPATH:version.pdb', "/MAP:$(Join-Path $out 'version.map')",
     '/OPT:REF', '/OPT:ICF', '/guard:cf', '/DYNAMICBASE', '/NXCOMPAT') +
     ($delayLoads | ForEach-Object { "/DELAYLOAD:$_" }) + @('kernel32.lib', 'user32.lib', 'delayimp.lib') +
-    $loaderObjects + $dllMusic + @($asmObject, $resObject))
+    $loaderObjects + $dllMusic + $dllPanel + @($asmObject, $resObject))
 
 # --- gate 1: static imports are KERNEL32.dll only; delay-loads are the allowed list -------------------
 # link.exe /DUMP is dumpbin; the fetched SDK has no dumpbin.exe of its own.
@@ -306,13 +339,14 @@ if ($unexpected.Count) {
 }
 $missing = @($delayLoads | Where-Object { $delayed -notcontains $_ })
 if ($missing.Count) {
-    throw "version.dll should delay-load $($missing -join ', '), but the import dump lists these delay-loaded DLLs: '$($delayed -join ', ')'. Check the /DELAYLOAD lines and that the music engine is still linked in (link_anchor.cpp)."
+    throw "version.dll should delay-load $($missing -join ', '), but the import dump lists these delay-loaded DLLs: '$($delayed -join ', ')'. Check the /DELAYLOAD lines and that the music engine and the panel are still linked in."
 }
 Write-Host "version.dll static imports: $($eager -join ', '); delay-loaded: $($delayed -join ', ')"
 
 # --- gate 3: no start-up constructors in the mod's own code -------------------------------------------
 # The compiler names a dynamic initialiser "??__E<name>"; the map file lists the object it came from.
-$ownObjects = @($loaderObjects + $musicObjects | ForEach-Object { [IO.Path]::GetFileName($_) })
+# The panel's own files are checked too; Dear ImGui's are not (third-party code).
+$ownObjects = @($loaderObjects + $musicObjects + $uiObjects | ForEach-Object { [IO.Path]::GetFileName($_) })
 $initialisers = @(Get-Content (Join-Path $out 'version.map') | Where-Object { $_ -match '\?\?__E' } |
     Where-Object { $line = $_; $ownObjects | Where-Object { $line -match [regex]::Escape($_) } })
 if ($initialisers.Count) {
@@ -325,10 +359,12 @@ $hostFlags = @('/nologo', '/c', '/std:c++20', '/O2', '/W4', '/WX', '/EHsc', '/MT
 $hostObject = Join-Path $obj 'testhost.obj'
 Invoke-Tool $cl ($hostFlags + @("/Fo$hostObject", (Join-Path $root 'tools\testhost\testhost.cpp')))
 # The silent fake media player for the remote-control tests (runtimeobject.lib and shell32.lib
-# come in through #pragma comment in fake_player.cpp).
+# come in through #pragma comment in fake_player.cpp). The panel's screenshots need
+# windowscodecs and ole32, its pipeline-state check d3dcompiler.
 $fakeObject = Join-Path $obj 'fake_player.obj'
 Invoke-Tool $cl ($hostFlags + @("/Fo$fakeObject", (Join-Path $root 'tools\testhost\fake_player.cpp')))
-Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'testhost.exe')", '/SUBSYSTEM:CONSOLE', $hostObject, $fakeObject)
+Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'testhost.exe')", '/SUBSYSTEM:CONSOLE', $hostObject, $fakeObject,
+    'd3dcompiler.lib', 'windowscodecs.lib', 'ole32.lib')
 
 $bystanderObject = Join-Path $obj 'bystander.obj'
 Invoke-Tool $cl ($hostFlags + @("/Fo$bystanderObject", (Join-Path $root 'tools\testhost\bystander.cpp')))

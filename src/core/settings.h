@@ -2,11 +2,36 @@
 
 #include <windows.h>
 
+// Keys under [keys], in the order the panel's Command enum uses (src/ui/hotkeys.h).
+enum UiKey { UiKeyPanel = 0, UiKeyStop, UiKeyPrevious, UiKeyPlayPause, UiKeyNext, UiKeyLoop, UiKeyCount };
+
+// How much of the panel runs ([panel] mode). Lets the owner introduce the two new behaviours one
+// at a time on a throwaway account: drawing first, then the window procedure (clicks and keys).
+enum UiMode : unsigned {
+    UiModeOff = 0,       // no panel: the loader alone, as in 0.2.0
+    UiModeDisplay = 1,   // the panel is drawn, always open, but cannot be clicked; no keys; the game window is not touched
+    UiModeOn = 2,        // the full panel (default)
+};
+
+// The in-game panel's settings: the [panel] and [keys] sections.
+struct UiSettings {
+    unsigned mode = UiModeOn;
+    unsigned language = 0;            // 0 = follow Windows (auto), 1 = English, 2 = Traditional Chinese
+    unsigned textSize = 1;            // 0 small, 1 medium, 2 large; never pixels
+    bool pauseWhenUnfocused = false;  // pause the music while the game is not the active app
+    unsigned source = 0;              // 0 = the player's own files, 1 = another app's media session
+    unsigned corner = 1;              // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right
+    bool mediaKeys = true;            // react to the keyboard's own media keys (local files only)
+    // The key names as typed; the panel parses them and logs a refused one with the accepted names.
+    char keys[UiKeyCount][32] = {"Insert", "F5", "F6", "F7", "F8", "F9"};
+};
+
 struct Settings {
     // 0 = do nothing, 1 = load and write the log only, 2 = also hook frames and draw the marker.
     unsigned stage = 2;
     // How long the "mod is alive" square stays on screen, 0 to 600 seconds.
     unsigned markerSeconds = 20;
+    UiSettings ui;
 };
 
 // Reads %LOCALAPPDATA%\RacingMasterMod\settings.ini first, then racing-master-mod.ini next to
@@ -16,3 +41,15 @@ struct Settings {
 // read, or a stage value that is not 0, 1 or 2, switches the mod OFF and says why in the log.
 // A file whose lines were all ignored gets a log line saying so. Call after LogOpen().
 Settings ReadSettings(HMODULE self);
+
+// Full path of the per-user settings file (empty when the folder is unknown). Also the file the
+// panel writes its changed [panel] values back to.
+const wchar_t* UserSettingsPath();
+
+enum class IniFileState { Missing, Unreadable, Read };
+
+// Loads a settings file as UTF-8 text (16 KB cap), decoding the byte order marks described
+// above. `text` is only valid when the result is Read. *hadByteOrderMark tells a writer whether
+// to put one back. Uses a static buffer: one caller at a time (the worker at start-up, later
+// only the panel's settings writer thread).
+IniFileState LoadIniFileText(const wchar_t* path, char* text, int textSize, DWORD* error, bool* hadByteOrderMark);

@@ -4,11 +4,13 @@
 #include "present_hook.h"
 #include "settings.h"
 
+#include "../music/player.h"
 #include "../remote/remote.h"
+#include "../ui/overlay.h"
 
 namespace {
 
-constexpr char kVersion[] = "0.2.0 (loader)";
+constexpr char kVersion[] = "0.3.0-dev (loader and music panel)";
 
 HMODULE g_self = nullptr;
 bool g_testHost = false;
@@ -157,6 +159,15 @@ DWORD WINAPI ModThread(LPVOID) {
     }
     if (!g_testHost) {
         Sleep(3000);
+    }
+    // The music panel's start-up work that must not happen on the game's threads (settings,
+    // hotkeys, loading the shader compiler). Before the hook, so the first frame finds it done.
+    PanelStart(settings.ui, g_testHost);
+    // The panel's "My files" is the music engine: without a panel there is no way to control it,
+    // so it starts only with one. It reads the saved list and starts its two threads; no sound
+    // device and no Media Foundation until the first song plays.
+    if (settings.ui.mode != UiModeOff) {
+        music::Player::Get().Start();
     }
 
     PresentHookOptions options;

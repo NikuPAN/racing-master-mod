@@ -1,16 +1,17 @@
 ---
 name: test-host
-description: How tools/run-host-test.ps1 and testhost.exe check the loader without the game, and the three conditions that make a flip-model frame readable
+description: How tools/run-host-test.ps1 and testhost.exe check the loader and the music panel without the game, and the conditions that make a flip-model frame readable
 type: reference
 ---
 
-`tools\run-host-test.ps1` runs 24 hidden programs (runs 15-22 are the media remote, see
-`media-remote-tests.md`; run 23 is the music engine's `musictest.exe`, one check per line it
-prints, see `music-tests.md`) with `LOCALAPPDATA`
+`tools\run-host-test.ps1` runs 38 hidden programs (runs 1-14 the loader, runs 15-22 the media
+remote (see `media-remote-tests.md`), run 23 the music engine's `musictest.exe` with one check
+per line it prints (see `music-tests.md`), runs 25-38 the music panel driving the real engine)
+with `LOCALAPPDATA`
 pointed at its own temp folder, one folder per run, so the real `mod.log` from a game run is
-never archived or overwritten. Runs 7-9, 12-14 and 24 are settings-file cases (UTF-8 BOM, UTF-16
-in both byte orders, bad values, override file, no `[mod]` heading with CR-only line endings, a
-heading other than `[mod]`, only a `[music]` section). `testhost.exe` renders on a worker thread to a window that is
+never archived or overwritten. Runs 7-9, 12-14, 24, 25 and 26 are settings-file cases (UTF-8 BOM,
+UTF-16 in both byte orders, bad values, override file, no `[mod]` heading with CR-only line
+endings, a heading other than `[mod]`, only a `[music]` section, `[panel]` and `[keys]` values). `testhost.exe` renders on a worker thread to a window that is
 never shown; `bystander.exe` is a kernel32-only console program that stands in for the crash
 reporter and other programs that import `version.dll` without being the game.
 
@@ -36,6 +37,38 @@ Pixels are decoded per format: `R10G10B10A2_UNORM` is 10 bits per channel in one
 **Why:** the first version of the host used a layout the game does not use and passed on exit
 code 1 for both "no marker" and "forwarding failed"; the review showed what it did not prove.
 
-**How to apply:** when the panel draws every frame, add a pipeline-state fingerprint (render
-targets, viewport, blend, raster, depth state, shaders, input layout) taken before and after
-`Present`, which must be identical. `ClearView` needs no such check; Dear ImGui does.
+## Music panel runs (25-38)
+
+`testhost.exe panel <folder> <seconds> <script> [name]`, scripts `shots`, `shot1`, `resize`,
+`fault`, `display`, `input`. What they rely on:
+
+4. **The host binds 14 pieces of "game" pipeline state before every Present** (render target on
+   an offscreen texture, rasteriser, viewport, scissor, blend with factor and mask, depth-stencil
+   with reference, topology, a compute shader, samplers in slots 0 and 2, constant buffers) and
+   checks all of them afterwards. This is the fingerprint the panel needs, since the stock DX11
+   backend clears the compute shader and never restores it.
+5. **The mod reports to the host through `test-layout.txt`** (test host only): panel state, the
+   ImGui windows in back-buffer pixels (for "nothing drawn outside the panel"), the hit-test
+   rectangles and widget centres in client coordinates (for the posted clicks). The hidden window's
+   client area (2542x1321) is smaller than the back buffer (2558x1360), so the client-to-buffer
+   scaling path is exercised in every run.
+6. **Every message is posted to the host's own window** and reaches the mod's subclass on the
+   host's main thread; the host's class procedure counts what gets past it ("the game"). A
+   `WM_APP+7` marker message tells the render thread that everything posted before it was handled.
+7. **The screenshot is the flip-model read-back above**: an ordinary Present, then a cleared
+   buffer 0 presented with `DO_NOT_SEQUENCE`. The panel draws on that present too (by design).
+   Pixel checks: over 90 % of the panel's pixels drawn, text pixels present, **zero** pixels
+   changed outside the panel windows (2 px tolerance for antialiased edges). The clear colour is
+   read from the bottom-left corner, which the top-right panel never covers.
+8. **The list scrolls under the wheel test**: the input script scrolls it back before using
+   row and remove-button positions (only the visible rows have widget centres).
+9. **The panel drives the real music engine.** The script generates five quiet 20 s tone WAVs
+   (neutral names in Chinese, Japanese, Korean, a character outside the basic plane, one long
+   title) and copies them into each panel run's `RacingMasterMod\music` folder, which the engine
+   scans at start on its own thread. Scripts that need the list wait for `tracks >= 4` and
+   `scanning 0` in the layout file. The engine plays through miniaudio's null device (it refuses
+   WASAPI whenever the test flag is set), so nothing is heard; the picker prepares the dialog and
+   reports a cancel without showing it.
+
+**How to apply:** a new panel feature gets a step in `ScriptInput` (behaviour) or a shot (look);
+keep every message in-process and every window hidden. Nothing here may use `SendInput`.

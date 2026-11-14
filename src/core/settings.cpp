@@ -10,6 +10,8 @@ namespace {
 constexpr wchar_t kLocalIniName[] = L"settings.ini";
 constexpr wchar_t kDllIniName[] = L"racing-master-mod.ini";
 
+wchar_t g_userSettingsPath[MAX_PATH] = L"";
+
 // "12" -> 12. Anything that is not a plain non-negative number is refused.
 bool ParseNumber(const char* text, unsigned* out) {
     if (*text == '\0') {
@@ -29,6 +31,31 @@ bool ParseNumber(const char* text, unsigned* out) {
     return true;
 }
 
+// "1", "true", "yes", "on" -> true; "0", "false", "no", "off" -> false.
+bool ParseSwitch(const char* text, bool* out) {
+    if (_stricmp(text, "1") == 0 || _stricmp(text, "true") == 0 || _stricmp(text, "yes") == 0 ||
+        _stricmp(text, "on") == 0) {
+        *out = true;
+        return true;
+    }
+    if (_stricmp(text, "0") == 0 || _stricmp(text, "false") == 0 || _stricmp(text, "no") == 0 ||
+        _stricmp(text, "off") == 0) {
+        *out = false;
+        return true;
+    }
+    return false;
+}
+
+// Matches the value against a list of words; returns the index or -1.
+int MatchWord(const char* value, const char* const* words, int count) {
+    for (int i = 0; i < count; ++i) {
+        if (_stricmp(value, words[i]) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 char* Trim(char* text) {
     while (*text == ' ' || *text == '\t') {
         ++text;
@@ -41,50 +68,86 @@ char* Trim(char* text) {
     return text;
 }
 
-enum class FileState { Missing, Unreadable, Read };
+enum class Section { Mod, Panel, Keys, Music, Other };
 
-// Loads the file as UTF-8 text into `text` (16 KB cap). The text buffer is only valid when Read.
-FileState LoadIniText(const wchar_t* path, char* text, int textSize, DWORD* error) {
-    const HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
-                                    FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (file == INVALID_HANDLE_VALUE) {
-        *error = GetLastError();
-        return (*error == ERROR_FILE_NOT_FOUND || *error == ERROR_PATH_NOT_FOUND) ? FileState::Missing
-                                                                                 : FileState::Unreadable;
-    }
-    static char raw[16384];
-    DWORD size = 0;
-    const BOOL readOk = ReadFile(file, raw, sizeof(raw) - 2, &size, nullptr);
-    *error = readOk ? 0 : GetLastError();
-    CloseHandle(file);
-    if (!readOk) {
-        return FileState::Unreadable;
-    }
-    raw[size] = raw[size + 1] = '\0';
-    unsigned char* bytes = reinterpret_cast<unsigned char*>(raw);
-    const bool utf16LittleEndian = size >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE;
-    const bool utf16BigEndian = size >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF;
-    if (utf16LittleEndian || utf16BigEndian) {
-        // UTF-16 with a byte order mark: Notepad's "UTF-16 LE" and "UTF-16 BE" choices. Windows
-        // works in little endian, so a big endian file has each pair of bytes swapped first.
-        if (utf16BigEndian) {
-            for (DWORD i = 2; i + 1 < size; i += 2) {
-                const unsigned char high = bytes[i];
-                bytes[i] = bytes[i + 1];
-                bytes[i + 1] = high;
-            }
+void ApplyPanelKey(const char* key, const char* value, const char* path8, UiSettings* ui) {
+    static const char* const kLanguages[] = {"auto", "en", "zh-TW"};
+    static const char* const kSizes[] = {"small", "medium", "large"};
+    static const char* const kCorners[] = {"top-left", "top-right", "bottom-left", "bottom-right"};
+    static const char* const kModes[] = {"off", "display", "on"};
+    static const char* const kSources[] = {"my_files", "other_app"};
+    if (_stricmp(key, "mode") == 0) {
+        const int index = MatchWord(value, kModes, 3);
+        if (index >= 0) {
+            ui->mode = static_cast<unsigned>(index);
+        } else {
+            Log("settings: \"mode=%s\" is not off, display or on (in %s); the panel stays on", value, path8);
         }
-        const int characters = static_cast<int>((size - 2) / 2);
-        const int converted = WideCharToMultiByte(CP_UTF8, 0, reinterpret_cast<const wchar_t*>(raw + 2), characters,
-                                                  text, textSize - 1, nullptr, nullptr);
-        text[converted > 0 ? converted : 0] = '\0';
+    } else if (_stricmp(key, "source") == 0) {
+        const int index = MatchWord(value, kSources, 2);
+        if (index >= 0) {
+            ui->source = static_cast<unsigned>(index);
+        } else {
+            Log("settings: \"source=%s\" is not my_files or other_app (in %s); using my_files", value, path8);
+        }
+    } else if (_stricmp(key, "language") == 0) {
+        int index = MatchWord(value, kLanguages, 3);
+        if (index < 0 && (_stricmp(value, "zh") == 0 || _stricmp(value, "zh-HK") == 0 || _stricmp(value, "zh-Hant") == 0 ||
+                          _stricmp(value, "zh-MO") == 0)) {
+            index = 2;
+        }
+        if (index >= 0) {
+            ui->language = static_cast<unsigned>(index);
+        } else {
+            Log("settings: \"language=%s\" is not auto, en or zh-TW (in %s); the panel keeps following Windows", value,
+                path8);
+        }
+    } else if (_stricmp(key, "text_size") == 0) {
+        const int index = MatchWord(value, kSizes, 3);
+        if (index >= 0) {
+            ui->textSize = static_cast<unsigned>(index);
+        } else {
+            Log("settings: \"text_size=%s\" is not small, medium or large (in %s); using medium", value, path8);
+        }
+    } else if (_stricmp(key, "pause_when_unfocused") == 0) {
+        if (!ParseSwitch(value, &ui->pauseWhenUnfocused)) {
+            Log("settings: \"pause_when_unfocused=%s\" is not 0 or 1 (in %s); the music keeps playing when the "
+                "game is not in focus",
+                value, path8);
+        }
+    } else if (_stricmp(key, "corner") == 0) {
+        const int index = MatchWord(value, kCorners, 4);
+        if (index >= 0) {
+            ui->corner = static_cast<unsigned>(index);
+        } else {
+            Log("settings: \"corner=%s\" is not top-left, top-right, bottom-left or bottom-right (in %s); using "
+                "top-right",
+                value, path8);
+        }
     } else {
-        const int skip = (size >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) ? 3 : 0;
-        const int length = static_cast<int>(size) - skip;
-        memcpy(text, raw + skip, static_cast<size_t>(length < textSize - 1 ? length : textSize - 1));
-        text[length < textSize - 1 ? length : textSize - 1] = '\0';
+        Log("settings: unknown key \"%s\" under [panel] is ignored (in %s)", key, path8);
     }
-    return FileState::Read;
+}
+
+void ApplyKeysKey(const char* key, const char* value, const char* path8, UiSettings* ui) {
+    static const char* const kActions[UiKeyCount] = {"panel", "stop", "previous", "play_pause", "next", "loop"};
+    const int action = MatchWord(key, kActions, UiKeyCount);
+    if (action >= 0) {
+        if (strlen(value) < sizeof(ui->keys[action])) {
+            // Validated by the panel, which knows the key names and logs a refused one.
+            strcpy_s(ui->keys[action], sizeof(ui->keys[action]), value);
+        } else {
+            Log("settings: \"%s=%s\" is too long to be a key name (in %s); the default key stays", key, value, path8);
+        }
+    } else if (_stricmp(key, "media_keys") == 0) {
+        if (!ParseSwitch(value, &ui->mediaKeys)) {
+            Log("settings: \"media_keys=%s\" is not 0 or 1 (in %s); the keyboard's media keys stay on", value, path8);
+        }
+    } else {
+        Log("settings: unknown key \"%s\" under [keys] is ignored (in %s); the actions are panel, stop, previous, "
+            "play_pause, next, loop and media_keys",
+            key, path8);
+    }
 }
 
 // Applies one file to `settings`. Returns true when the file existed.
@@ -93,11 +156,12 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
     LogUtf8(path, path8, sizeof(path8));
     static char text[16384];
     DWORD error = 0;
-    const FileState state = LoadIniText(path, text, sizeof(text), &error);
-    if (state == FileState::Missing) {
+    bool bom = false;
+    const IniFileState state = LoadIniFileText(path, text, sizeof(text), &error, &bom);
+    if (state == IniFileState::Missing) {
         return false;
     }
-    if (state == FileState::Unreadable) {
+    if (state == IniFileState::Unreadable) {
         settings->stage = 0;
         Log("settings: %s is there but could not be read (error %lu); the mod stays off until the file can be "
             "read or is removed",
@@ -108,12 +172,11 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
 
     // Lines before the first [heading] count as [mod], so a file that is just "stage=0" works.
     // The [music] section, which the music engine writes into the same file, is skipped without
-    // counting as "ignored": a file with only that section must not produce the "changed
-    // nothing" line below on every start.
-    bool inMod = true;
-    bool inMusic = false;
+    // counting as "ignored" and without a log line: a file with only that section must not
+    // produce the "changed nothing" line below on every start.
+    Section section = Section::Mod;
     int contentLines = 0;   // lines that are not blank and not a comment
-    int keysSeen = 0;       // key=value lines under [mod], whether or not the value was accepted
+    int keysSeen = 0;       // key=value lines under a known heading, whether or not the value was accepted
     for (char* line = text; line && *line;) {
         // Lines may end in CR LF (Windows), LF alone, or CR alone (some editors on other systems).
         char* next = strpbrk(line, "\r\n");
@@ -130,20 +193,29 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
             if (close) {
                 *close = '\0';
             }
-            const char* heading = Trim(entry + 1);
-            inMod = _stricmp(heading, "mod") == 0;
-            inMusic = _stricmp(heading, "music") == 0;
-            if (!inMusic) {
-                ++contentLines;
+            char* name = Trim(entry + 1);
+            if (_stricmp(name, "mod") == 0) {
+                section = Section::Mod;
+            } else if (_stricmp(name, "panel") == 0) {
+                section = Section::Panel;
+            } else if (_stricmp(name, "keys") == 0) {
+                section = Section::Keys;
+            } else if (_stricmp(name, "music") == 0) {
+                section = Section::Music;   // the music engine reads and writes it itself
+            } else {
+                section = Section::Other;
+                Log("settings: the heading [%s] is not one the mod knows ([mod], [panel], [keys] or [music]); the "
+                    "lines under it are ignored (in %s)",
+                    name, path8);
             }
             continue;
         }
-        if (inMusic) {
+        if (section == Section::Music) {
             continue;
         }
         ++contentLines;
         char* equals = strchr(entry, '=');
-        if (!inMod || !equals) {
+        if (section == Section::Other || !equals) {
             continue;
         }
         ++keysSeen;
@@ -156,6 +228,14 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
                 value = Trim(value);
                 break;
             }
+        }
+        if (section == Section::Panel) {
+            ApplyPanelKey(key, value, path8, &settings->ui);
+            continue;
+        }
+        if (section == Section::Keys) {
+            ApplyKeysKey(key, value, path8, &settings->ui);
+            continue;
         }
         unsigned number = 0;
         const bool isNumber = ParseNumber(value, &number);
@@ -192,17 +272,66 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
 
 }  // namespace
 
+IniFileState LoadIniFileText(const wchar_t* path, char* text, int textSize, DWORD* error, bool* hadByteOrderMark) {
+    *hadByteOrderMark = false;
+    const HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                                    FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        *error = GetLastError();
+        return (*error == ERROR_FILE_NOT_FOUND || *error == ERROR_PATH_NOT_FOUND) ? IniFileState::Missing
+                                                                                 : IniFileState::Unreadable;
+    }
+    static char raw[16384];
+    DWORD size = 0;
+    const BOOL readOk = ReadFile(file, raw, sizeof(raw) - 2, &size, nullptr);
+    *error = readOk ? 0 : GetLastError();
+    CloseHandle(file);
+    if (!readOk) {
+        return IniFileState::Unreadable;
+    }
+    raw[size] = raw[size + 1] = '\0';
+    unsigned char* bytes = reinterpret_cast<unsigned char*>(raw);
+    const bool utf16LittleEndian = size >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE;
+    const bool utf16BigEndian = size >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF;
+    if (utf16LittleEndian || utf16BigEndian) {
+        // UTF-16 with a byte order mark: Notepad's "UTF-16 LE" and "UTF-16 BE" choices. Windows
+        // works in little endian, so a big endian file has each pair of bytes swapped first.
+        *hadByteOrderMark = true;
+        if (utf16BigEndian) {
+            for (DWORD i = 2; i + 1 < size; i += 2) {
+                const unsigned char high = bytes[i];
+                bytes[i] = bytes[i + 1];
+                bytes[i + 1] = high;
+            }
+        }
+        const int characters = static_cast<int>((size - 2) / 2);
+        const int converted = WideCharToMultiByte(CP_UTF8, 0, reinterpret_cast<const wchar_t*>(raw + 2), characters,
+                                                  text, textSize - 1, nullptr, nullptr);
+        text[converted > 0 ? converted : 0] = '\0';
+    } else {
+        const int skip = (size >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) ? 3 : 0;
+        *hadByteOrderMark = skip != 0;
+        const int length = static_cast<int>(size) - skip;
+        memcpy(text, raw + skip, static_cast<size_t>(length < textSize - 1 ? length : textSize - 1));
+        text[length < textSize - 1 ? length : textSize - 1] = '\0';
+    }
+    return IniFileState::Read;
+}
+
+const wchar_t* UserSettingsPath() {
+    return g_userSettingsPath;
+}
+
 Settings ReadSettings(HMODULE self) {
     Settings settings;
 
     // 1. The per-user file, which needs no administrator rights and survives game updates.
     const wchar_t* dir = LogDirectory();
     if (dir[0] != L'\0' && lstrlenW(dir) + 1 + lstrlenW(kLocalIniName) < MAX_PATH) {
-        wchar_t path[MAX_PATH];
-        lstrcpyW(path, dir);
-        lstrcatW(path, L"\\");
-        lstrcatW(path, kLocalIniName);
-        ApplyIniFile(path, &settings);
+        lstrcpyW(g_userSettingsPath, dir);
+        lstrcatW(g_userSettingsPath, L"\\");
+        lstrcatW(g_userSettingsPath, kLocalIniName);
+        ApplyIniFile(g_userSettingsPath, &settings);
     }
 
     // 2. The file next to the DLL, if present, overrides.
