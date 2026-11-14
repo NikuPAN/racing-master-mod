@@ -10,7 +10,7 @@ An unofficial, free, open-source mod for the PC version of **Racing Master** (�
 
 ### Status: version 0.3.0, the music panel, not yet tried in the game
 
-Version 0.3.0 adds an in-game **music panel**: play your own songs over the game, or control the music another app is playing, without leaving the race. It has been checked only in a test program on the developer's PC, never in the real game. The loader underneath it (0.1.0) has run in the game once.
+Version 0.3.0 adds an in-game **music panel**: play your own songs over the game, or control the music another app is playing, without leaving the race. It has been checked only in a test program on the developer's PC, never in the real game. The loader underneath it has run in the game twice (0.1.0 and 0.2.0) without a problem.
 
 Planned, in this order:
 
@@ -173,7 +173,7 @@ The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vor
 
 ### 目前進度：0.3.0 版加入音樂面板，還沒在遊戲裡實測
 
-0.3.0 版多了一個**遊戲內音樂面板**：比賽中不用切出遊戲，就能播自己的歌，或是控制其他程式正在放的音樂。目前只在開發者電腦上的測試程式裡檢查過，還沒有在真正的遊戲裡跑過。底下的載入器（0.1.0 版）則在遊戲裡成功跑過一次。
+0.3.0 版多了一個**遊戲內音樂面板**：比賽中不用切出遊戲，就能播自己的歌，或是控制其他程式正在放的音樂。目前只在開發者電腦上的測試程式裡檢查過，還沒有在真正的遊戲裡跑過。底下的載入器則已經在遊戲裡順利跑過兩次（0.1.0 和 0.2.0 版）。
 
 接下來的順序：
 
