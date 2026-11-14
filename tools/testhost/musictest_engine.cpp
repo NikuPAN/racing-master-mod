@@ -378,8 +378,13 @@ MT_TEST(560, EngineLateChange, "engine: the next track changes after it was queu
     testing::Sync(5000);
     Render(1.0, &out);
     mt::Check(opensBefore >= 2, "the next track was queued early (gapless preparation)", "%u opens", opensBefore);
-    mt::Check(mt::Sequence(out, kKnown) == "A" || mt::Sequence(out, kKnown) == "A.A", "loop one set late: A plays to its end, then A again, never B",
-              "heard %s", mt::Sequence(out, kKnown).c_str());
+    // Only A and B can play here. A 50 ms window that straddles the short silence and A's restart
+    // holds few cycles and was sometimes read as the 500 Hz G ("A.GA"); against A and B only it is
+    // unknown and skipped, while B would still be heard.
+    const std::vector<std::pair<char, double>> onlyAB = {{'A', 440.0}, {'B', 660.0}};
+    const std::string heard = mt::Sequence(out, onlyAB);
+    mt::Check(heard == "A" || heard == "A.A", "loop one set late: A plays to its end, then A again, never B", "heard %s",
+              heard.c_str());
 }
 
 MT_TEST(570, EngineNullDevice, "engine: real-time null device, device loss") {
