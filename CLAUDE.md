@@ -8,8 +8,8 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ## Current state (2026-11-15)
 
-- **Version 0.3.0 integrated on branch `integrate` (not merged to main, not pushed), test host
-  only.** The music panel (`src/ui`), the music engine (`src/music`) and the media remote
+- **Version 0.3.0 on main (integrated on branch `integrate`, fast-forwarded to main on
+  2026-11-15), test host only.** The music panel (`src/ui`), the music engine (`src/music`) and the media remote
   (`src/remote`) are wired into one `version.dll`: 44 hidden runs, 344 checks in
   `tools\run-host-test.ps1`, including two end-to-end runs (40 "My files", 41 "Other app" against
   the silent fake player). How the parts are wired: "How the parts are wired" below and
@@ -20,11 +20,11 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   inside `g112-Win64-Shipping.exe` (or `testhost.exe` with the test flag), hooks
   `IDXGISwapChain::Present`/`Present1`, binds to the game's one swap chain, draws a marker square
   for 20 s and writes `%LOCALAPPDATA%\RacingMasterMod\mod.log`.
-- **0.2.0 has not been in the real game on its own.** It applies the loader review
-  (`docs/agent-notes/loader-hardening.md`) and the follow-up review of that commit (settings
-  reader fail-open cases, build gate, test script, log wording and order; same note). The review
-  asked for one more in-person run on the throwaway account before the panel work starts,
-  including drag-resize, window-mode switch, alt-tab and minimise/restore during the 20 s marker.
+- **0.2.0 ran in the real game on 2026-11-14 (23:55-23:58, throwaway account):** steady 60 fps,
+  no fault, and the game's own log shows a normal exit request. 0.2.0 logged nothing about window
+  changes, so whether the owner's resize / mode-switch / alt-tab steps happened cannot be told
+  from that log; 0.3.0 adds a "game window:" line for exactly that (integration.md). 0.2.0
+  applies the loader review (`docs/agent-notes/loader-hardening.md`) and its follow-up.
 - **Loader 0.1.0 verified in the real game (2026-11-14, throwaway account):** the game loads the
   DLL, the launcher leaves the file in place, the marker shows on the login screen, about 60 fps.
   Swap chain: 2558x1360, DXGI format 24 (R10G10B10A2_UNORM), 2 buffers, swap effect 4
