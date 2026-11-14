@@ -8,15 +8,16 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ## Current state (2026-11-14, evening)
 
-- **Loader 0.2.0 built and verified in the test host** (`out\version.dll`, 20 of 20 checks in
+- **Loader 0.2.0 built and verified in the test host** (`out\version.dll`, 24 of 24 checks in
   `tools\run-host-test.ps1`). It forwards the 17 real `version.dll` functions, wakes up only
   inside `g112-Win64-Shipping.exe` (or `testhost.exe` with the test flag), hooks
   `IDXGISwapChain::Present`/`Present1`, binds to the game's one swap chain, draws a marker square
   for 20 s and writes `%LOCALAPPDATA%\RacingMasterMod\mod.log`.
 - **0.2.0 has not been in the real game yet.** It applies the loader review
-  (`docs/agent-notes/loader-hardening.md`); the review asked for one more in-person run on the
-  throwaway account before the panel work starts, including drag-resize, window-mode switch,
-  alt-tab and minimise/restore during the 20 s marker.
+  (`docs/agent-notes/loader-hardening.md`) and the follow-up review of that commit (settings
+  reader fail-open cases, build gate, test script, log wording and order; same note). The review
+  asked for one more in-person run on the throwaway account before the panel work starts,
+  including drag-resize, window-mode switch, alt-tab and minimise/restore during the 20 s marker.
 - **Loader 0.1.0 verified in the real game (2026-11-14, throwaway account):** the game loads the
   DLL, the launcher leaves the file in place, the marker shows on the login screen, about 60 fps.
   Swap chain: 2558x1360, DXGI format 24 (R10G10B10A2_UNORM), 2 buffers, swap effect 4
@@ -49,7 +50,9 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 - **The mod stays dormant outside the game.** `UniCrashReporter.exe` and other programs in the
   game folder also import `version.dll`; they must get plain forwarding and nothing else. That
   is why `version.dll` statically imports **KERNEL32 only**: `user32` is delay-loaded, and
-  `build.ps1` fails if any other DLL appears in the import table. Every system DLL a later
+  `build.ps1` fails if any other DLL appears in the import table, if the import dump did not
+  list KERNEL32 at all (an empty dump must not pass), or if USER32 is missing from the
+  delay-load list. Every system DLL a later
   feature needs gets its own `/DELAYLOAD:` line or is loaded with `LoadLibraryW` from the
   worker thread. `tools\run-host-test.ps1` checks a bystander program for this.
 - **Nothing is held across frames** that would block the game's `ResizeBuffers` (no cached
@@ -65,7 +68,7 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.dll, out\testhost.exe, out\bystander.exe
-powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 11 hidden-window runs, 20 checks, exit 0 = pass
+powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 14 hidden-window runs, 24 checks, exit 0 = pass
 ```
 
 `build\fetch-deps.ps1` downloads the Windows SDK (Microsoft NuGet packages, SHA-256 pinned in
@@ -85,10 +88,14 @@ Two files, both optional, same `[mod]` keys (`stage` 0/1/2, `marker_seconds` 0..
 2. `racing-master-mod.ini` next to `version.dll` (overrides 1 when present)
 
 The reader (`src/core/settings.cpp`) accepts UTF-8 with or without a byte order mark and
-UTF-16LE with one, `;`/`#` comments, digits-only numbers. A missing file means defaults. A file
+UTF-16 with one in **either byte order** (all five encodings Windows Notepad offers), CR LF, LF
+or CR-only line endings, `;`/`#` comments, digits-only numbers. Keys before the first `[heading]`
+count as `[mod]`, so a file that is just `stage=0` works. A missing file means defaults. A file
 that is present but unreadable, or a `stage` that is not 0, 1 or 2, switches the mod **off** with
-a log line that quotes the value (fail-closed). `GetPrivateProfile*` is not used: it misses a
-section after a BOM and turns `-1` into 4294967295.
+a log line that quotes the value (fail-closed). A file whose lines were all ignored (only a
+heading other than `[mod]`, no `key=value` lines) is applied as empty but gets a log line saying
+so and naming `[mod]`; it does not switch the mod off. `GetPrivateProfile*` is not used: it
+misses a section after a BOM and turns `-1` into 4294967295.
 
 ## Layout
 
@@ -140,7 +147,13 @@ section after a BOM and turns `-1` into 4294967295.
   that can fault (a fault inside the guard leaves the lock held forever).
 - The watchdog line 10 s after attaching reads the two counters: `hook calls` (every Present that
   reached the hook) and `game frames` (frames of the bound swap chain). Both zero points at an
-  overlay or wrapper the hook does not see; only `game frames` zero means no window qualified.
+  overlay or another mod the hook does not see; only `game frames` zero means no window qualified.
+  The line is worded for the owner (overlay examples, no "hook" or "wrapper DLL"); keep it so.
+- The first line of every `mod.log` is the "loaded into" identity line; the settings lines come
+  after it. `ModThread` logs the identity before `ReadSettings` on purpose.
+- `Invoke-Run` in `tools\run-host-test.ps1` lowers `$ErrorActionPreference` to `Continue` around
+  the program call: under `Stop`, one line a test program writes to its error stream would abort
+  the whole script with no summary.
 - A later file that needs C++ exceptions (C++/WinRT for media sessions) gets its own flag list
   with `/EHsc`, the `cppwinrt` include folder, `WindowsApp.lib` and `/DELAYLOAD:` for each DLL it
   pulls in (`api-ms-win-core-winrt-l1-1-0`, `api-ms-win-core-winrt-error-l1-1-1`, `OLEAUT32`,

@@ -4,9 +4,11 @@ description: How tools/run-host-test.ps1 and testhost.exe check the loader witho
 type: reference
 ---
 
-`tools\run-host-test.ps1` runs eleven hidden-window programs (20 checks) with `LOCALAPPDATA`
+`tools\run-host-test.ps1` runs fourteen hidden-window programs (24 checks) with `LOCALAPPDATA`
 pointed at its own temp folder, one folder per run, so the real `mod.log` from a game run is
-never archived or overwritten. `testhost.exe` renders on a worker thread to a window that is
+never archived or overwritten. Runs 7-9 and 12-14 are settings-file cases (UTF-8 BOM, UTF-16 in
+both byte orders, bad values, override file, no `[mod]` heading with CR-only line endings, a
+heading other than `[mod]`). `testhost.exe` renders on a worker thread to a window that is
 never shown; `bystander.exe` is a kernel32-only console program that stands in for the crash
 reporter and other programs that import `version.dll` without being the game.
 

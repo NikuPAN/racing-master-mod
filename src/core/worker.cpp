@@ -69,13 +69,13 @@ void WatchFrames() {
             warned = true;
             if (counters.gameFrames == 0) {
                 if (counters.hookCalls == 0) {
-                    Log("no frame has reached the hook 10 s after attaching (hook calls 0, game frames 0): the game "
-                        "shows its frames through something this hook does not see, such as an overlay or a wrapper "
-                        "DLL. The mod is idle.");
+                    Log("no frame has reached the mod 10 s after it attached (hook calls 0, game frames 0): the game "
+                        "is showing its frames through something the mod cannot see, such as an overlay (Discord, "
+                        "Steam, the NVIDIA app) or another mod that loads first. The mod is idle.");
                 } else {
-                    Log("frames reach the hook (%llu calls) but none came from a visible window of at least 320x200 "
+                    Log("frames reach the mod (%llu so far) but none came from a visible window of at least 320x200 "
                         "(game frames 0): the game may be minimised or still starting. The mod stays idle until "
-                        "such a window presents.",
+                        "such a window shows frames.",
                         counters.hookCalls);
                 }
             } else {
@@ -99,13 +99,15 @@ void WatchFrames() {
 
 DWORD WINAPI ModThread(LPVOID) {
     LogOpen();
-    const Settings settings = ReadSettings(g_self);
 
+    // First line of every log: which program loaded the mod. The settings lines follow.
     wchar_t exe[MAX_PATH] = L"";
     char exe8[MAX_PATH * 3];
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     Log("Racing Master Mod %s loaded into %s (process %lu)", kVersion, LogUtf8(exe, exe8, sizeof(exe8)),
         GetCurrentProcessId());
+
+    const Settings settings = ReadSettings(g_self);
     Log("settings: stage %u, marker for %u s%s", settings.stage, settings.markerSeconds,
         g_testHost ? " (developer test host)" : "");
 

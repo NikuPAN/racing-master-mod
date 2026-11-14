@@ -16,6 +16,9 @@
 #   9. ini beside the DLL          racing-master-mod.ini overrides settings.ini
 #  10. folder with a Chinese name  T14: the "loaded into" line is complete UTF-8
 #  11. two hosts at once           T15: the second writes mod.<pid>.log
+#  12. settings.ini UTF-16 BE      T13: stage=0 switches the mod off; the log starts with "loaded into"
+#  13. ini without [mod], CR-only  keys before any heading count as [mod]; CR-only line endings split
+#  14. ini under a wrong heading   the log says the file changed nothing and names [mod]
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
@@ -53,10 +56,15 @@ function Invoke-Run {
     New-Item -ItemType Directory -Force $LogRoot | Out-Null
     $env:LOCALAPPDATA = $LogRoot
     foreach ($key in $Environment.Keys) { Set-Item -Path "Env:\$key" -Value $Environment[$key] }
+    # Anything the program writes to its error stream is kept as a line, not turned into a script
+    # error: under 'Stop', one such line would abort the whole test with no summary.
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
         $lines = @(& $Exe @Arguments 2>&1 | ForEach-Object { "$_" })
         $exit = $LASTEXITCODE
     } finally {
+        $ErrorActionPreference = $previousPreference
         foreach ($key in $Environment.Keys) { Remove-Item -Path "Env:\$key" -ErrorAction SilentlyContinue }
         $env:LOCALAPPDATA = $realLocalAppData
     }
@@ -74,6 +82,7 @@ function Write-Ini([string]$Path, [string[]]$Lines, [string]$Encoding) {
     switch ($Encoding) {
         'utf8bom' { [IO.File]::WriteAllText($Path, $text, (New-Object System.Text.UTF8Encoding($true))) }
         'utf16'   { [IO.File]::WriteAllText($Path, $text, [Text.Encoding]::Unicode) }
+        'utf16be' { [IO.File]::WriteAllText($Path, $text, [Text.Encoding]::BigEndianUnicode) }
         default   { [IO.File]::WriteAllText($Path, $text, $utf8) }
     }
 }
@@ -168,6 +177,29 @@ try {
     $pidLogs = @(Get-ChildItem (Join-Path $twoRoot 'RacingMasterMod') -Filter 'mod.*.log' | Where-Object { $_.Name -match '^mod\.\d+\.log$' })
     Record 'two hosts: mod.log and one mod.<pid>.log' ((Test-Path (Join-Path $twoRoot 'RacingMasterMod\mod.log')) -and $pidLogs.Count -eq 1)
     Record 'two hosts: the process-id log has content' ($pidLogs.Count -eq 1 -and (Read-Log $pidLogs[0].FullName).Contains('loaded into'))
+
+    # 12. settings.ini saved as UTF-16 big endian (Notepad's "UTF-16 BE"), stage=0.
+    $beRoot = Join-Path $work 'lad-ini-be'
+    Write-Ini (Join-Path $beRoot 'RacingMasterMod\settings.ini') @('[mod]', 'stage=0') 'utf16be'
+    $run = Invoke-Run '12. settings.ini in UTF-16 big endian, stage=0 (T13)' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $beRoot
+    $log = Read-Log $run.Log
+    Record 'ini in UTF-16 big endian: stage 0 recognised, mod off' ($log.Contains('settings: stage 0') -and ($run.Lines -match '^marker: not found').Count -eq 1)
+    Record 'log starts with the "loaded into" line' (($log -split "`r`n")[0] -match '^\[[^\]]+\] Racing Master Mod .* loaded into ')
+
+    # 13. No [mod] heading and CR-only line endings: the keys still count as [mod].
+    $crRoot = Join-Path $work 'lad-ini-cr'
+    New-Item -ItemType Directory -Force (Join-Path $crRoot 'RacingMasterMod') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $crRoot 'RacingMasterMod\settings.ini'), "stage=0`rmarker_seconds=3`r", $utf8)
+    $run = Invoke-Run '13. settings.ini without a [mod] heading, CR-only line endings' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $crRoot
+    $log = Read-Log $run.Log
+    Record 'ini without heading, CR-only: stage 0 and marker 3 s applied' ($log.Contains('settings: stage 0, marker for 3 s') -and ($run.Lines -match '^marker: not found').Count -eq 1)
+
+    # 14. Every line under a heading that is not [mod]: the log must say the file changed nothing.
+    $otherRoot = Join-Path $work 'lad-ini-other'
+    Write-Ini (Join-Path $otherRoot 'RacingMasterMod\settings.ini') @('[other]', 'stage=0') 'utf8'
+    $run = Invoke-Run '14. settings.ini whose only heading is not [mod]' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $otherRoot
+    $log = Read-Log $run.Log
+    Record 'ini under a wrong heading: log says the file changed nothing and names [mod]' ($log.Contains('changed nothing, because none of its lines is a key=value line under a [mod] heading'))
 
     Write-Host ''
     Write-Host 'Summary'

@@ -30,6 +30,17 @@ applies them. The full brief with probes and measurements is machine-local
 | NuGet packages downloaded without a checksum | - | SHA-256 pinned in `fetch-deps.ps1` |
 | Window poll every 250 ms for ever | - | once a second after two minutes |
 
+## Follow-up review of 0.2.0 (commit `ba17dd4`), applied the same day
+
+| Finding | What it did | What it does now |
+|---|---|---|
+| Settings saved by Notepad as "UTF-16 BE" (FE FF) fell through to the UTF-8 branch; `[mod]` never matched; mod ran at stage 2 (same fail-open class as F4) | only FF FE decoded | byte pairs swapped, then decoded like little endian; host run 12 |
+| A file with no `[mod]` heading or with CR-only line endings was applied as empty with no explanation | silent | keys before the first heading count as `[mod]`; lines split on CR, LF or CR LF; a file whose lines were all ignored gets a log line naming `[mod]`; the refusal messages mention `[mod]`; host runs 13 and 14 |
+| Import gate passed vacuously on an empty or unreadable dump | `$extra` empty -> pass | the dump must exit 0 and list KERNEL32.dll eagerly and USER32.dll under delay-load, or the build fails |
+| `Invoke-Run` captured `2>&1` under `$ErrorActionPreference = 'Stop'`: one stderr line would abort the script with no summary | latent | preference lowered to `Continue` around the call and restored |
+| Watchdog line said "hook" and "wrapper DLL" | engineer wording | plain wording with overlay examples (Discord, Steam, the NVIDIA app) |
+| Log began with "settings: read", identity line second | cosmetic | the "loaded into" line is written before `ReadSettings` |
+
 ## Deliberately not applied
 
 - **Message-only helper window (HWND_MESSAGE).** Would take the mod's one window out of

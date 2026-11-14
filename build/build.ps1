@@ -7,7 +7,9 @@
 #
 # After linking, two gates run and fail the build if they do not hold:
 #   1. version.dll imports KERNEL32.dll only. Everything else (user32 today) is delay-loaded, so
-#      a bystander program that merely imports version.dll gets no extra DLL loaded.
+#      a bystander program that merely imports version.dll gets no extra DLL loaded. The gate also
+#      insists that the import dump actually listed KERNEL32 and the delay-loaded USER32, so an
+#      empty or unreadable dump fails the build instead of passing it.
 #   2. No "%ls" under src\: log lines are UTF-8 and wide strings go through LogUtf8().
 
 $ErrorActionPreference = 'Stop'
@@ -122,17 +124,30 @@ Invoke-Tool $link (@('/nologo', '/DLL', "/OUT:$dll",
 
 # --- gate 1: static imports are KERNEL32.dll only -----------------------------------------------------
 # link.exe /DUMP is dumpbin; the fetched SDK has no dumpbin.exe of its own.
+# The gate must see a usable dump before it can pass: an empty import list (wrong link.exe path,
+# changed output format) would otherwise pass for "no extra imports".
 $eager = @()
+$delayed = @()
 $inDelay = $false
-foreach ($line in (& $link /DUMP /NOLOGO /IMPORTS $dll)) {
+$dump = @(& $link /DUMP /NOLOGO /IMPORTS $dll)
+$dumpExit = $LASTEXITCODE
+foreach ($line in $dump) {
     if ($line -match 'delay load imports') { $inDelay = $true }
-    if (-not $inDelay -and $line -match '^\s{4}(\S+\.dll)\s*$') { $eager += $Matches[1] }
+    if ($line -match '^\s{4}(\S+\.dll)\s*$') {
+        if ($inDelay) { $delayed += $Matches[1] } else { $eager += $Matches[1] }
+    }
+}
+if ($dumpExit -ne 0 -or $eager -notcontains 'KERNEL32.dll') {
+    throw "The import dump of version.dll produced no usable import list (exit code $dumpExit, $($dump.Count) lines); the KERNEL32-only gate could not be checked."
 }
 $extra = @($eager | Where-Object { $_ -ne 'KERNEL32.dll' })
 if ($extra.Count) {
     throw "version.dll must import KERNEL32.dll only; also found: $($extra -join ', '). Delay-load it (/DELAYLOAD) or call it through LoadLibraryW from the worker thread."
 }
-Write-Host "version.dll static imports: $($eager -join ', ')"
+if ($delayed -notcontains 'USER32.dll') {
+    throw "version.dll should delay-load USER32.dll, but the import dump lists these delay-loaded DLLs: '$($delayed -join ', ')'. Check the /DELAYLOAD line."
+}
+Write-Host "version.dll static imports: $($eager -join ', '); delay-loaded: $($delayed -join ', ')"
 
 # --- developer test programs ----------------------------------------------------------------------------
 $hostFlags = @('/nologo', '/c', '/std:c++20', '/O2', '/W4', '/WX', '/EHsc', '/MT', '/DUNICODE', '/D_UNICODE',

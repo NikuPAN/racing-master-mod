@@ -61,14 +61,23 @@ FileState LoadIniText(const wchar_t* path, char* text, int textSize, DWORD* erro
         return FileState::Unreadable;
     }
     raw[size] = raw[size + 1] = '\0';
-    const unsigned char* bytes = reinterpret_cast<const unsigned char*>(raw);
-    if (size >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE) {
-        // UTF-16 little endian with byte order mark (Notepad's "Unicode").
-        const int converted = WideCharToMultiByte(CP_UTF8, 0, reinterpret_cast<const wchar_t*>(raw + 2), -1, text,
-                                                  textSize, nullptr, nullptr);
-        if (converted <= 0) {
-            text[0] = '\0';
+    unsigned char* bytes = reinterpret_cast<unsigned char*>(raw);
+    const bool utf16LittleEndian = size >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE;
+    const bool utf16BigEndian = size >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF;
+    if (utf16LittleEndian || utf16BigEndian) {
+        // UTF-16 with a byte order mark: Notepad's "UTF-16 LE" and "UTF-16 BE" choices. Windows
+        // works in little endian, so a big endian file has each pair of bytes swapped first.
+        if (utf16BigEndian) {
+            for (DWORD i = 2; i + 1 < size; i += 2) {
+                const unsigned char high = bytes[i];
+                bytes[i] = bytes[i + 1];
+                bytes[i + 1] = high;
+            }
         }
+        const int characters = static_cast<int>((size - 2) / 2);
+        const int converted = WideCharToMultiByte(CP_UTF8, 0, reinterpret_cast<const wchar_t*>(raw + 2), characters,
+                                                  text, textSize - 1, nullptr, nullptr);
+        text[converted > 0 ? converted : 0] = '\0';
     } else {
         const int skip = (size >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) ? 3 : 0;
         const int length = static_cast<int>(size) - skip;
@@ -97,9 +106,13 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
     }
     Log("settings: read %s", path8);
 
-    bool inMod = false;
+    // Lines before the first [heading] count as [mod], so a file that is just "stage=0" works.
+    bool inMod = true;
+    int contentLines = 0;   // lines that are not blank and not a comment
+    int keysSeen = 0;       // key=value lines under [mod], whether or not the value was accepted
     for (char* line = text; line && *line;) {
-        char* next = strchr(line, '\n');
+        // Lines may end in CR LF (Windows), LF alone, or CR alone (some editors on other systems).
+        char* next = strpbrk(line, "\r\n");
         if (next) {
             *next++ = '\0';
         }
@@ -108,14 +121,20 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
         if (*entry == '\0' || *entry == ';' || *entry == '#') {
             continue;
         }
+        ++contentLines;
         if (*entry == '[') {
-            inMod = _strnicmp(entry, "[mod]", 5) == 0;
+            char* close = strchr(entry, ']');
+            if (close) {
+                *close = '\0';
+            }
+            inMod = _stricmp(Trim(entry + 1), "mod") == 0;
             continue;
         }
         char* equals = strchr(entry, '=');
         if (!inMod || !equals) {
             continue;
         }
+        ++keysSeen;
         *equals = '\0';
         char* key = Trim(entry);
         char* value = Trim(equals + 1);
@@ -134,20 +153,27 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
             } else {
                 // Keep reading so that every bad value in the file is reported in one go.
                 settings->stage = 0;
-                Log("settings: \"stage=%s\" is not 0, 1 or 2 (in %s); the mod stays off. Write stage=2 for the full "
-                    "mod, stage=0 to switch it off.",
+                Log("settings: \"stage=%s\" is not 0, 1 or 2 (in %s); the mod stays off. Under the [mod] line write "
+                    "stage=2 for the full mod or stage=0 to switch it off.",
                     value, path8);
             }
         } else if (_stricmp(key, "marker_seconds") == 0) {
             if (isNumber && number <= 600) {
                 settings->markerSeconds = number;
             } else {
-                Log("settings: \"marker_seconds=%s\" is not a number of seconds from 0 to 600 (in %s); using %u",
+                Log("settings: \"marker_seconds=%s\" is not a number of seconds from 0 to 600 (in %s); using %u. "
+                    "Under the [mod] line write, for example, marker_seconds=20.",
                     value, path8, settings->markerSeconds);
             }
         } else {
             Log("settings: unknown key \"%s\" under [mod] is ignored (in %s)", key, path8);
         }
+    }
+    if (contentLines > 0 && keysSeen == 0) {
+        // Say so rather than silently applying nothing: the player did write something.
+        Log("settings: %s changed nothing, because none of its lines is a key=value line under a [mod] heading; "
+            "the first line of the file should be [mod]",
+            path8);
     }
     return true;
 }
