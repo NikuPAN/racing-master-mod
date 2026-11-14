@@ -26,10 +26,35 @@ struct Request {
     void (*folderDone)(const std::wstring&);
 };
 
-bool Suppressed() {
-    if (g_suppress.load()) return true;
+bool TestHostFlag() {
     wchar_t flag[8];
     return GetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_HOST", flag, 8) == 1 && flag[0] == L'1';
+}
+
+bool Suppressed() {
+    return g_suppress.load() || TestHostFlag();
+}
+
+// Developer test host only: what a suppressed dialog reports instead of a cancel, so a test can
+// add files through the real button, picker thread and callback without any window.
+// RACING_MASTER_MOD_TEST_PICKER_FILES holds full paths separated by '|' (the folder picker
+// reports the first). Never read without the test-host flag.
+std::vector<std::wstring> TestPickerPaths() {
+    std::vector<std::wstring> paths;
+    if (!TestHostFlag()) return paths;
+    wchar_t value[4096];
+    const DWORD n = GetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_PICKER_FILES", value, 4096);
+    if (n == 0 || n >= 4096) return paths;
+    std::wstring all(value, n);
+    size_t start = 0;
+    while (start <= all.size()) {
+        const size_t bar = all.find(L'|', start);
+        const std::wstring one = all.substr(start, bar == std::wstring::npos ? std::wstring::npos : bar - start);
+        if (!one.empty()) paths.push_back(one);
+        if (bar == std::wstring::npos) break;
+        start = bar + 1;
+    }
+    return paths;
 }
 
 DWORD WINAPI DialogThread(LPVOID param) {
@@ -66,7 +91,14 @@ DWORD WINAPI DialogThread(LPVOID param) {
             const char* owner = !request->owner                                     ? "no owner window"
                                 : GetAncestor(request->owner, GA_ROOT) == request->owner ? "owned by a top-level window"
                                                                                           : "owned by a child window";
-            Log("music: file dialog suppressed (test mode); reporting cancel (%s)", owner);
+            paths = TestPickerPaths();
+            if (paths.empty()) {
+                Log("music: file dialog suppressed (test mode); reporting cancel (%s)", owner);
+            } else {
+                Log("music: file dialog suppressed (test mode); reporting %zu path(s) from "
+                    "RACING_MASTER_MOD_TEST_PICKER_FILES (%s)",
+                    paths.size(), owner);
+            }
             hr = HRESULT_FROM_WIN32(ERROR_CANCELLED);
         } else {
             hr = dialog->Show(request->owner);

@@ -57,3 +57,39 @@ MT_TEST(700, Picker, "file picker: own thread, one at a time, never shown in tes
     for (int i = 0; i < 100 && music::IsDialogOpen(); ++i) Sleep(10);
     mt::Check(!music::IsDialogOpen(), "no dialog is left open");
 }
+
+namespace {
+
+std::vector<std::wstring> g_reported;
+std::wstring g_reportedFolder;
+
+void FilesReported(const std::vector<std::wstring>& paths) {
+    g_reported = paths;
+    ++g_filesCalls;
+}
+
+void FolderReported(const std::wstring& folder) {
+    g_reportedFolder = folder;
+    ++g_folderCalls;
+}
+
+}  // namespace
+
+// The test host's way to "choose" files without a window: RACING_MASTER_MOD_TEST_PICKER_FILES.
+MT_TEST(701, PickerTestPaths, "file picker: the test host can hand it paths, still without a window") {
+    music::testing::SuppressDialogs(true);
+    SetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_PICKER_FILES", L"C:\\Music\\one 測試.mp3|C:\\Music\\two.flac");
+    const int files = g_filesCalls.load();
+    music::OpenAddFilesDialog(nullptr, FilesReported);
+    const bool filesDone = WaitFor(g_filesCalls, files + 1);
+    mt::Check(filesDone && g_reported.size() == 2 && g_reported[0] == L"C:\\Music\\one 測試.mp3" &&
+                  g_reported[1] == L"C:\\Music\\two.flac",
+              "Add files reports the paths from RACING_MASTER_MOD_TEST_PICKER_FILES, in order");
+    for (int i = 0; i < 100 && music::IsDialogOpen(); ++i) Sleep(10);
+    const int folders = g_folderCalls.load();
+    music::OpenAddFolderDialog(nullptr, FolderReported);
+    mt::Check(WaitFor(g_folderCalls, folders + 1) && g_reportedFolder == L"C:\\Music\\one 測試.mp3",
+              "Add folder reports the first of those paths");
+    for (int i = 0; i < 100 && music::IsDialogOpen(); ++i) Sleep(10);
+    SetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_PICKER_FILES", nullptr);
+}
