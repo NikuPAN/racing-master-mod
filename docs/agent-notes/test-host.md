@@ -4,7 +4,8 @@ description: How tools/run-host-test.ps1 and testhost.exe check the loader witho
 type: reference
 ---
 
-`tools\run-host-test.ps1` runs fourteen hidden-window programs (24 checks) with `LOCALAPPDATA`
+`tools\run-host-test.ps1` runs 22 hidden-window programs (52 checks; runs 15-22 are the media
+remote, see `media-remote-tests.md`) with `LOCALAPPDATA`
 pointed at its own temp folder, one folder per run, so the real `mod.log` from a game run is
 never archived or overwritten. Runs 7-9 and 12-14 are settings-file cases (UTF-8 BOM, UTF-16 in
 both byte orders, bad values, override file, no `[mod]` heading with CR-only line endings, a

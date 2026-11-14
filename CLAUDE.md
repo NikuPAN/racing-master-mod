@@ -23,6 +23,12 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   Swap chain: 2558x1360, DXGI format 24 (R10G10B10A2_UNORM), 2 buffers, swap effect 4
   (FLIP_DISCARD), windowed. The game's own log shows no reaction. This does not rule out a ban
   issued later.
+- **Media remote built and verified in the test host only** (`src/remote`, branch
+  `music/remote`, 2026-11-14): reads Windows media sessions and sends play, pause, stop,
+  next, previous and loop to other apps, tested against a silent fake player (runs 15-22 of
+  `tools\run-host-test.ps1`). Not started anywhere in the game yet: the music panel calls
+  `remote::Remote::Get().Start()` itself. Whether it works from the elevated game is open
+  (`docs/agent-notes/media-remote-elevated-game.md`).
 - **In design:** music panel and DLSS (verified design briefs are being written in
   `docs/agent-notes/local/design/`).
 
@@ -74,7 +80,7 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.dll, out\testhost.exe, out\bystander.exe
-powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 14 hidden-window runs, 24 checks, exit 0 = pass
+powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 22 hidden-window runs, 52 checks, exit 0 = pass (about 3 min)
 ```
 
 `build\fetch-deps.ps1` downloads the Windows SDK (Microsoft NuGet packages, SHA-256 pinned in
@@ -113,8 +119,13 @@ misses a section after a BOM and turns `-1` into 4294967295.
   `dxgi_probe` (finds DXGI's swap chain table with a throwaway device), `present_hook` (hook,
   swap chain binding, fault guard, counters), `frame.h` (`FrameRefs`), `worker` (start-up
   order, watchdog, periodic status line).
+- `src/remote/` — remote control of other music apps through Windows media sessions.
+  `remote.h` is the panel's interface (plain types; `Snapshot` with a `Message` id for
+  translation); `remote.cpp` is the only file that includes the WinRT ABI headers. See
+  `docs/agent-notes/media-remote-design.md`.
 - `tools/testhost/` — `testhost.cpp`: Direct3D 11 program with a never-shown window that stands
-  in for the game (game layout, worker render thread, checks T1-T8); `bystander.cpp`: a
+  in for the game (game layout, worker render thread, checks T1-T8; `media` mode for the remote);
+  `fake_player.cpp`: a silent media session the remote tests command; `bystander.cpp`: a
   kernel32-only console program that must see plain forwarding and nothing else.
 - `build/` — build and dependency scripts. No CMake, no solution file.
 
@@ -126,6 +137,9 @@ misses a section after a BOM and turns `-1` into 4294967295.
 | Worker (`ModThread`) | start-up, settings, hook install, watchdog, periodic log | file I/O, `user32`, device creation, sleeping | touch the game's device context or swap chain |
 | Game's present thread | `HookedPresent` -> `GuardedOnFrame` | Direct3D on the swap chain it was handed, atomics, a one-off log line | file flushes, sleeping, periodic logging, waiting on a lock the worker holds during slow work |
 | Any game thread | forwarding stubs | jump | anything else |
+| Media (`MediaThread`, created by `Remote::Start`) | every WinRT call, session reading, commands | COM in the multithreaded apartment, waits with deadlines, logging | leave the apartment in the game (`RoUninitialize` is test host only) |
+| Windows' COM threads | media change notices | set an event and return | anything else |
+| Frame / panel code | `GetSnapshot`, `Play`, `Pause` ... | copy the snapshot, queue a command | call WinRT, wait for the media thread |
 
 ## Gotchas
 
@@ -160,8 +174,19 @@ misses a section after a BOM and turns `-1` into 4294967295.
 - `Invoke-Run` in `tools\run-host-test.ps1` lowers `$ErrorActionPreference` to `Continue` around
   the program call: under `Stop`, one line a test program writes to its error stream would abort
   the whole script with no summary.
-- A later file that needs C++ exceptions (C++/WinRT for media sessions) gets its own flag list
-  with `/EHsc`, the `cppwinrt` include folder, `WindowsApp.lib` and `/DELAYLOAD:` for each DLL it
-  pulls in (`api-ms-win-core-winrt-l1-1-0`, `api-ms-win-core-winrt-error-l1-1-1`, `OLEAUT32`,
-  `api-ms-win-core-com-l1-1-0`). Its exported functions are `noexcept` and wrap their bodies in
-  `try/catch(...)`; they run on the worker, never inside `GuardedOnFrame`.
+- Media sessions use the **raw WinRT ABI headers** (the SDK's `winrt` include folder), not
+  C++/WinRT: C++/WinRT needs `/EHsc` and adds four static imports. Every combase, shell32 and
+  advapi32 function is resolved with `GetProcAddress` on the media thread; calling one directly
+  fails the link or the KERNEL32-only gate.
+- **No command may reach a real media session while testing.** In the test host,
+  `Engine::Send` (the only function that sends) refuses every app id except
+  `RACING_MASTER_MOD_TEST_MEDIA_APP` (the fake player). New command paths go through it. Each
+  media test run makes the fake player Windows' current session for a few seconds (media keys
+  point at it); nothing is shown or heard.
+- `remote::Remote::Shutdown()` in the game only lets go and sleeps; it never calls
+  `RoUninitialize`, because the mod may have created the process's multithreaded apartment that
+  other game threads now belong to. Do not "complete" it into a full stop.
+- Track titles and artists never go into `mod.log`; the run-host test fails if the fake title
+  appears. App ids and names may.
+- The PowerShell tool in this environment may start in the game folder (`C:\Program Files
+  (x86)\g112`): always call the scripts by absolute path, never by `build\build.ps1`.
