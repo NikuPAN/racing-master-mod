@@ -107,7 +107,11 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
     Log("settings: read %s", path8);
 
     // Lines before the first [heading] count as [mod], so a file that is just "stage=0" works.
+    // The [music] section, which the music engine writes into the same file, is skipped without
+    // counting as "ignored": a file with only that section must not produce the "changed
+    // nothing" line below on every start.
     bool inMod = true;
+    bool inMusic = false;
     int contentLines = 0;   // lines that are not blank and not a comment
     int keysSeen = 0;       // key=value lines under [mod], whether or not the value was accepted
     for (char* line = text; line && *line;) {
@@ -121,15 +125,23 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
         if (*entry == '\0' || *entry == ';' || *entry == '#') {
             continue;
         }
-        ++contentLines;
         if (*entry == '[') {
             char* close = strchr(entry, ']');
             if (close) {
                 *close = '\0';
             }
-            inMod = _stricmp(Trim(entry + 1), "mod") == 0;
+            const char* heading = Trim(entry + 1);
+            inMod = _stricmp(heading, "mod") == 0;
+            inMusic = _stricmp(heading, "music") == 0;
+            if (!inMusic) {
+                ++contentLines;
+            }
             continue;
         }
+        if (inMusic) {
+            continue;
+        }
+        ++contentLines;
         char* equals = strchr(entry, '=');
         if (!inMod || !equals) {
             continue;

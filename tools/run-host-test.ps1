@@ -38,6 +38,7 @@
 #  23. musictest.exe               silent: decoding, playlist logic, gapless, persistence, picker.
 #                                  One check per PASS/FAIL line it prints; SKIPPED lines are listed
 #                                  with their reason and never count as passes.
+#  24. ini with only [music]       the music engine's section is not reported as "changed nothing\"
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
@@ -307,6 +308,14 @@ try {
     }
     # The total line proves the program ran to its end (a crash part-way would leave cases unseen).
     Record 'music: the test program ran to the end and reported its total' (@($run.Lines -match '^musictest: \d+ passed').Count -eq 1)
+
+    # 24. Only a [music] section (what the music engine writes when the player has no settings
+    # file yet): the loader must not report that the file "changed nothing".
+    $musicIniRoot = Join-Path $work 'lad-ini-music'
+    Write-Ini (Join-Path $musicIniRoot 'RacingMasterMod\settings.ini') @('[music]', 'volume=60', 'loop=all') 'utf8'
+    $run = Invoke-Run '24. settings.ini with only a [music] section' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $musicIniRoot
+    $log = Read-Log $run.Log
+    Record 'ini with only [music]: no "changed nothing" line, mod on' ($log.Contains('settings: read') -and -not $log.Contains('changed nothing') -and ($run.Lines -match '^marker: found').Count -eq 1)
 
     Write-Host ''
     Write-Host 'Summary'
