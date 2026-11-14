@@ -300,7 +300,9 @@ Details and the reasons: `docs/agent-notes/integration.md`.
 - **Click pass-through** = hit test on the window thread: the frame thread publishes the
   rectangles of the panel's clickable ImGui windows (client coordinates, popups included) after
   each frame; a mouse message inside one is queued and consumed, anything else is forwarded. A
-  drag stays with the side that got its button-down. A heartbeat (last drawn frame < 500 ms)
+  drag stays with the side that got its button-down. A button let go outside the game window
+  (windowed mode) never sends its up here, so every mouse message's button flags are compared
+  with who holds what, and a held button whose flag is clear is released there (run 38, I19-I21). A heartbeat (last drawn frame < 500 ms)
   hands the mouse back whenever the panel is not being drawn.
 - **Drawing:** `SwapDeviceContextState(ours)`, stock DX11 backend, `ClearState()`,
   `SwapDeviceContextState(game's)`, then `refs.gameState` is released and **nulled**: the fault

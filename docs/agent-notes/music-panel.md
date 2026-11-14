@@ -77,7 +77,9 @@ Since the merge (2026-11-15), on the real engine: every panel run lists generate
 music folder; run 40 plays FLAC, MP3, Opus and OGG Vorbis through the panel (click, F7, F8, F9,
 Add files through the picker, focus pausing) with the position advancing; run 41 drives the real
 remote against the silent fake player; every panel run checks the music shutdown when its window
-closes.
+closes. After the integration review: a slider drag let go outside the game window (its release
+went to another window) ends at the next mouse message, whose button flags show nothing held
+(run 38, I19-I21; before the fix the volume followed the cursor and the next click was the panel's).
 
 ## Not verified (needs the real game, or not testable here)
 

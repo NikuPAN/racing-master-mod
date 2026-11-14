@@ -49,7 +49,8 @@
 #  36. fault inside the panel      game state put back, nothing leaked, mouse and keys back to the game
 #  37. [panel] mode=display        drawn, but nothing taken from the game
 #  38. panel input                 clicks, pass-through, hotkeys, Insert, wheel, ClearInputMouse after
-#                                  a gap, drop-down closing, text field, focus, "Other app", heartbeat
+#                                  a gap, drop-down closing, text field, focus, "Other app", a drag
+#                                  let go outside the game window, heartbeat
 # Integration of the panel, the music engine and the media remote:
 #  39. [panel] mode=off            the loader alone: no panel, no music player, no other-app control
 #  40. end to end, "My files"      songs from musictest.exe --fixtures (FLAC, MP3, tagged Opus and OGG

@@ -11,7 +11,9 @@
 //
 // A drag stays with the side it started on: while the panel holds a button (dragging the
 // volume or seek line) moves and the release are the panel's wherever the cursor is; while the
-// game holds one (camera look) everything goes to the game, even over the panel.
+// game holds one (camera look) everything goes to the game, even over the panel. A release that
+// happened outside the game window (windowed mode) is noticed from the next mouse message's
+// button flags and ends the drag there.
 //
 // In every state:
 //   key down matching a hotkey     consumed, command posted (auto-repeat consumed, ignored)
@@ -270,10 +272,35 @@ Verdict HandleKeyUp(WPARAM wParam) {
     return Verdict::Forward;
 }
 
+// The flag each button has in a mouse message's key state, by button index.
+constexpr WPARAM kButtonFlags[5] = {MK_LBUTTON, MK_RBUTTON, MK_MBUTTON, MK_XBUTTON1, MK_XBUTTON2};
+
+// Every mouse message says which buttons are down at that moment. In windowed or borderless
+// mode a button can be let go after the cursor has left the game window; that release goes to
+// another window and never reaches this procedure. So a button still noted as held whose flag is
+// clear was released elsewhere: the panel gets its release now (a slider stops following the
+// cursor, and the next click is not taken for it), and a drag the game owned simply ends.
+// `skip` is the button the message itself is about (its own up has the flag clear on purpose).
+void ForgetButtonsReleasedElsewhere(WPARAM keyState, int x, int y, int skip) {
+    for (int i = 0; i < 5; ++i) {
+        if (i == skip || g_buttonOwner[i] == ButtonOwner::None || (keyState & kButtonFlags[i]) != 0) {
+            continue;
+        }
+        if (g_buttonOwner[i] == ButtonOwner::Panel) {
+            PushMouseEvent(InputEvent::MouseButton, i, false, x, y, 0.0f);
+        }
+        g_buttonOwner[i] = ButtonOwner::None;
+    }
+}
+
 Verdict HandleMouse(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    // The key state is the low word for every mouse message (the wheel and extra-button messages
+    // carry other data in the high word).
+    const WPARAM keyState = GET_KEYSTATE_WPARAM(wParam);
     if (message == WM_MOUSEMOVE) {
         const int x = GET_X_LPARAM(lParam);
         const int y = GET_Y_LPARAM(lParam);
+        ForgetButtonsReleasedElsewhere(keyState, x, y, -1);
         // Remembered in every state, so the panel knows where the cursor is the moment it opens.
         g_shared.latestMouse.store(PackPoint(x, y), std::memory_order_relaxed);
         if (!PanelOwnsMouse() || AnyButtonHeldBy(ButtonOwner::Game)) {
@@ -282,11 +309,12 @@ Verdict HandleMouse(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
         return (AnyButtonHeldBy(ButtonOwner::Panel) || PointOverPanel(x, y)) ? Verdict::Consume : Verdict::Forward;
     }
     if (message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL) {
+        POINT point = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};   // wheel messages carry screen coordinates
+        ScreenToClient(window, &point);
+        ForgetButtonsReleasedElsewhere(keyState, point.x, point.y, -1);
         if (!PanelOwnsMouse() || AnyButtonHeldBy(ButtonOwner::Game)) {
             return Verdict::Forward;
         }
-        POINT point = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};   // wheel messages carry screen coordinates
-        ScreenToClient(window, &point);
         if (!PointOverPanel(point.x, point.y)) {
             return Verdict::Forward;
         }
@@ -301,6 +329,7 @@ Verdict HandleMouse(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     }
     const int x = GET_X_LPARAM(lParam);
     const int y = GET_Y_LPARAM(lParam);
+    ForgetButtonsReleasedElsewhere(keyState, x, y, button);
     if (down) {
         const bool owned = PanelOwnsMouse();
         if (owned && !AnyButtonHeldBy(ButtonOwner::Game) &&

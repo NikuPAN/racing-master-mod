@@ -1379,6 +1379,31 @@ void ScriptInput(Host& host) {
           WaitLayout(host, [&](const LayoutFile& l) { return l.Int("index") == (index + 1) % tracksNow; }) &&
               g_gotKeyDown[VK_MEDIA_NEXT_TRACK].load() == mediaDown + 1);
 
+    // A drag on the volume slider let go after the cursor left the game window (windowed mode,
+    // two monitors): the release goes to another window, so the next message the game window
+    // gets is a move whose button flags show nothing held.
+    const POINT volumeAgain = Item("volume");
+    Move(host, volumeAgain);
+    PostMessageW(host.window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(volumeAgain.x, volumeAgain.y));
+    Sync(host);
+    Pump(host, 4);
+    const int volumeHeld = ReadLayout().Int("volume");
+    moves = g_gotMove.load();
+    PostMessageW(host.window, WM_MOUSEMOVE, 0, MAKELPARAM(outside.x, outside.y));   // no MK_LBUTTON
+    Sync(host);
+    Pump(host, 4);
+    const int volumeAfterMove = ReadLayout().Int("volume");
+    printf("  volume while held %d, after a button-less move over the game %d\n", volumeHeld, volumeAfterMove);
+    Check("I19 after a drag on the panel is let go outside the game window, the next move reaches the game",
+          g_gotMove.load() == moves + 1);
+    Check("I20 ... and the volume stays where it was (the slider no longer follows the cursor)",
+          volumeAfterMove == volumeHeld);
+    lDown = g_gotLDown.load();
+    lUp = g_gotLUp.load();
+    Click(host, outside);
+    Check("I21 ... and the next click outside the panel reaches the game (down and up)",
+          g_gotLDown.load() == lDown + 1 && g_gotLUp.load() == lUp + 1);
+
     // Heartbeat: when the panel stops being drawn, the mouse goes back to the game within half a
     // second, even though the panel is still "open".
     const POINT nextAgain = Item("next");
