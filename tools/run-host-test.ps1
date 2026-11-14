@@ -24,14 +24,14 @@
 # publishes the fake player for a few seconds; while it exists it is Windows' current media
 # session (media keys and the Windows flyout point at it). No command can reach any other
 # session: the mod refuses every app id but RACING_MASTER_MOD_TEST_MEDIA_APP in the test host.
-#  15. basic       every command reaches the fake player in order and is confirmed
+#  15. basic       every command reaches the fake player in order and is confirmed; clean stop
 #  16. ignore-pause the player accepts pause and keeps playing: "no effect"
 #  17. no-repeat   the player offers no loop and no next: "not offered", nothing sent
 #  18. vanish      the player closes its session on pause: "session gone", then waiting for it
 #  19. late        the player appears 2 s after the mod: waiting, then ready without a restart
 #  20. guard       commands may only go to another id: refused, nothing reaches the fake player
-#  21. lifecycle   a media thread that stops answering, the freshness check, and rebuild mode
-#                  (the fallback when change notices stop)
+#  21. lifecycle   the game's Shutdown (sleep, wake), a media thread that stops answering, the
+#                  freshness check, and rebuild mode (the fallback when change notices stop)
 #  22. media, flag unset: the mod stays dormant, no log folder, nothing sent
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
@@ -236,49 +236,57 @@ try {
         Record "${Name}: no command went to any app but the fake player" ($foreign.Count -eq 0)
         Record "${Name}: no track title in the log" (-not $Run.Text.Contains('Test track'))
     }
+    function Test-CleanStop($Run, [string]$Name) {
+        Record "${Name}: quit stopped the media thread cleanly and in time" ($Run.Text.Contains('music apps: stopped cleanly') -and $Run.Text -match 'the media thread returned in time')
+    }
 
     # 15. Everything applied.
-    $run = Invoke-Media '15. media remote: basic' 'basic' 'play;pause;toggle;next;previous;repeat-all;repeat-one;repeat-off;stop' 'lad-media-basic'
+    $run = Invoke-Media '15. media remote: basic' 'basic' 'play;pause;toggle;next;previous;repeat-all;repeat-one;repeat-off;stop;quit' 'lad-media-basic'
     Record 'media basic: fake player published and the script finished' ($run.Exit -eq 0)
     Record 'media basic: the fake player received every command in order' ($run.Received -eq 'play, pause, play, next, previous, loop all, loop one, loop off, stop')
     Record 'media basic: all nine steps done' (([regex]::Matches($run.Text, 'step \d+ "[a-z-]+": done; state: ready')).Count -eq 9)
+    Test-CleanStop $run 'media basic'
     Test-MediaSafety $run 'media basic'
 
     # 16. The player ignores pause.
-    $run = Invoke-Media '16. media remote: player ignores pause' 'ignore-pause' 'play;pause' 'lad-media-ignore'
+    $run = Invoke-Media '16. media remote: player ignores pause' 'ignore-pause' 'play;pause;quit' 'lad-media-ignore'
     Record 'media ignore-pause: play done, pause "no effect"' ($run.Exit -eq 0 -and $run.Text.Contains('step 1 "play": done') -and $run.Text.Contains('step 2 "pause": no effect') -and $run.Received -eq 'play, pause')
     Record 'media ignore-pause: the message says the app did not respond and what to do' ($run.Text.Contains("$fakeId did not respond. Try again, or use $fakeId itself."))
     Test-MediaSafety $run 'media ignore-pause'
 
     # 17. The player offers neither loop nor next.
-    $run = Invoke-Media '17. media remote: no loop, no next' 'no-repeat' 'repeat-all;next;read' 'lad-media-norepeat'
+    $run = Invoke-Media '17. media remote: no loop, no next' 'no-repeat' 'repeat-all;next;read;quit' 'lad-media-norepeat'
     Record 'media no-repeat: the snapshot offers neither loop nor next and reports no loop' ($run.Text.Contains('step 3 "read": state: ready; app: "' + $fakeId + '"; status: paused; offers: play stop previous; loop: not reported; timeline: no; title shared: yes'))
     Record 'media no-repeat: both "not offered" and nothing sent' ($run.Exit -eq 0 -and $run.Text.Contains('step 1 "repeat-all": not offered') -and $run.Text.Contains('step 2 "next": not offered') -and $run.Received -eq 'nothing')
     Record 'media no-repeat: the messages name the reason' ($run.Text.Contains("$fakeId does not let other programs change looping. Change it in $fakeId itself.") -and $run.Text.Contains($fakeId + ' does not offer "next track" right now.'))
 
     # 18. The player closes its session while a command is in flight.
-    $run = Invoke-Media '18. media remote: player vanishes' 'vanish' 'play;pause;play' 'lad-media-vanish'
+    $run = Invoke-Media '18. media remote: player vanishes' 'vanish' 'play;pause;play;quit' 'lad-media-vanish'
     Record 'media vanish: "session gone", then waiting for the app, nothing re-sent' ($run.Exit -eq 0 -and $run.Text.Contains('step 2 "pause": session gone; state: waiting for the app') -and $run.Text.Contains('step 3 "play": no session; state: waiting for the app') -and $run.Received -eq 'play, pause')
     Record 'media vanish: the message says the picked app closed and what to do' ($run.Text.Contains("$fakeId has closed. Start it again, or pick another app below."))
+    Test-CleanStop $run 'media vanish'
 
     # 19. The player appears after the mod started.
-    $run = Invoke-Media '19. media remote: player appears late' 'late' 'play;read' 'lad-media-late'
+    $run = Invoke-Media '19. media remote: player appears late' 'late' 'play;read;quit' 'lad-media-late'
     Record 'media late: the snapshot reads the player (playing, its controls, loop off, a title, no timeline)' ($run.Text.Contains('step 2 "read": state: ready; app: "' + $fakeId + '"; status: playing; offers: pause stop next previous loop; loop: off; timeline: no; title shared: yes'))
     Record 'media late: waiting for the app, then ready and play done' ($run.Exit -eq 0 -and $run.Text.Contains('the pick took effect; state: waiting for the app') -and $run.Text.Contains('the test player is ready after') -and $run.Text.Contains('step 1 "play": done') -and $run.Received -eq 'play')
 
     # 20. The guard: commands may only go to an id that is not the fake player.
-    $run = Invoke-Media '20. media remote: test guard' 'guard' 'play;next' 'lad-media-guard' @{ RACING_MASTER_MOD_TEST_MEDIA_PICK = $fakeId; RACING_MASTER_MOD_TEST_MEDIA_APP = 'RacingMasterMod.TestHost.NotThisOne' }
+    $run = Invoke-Media '20. media remote: test guard' 'guard' 'play;next;quit' 'lad-media-guard' @{ RACING_MASTER_MOD_TEST_MEDIA_PICK = $fakeId; RACING_MASTER_MOD_TEST_MEDIA_APP = 'RacingMasterMod.TestHost.NotThisOne' }
     Record 'media guard: both commands refused, the fake player received nothing' ($run.Exit -eq 0 -and ([regex]::Matches($run.Text, 'refused to send')).Count -eq 2 -and $run.Received -eq 'nothing')
 
     # 21. The game's Shutdown (sleep and wake) and a media thread that stops answering.
-    $run = Invoke-Media '21. media remote: not answering, rebuild mode' 'lifecycle' 'play;pause;hang;rebuild;play;repeat-all;pause;next' 'lad-media-lifecycle'
-    Record 'media lifecycle: a stuck media thread shows as "not answering" and recovers' ($run.Exit -eq 0 -and $run.Text -match 'step 3 "hang": the snapshot said Windows is not answering after \d+ ms; ready again afterwards')
+    $run = Invoke-Media '21. media remote: sleep, wake, not answering, rebuild mode' 'lifecycle' 'play;sleep;wake;pause;hang;rebuild;play;repeat-all;pause;next;quit' 'lad-media-lifecycle'
+    Record 'media lifecycle: sleep lets go but keeps the thread' ($run.Exit -eq 0 -and $run.Text.Contains('step 2 "sleep": state: off; the media thread is still running'))
+    Record 'media lifecycle: wake controls the picked app again' ($run.Text -match 'step 3 "wake": state: ready' -and $run.Text.Contains('step 4 "pause": done'))
+    Record 'media lifecycle: a stuck media thread shows as "not answering" and recovers' ($run.Text -match 'step 5 "hang": the snapshot said Windows is not answering after \d+ ms; ready again afterwards')
     Record 'media lifecycle: the freshness check ran and agreed' ($run.Text.Contains('music apps: a fresh check agrees with the held session'))
-    Record 'media lifecycle: rebuild mode sends and confirms through a fresh manager' (([regex]::Matches($run.Text, 'step (5|6|7|8) "[a-z-]+": done')).Count -eq 4 -and $run.Received -eq 'play, pause, play, loop all, pause, next')
+    Record 'media lifecycle: rebuild mode sends and confirms through a fresh manager' (([regex]::Matches($run.Text, 'step (7|8|9|10) "[a-z-]+": done')).Count -eq 4 -and $run.Received -eq 'play, pause, play, loop all, pause, next')
+    Test-CleanStop $run 'media lifecycle'
     Test-MediaSafety $run 'media lifecycle'
 
     # 22. Without the test flag the mod stays dormant: no media code runs, nothing is sent.
-    $run = Invoke-Media '22. media mode, flag unset: mod must stay dormant' 'basic' 'play;pause' 'lad-media-dormant' @{} $false 4
+    $run = Invoke-Media '22. media mode, flag unset: mod must stay dormant' 'basic' 'play;pause;quit' 'lad-media-dormant' @{} $false 4
     Record 'media dormant: the fake player was published, no log folder, nothing received' ((@($run.Lines -match '^fake player published at start: yes').Count -eq 1) -and -not (Test-Path (Join-Path $run.LogRoot 'RacingMasterMod')) -and $run.Received -eq 'nothing')
 
     Write-Host ''

@@ -13,7 +13,9 @@
 // - Titles and artists are never written to the log: players paste the log into bug reports.
 // - In the game the thread never leaves its apartment. If the game had no multithreaded
 //   apartment, the mod's RoInitialize creates it and every game thread that never initialised
-//   COM becomes an implicit member; leaving would take that away from under the game.
+//   COM becomes an implicit member; leaving would take that away from under the game. So
+//   Shutdown() in the game only lets go of the sessions and puts the thread to sleep. Only the
+//   developer test host stops the thread and calls RoUninitialize.
 //
 // The media thread is the only thread that touches a WinRT object. "Media thread only" below
 // means exactly that.
@@ -67,6 +69,7 @@ constexpr DWORD kTitleTimeoutMs = 2000;     // TryGetMediaPropertiesAsync
 constexpr DWORD kCommandTimeoutMs = 1500;   // Try...Async
 constexpr DWORD kConfirmTimeoutMs = 2500;   // the expected change after an accepted command
 constexpr DWORD kRefreshMs = 500;           // periodic refresh while running
+constexpr DWORD kShutdownWaitMs = 2000;
 constexpr ULONGLONG kTitleRefreshMs = 5000;
 constexpr ULONGLONG kAuditEveryMs = 10000;
 constexpr ULONGLONG kAuditRecheckMs = 1000;
@@ -204,6 +207,7 @@ HRESULT WaitAsync(Op* op, DWORD timeoutMs) {
 // ---- change notices: immortal delegates that only wake the media thread -----------------------------
 
 HANDLE g_wake = nullptr;          // auto-reset: a notice arrived or a command was queued
+HANDLE g_stop = nullptr;          // manual-reset: test host only, the thread must finish
 volatile LONG g_notices = 0;      // notices received so far (any kind)
 
 template <typename TDelegate, typename TSender, typename TArgs>
@@ -278,6 +282,7 @@ Command g_lastQueued = Command::FollowWindows;
 ULONGLONG g_lastQueuedTick = 0;
 
 volatile LONG g_started = 0;       // Start() created the thread (or tried to)
+volatile LONG g_asleep = 0;        // game only: Shutdown() asked the thread to let go and sleep
 volatile LONG g_dropLogged = 0;
 volatile LONG g_queueDrops = 0;    // commands lost because the queue was full
 HANDLE g_thread = nullptr;
@@ -285,7 +290,7 @@ bool g_testHost = false;
 wchar_t g_testApp[kAppIdChars] = L"";
 
 void Post(Command command, const wchar_t* appId) {
-    if (!g_started) {
+    if (!g_started || g_asleep) {
         if (InterlockedExchange(&g_dropLogged, 1) == 0) {
             Log("music apps: a command arrived while the media side was not started; ignored");
         }
@@ -513,6 +518,7 @@ private:
     void Refresh();
     void ScheduleRetry(HRESULT hr);
     void LogStartFacts();
+    void GoToSleep();
     std::wstring AppName(const std::wstring& id);
     bool RepeatBlocked(const std::wstring& id) const;
 
@@ -603,14 +609,26 @@ void Engine::Run() {
     auditTick_ = GetTickCount64() + kAuditEveryMs;
     Refresh();
 
-    // The thread runs until the process ends.
     for (;;) {
-        if (WaitForSingleObject(g_wake, kRefreshMs) == WAIT_OBJECT_0) {
+        const HANDLE handles[2] = {g_stop, g_wake};
+        const DWORD waited = WaitForMultipleObjects(2, handles, FALSE, kRefreshMs);
+        if (waited == WAIT_OBJECT_0) {
+            break;
+        }
+        if (waited == WAIT_OBJECT_0 + 1) {
             Sleep(30);   // notices come in bursts; one refresh covers them all
             if (!noticesLogged_ && g_notices) {
                 noticesLogged_ = true;
                 Log("music apps: change notices are arriving");
             }
+        }
+        if (g_asleep) {
+            GoToSleep();
+            if (WaitForSingleObject(g_stop, 0) == WAIT_OBJECT_0) {
+                break;
+            }
+            Refresh();
+            continue;
         }
         const LONG drops = InterlockedExchange(&g_queueDrops, 0);
         if (drops) {
@@ -620,6 +638,43 @@ void Engine::Run() {
         DrainCommands();
         Refresh();
     }
+
+    // Test host only: the game never stops the thread and never leaves the apartment.
+    DropTarget();
+    TeardownManager();
+    ReleaseAndClear(statics_);
+    g_api.RoUninitialize();
+    state_ = State::Off;
+    apps_.clear();
+    Publish();
+    Log("music apps: stopped cleanly");
+}
+
+// Game only: let go of every session, keep the apartment, wait for Start() or process exit.
+void Engine::GoToSleep() {
+    DropTarget();
+    TeardownManager();
+    apps_.clear();
+    closedName_.clear();
+    result_ = Result::None;
+    resultMessage_ = Message::None;
+    resultApp_.clear();
+    state_ = State::Off;
+    Queued discarded = {};
+    while (Pop(&discarded)) {
+    }
+    Publish();
+    Log("music apps: stopped controlling other apps; waiting until the panel asks again");
+    const HANDLE handles[2] = {g_stop, g_wake};
+    while (g_asleep) {
+        if (WaitForMultipleObjects(2, handles, FALSE, INFINITE) == WAIT_OBJECT_0) {
+            return;
+        }
+    }
+    Log("music apps: controlling other apps again");
+    state_ = State::Starting;
+    retryTick_ = 0;
+    Publish();
 }
 
 void Engine::LogStartFacts() {
@@ -1639,6 +1694,13 @@ DWORD WINAPI MediaThread(LPVOID) {
     return 0;
 }
 
+// What Shutdown() does in the game: the thread lets go of every session and sleeps, keeping its
+// apartment, until Start() is called again. The test host's "sleep" step uses it directly.
+void PutToSleep() {
+    InterlockedExchange(&g_asleep, 1);
+    SetEvent(g_wake);
+}
+
 }  // namespace
 
 // ---- public interface ----------------------------------------------------------------------------------------
@@ -1650,7 +1712,11 @@ Remote& Remote::Get() {
 
 void Remote::Start() {
     if (InterlockedCompareExchange(&g_started, 1, 0) != 0) {
-        return;   // already created
+        // Already created: wake it if Shutdown() put it to sleep.
+        if (InterlockedExchange(&g_asleep, 0) != 0 && g_wake) {
+            SetEvent(g_wake);
+        }
+        return;
     }
     g_testHost = ModIsTestHost();
     if (g_testHost) {
@@ -1661,7 +1727,8 @@ void Remote::Start() {
     }
     Store();   // allocate before any reader can race with the thread
     g_wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    if (!g_wake) {
+    g_stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!g_wake || !g_stop) {
         Log("music apps: could not create the thread events; other apps cannot be controlled");
         return;
     }
@@ -1673,7 +1740,24 @@ void Remote::Start() {
 }
 
 void Remote::Shutdown() {
-    // Not built yet: the media thread runs until the process ends.
+    if (!g_thread) {
+        return;
+    }
+    if (!g_testHost) {
+        // The game: let go and sleep; never leave the apartment (see the top of this file).
+        PutToSleep();
+        return;
+    }
+    const ULONGLONG start = GetTickCount64();
+    SetEvent(g_stop);
+    const DWORD waited = WaitForSingleObject(g_thread, kShutdownWaitMs);
+    if (waited == WAIT_OBJECT_0) {
+        Log("music apps: the media thread returned in time (%llu ms)", GetTickCount64() - start);
+        CloseHandle(g_thread);
+        g_thread = nullptr;
+    } else {
+        Log("music apps: the media thread did not return within %lu ms; it is left running", kShutdownWaitMs);
+    }
 }
 
 void Remote::Play() { Post(Command::Play, nullptr); }
@@ -1788,7 +1872,7 @@ bool WaitFor(DWORD timeoutMs, F predicate) {
 
 // Runs the steps of RACING_MASTER_MOD_TEST_MEDIA_SCRIPT one after another. The next step goes out
 // only once the previous one has settled (up to 1.5 s for a reply plus 2.5 s for the
-// confirmation), then 400 ms later.
+// confirmation), then 400 ms later. "quit" stops the media thread the way only the test host may.
 DWORD WINAPI TestScriptThread(LPVOID) {
     Remote& remote = Remote::Get();
     wchar_t script[1024] = L"";
@@ -1839,6 +1923,31 @@ DWORD WINAPI TestScriptThread(LPVOID) {
         ++step;
         char name8[64];
         LogUtf8(name, name8, sizeof(name8));
+        if (lstrcmpW(name, L"quit") == 0) {
+            Log("music apps test: step %u \"quit\": stopping the media thread", step);
+            remote.Shutdown();
+            Log("music apps test: finished");
+            return 0;
+        }
+        if (lstrcmpW(name, L"sleep") == 0) {
+            // The game's Shutdown(): let go of the sessions, keep the thread and its apartment.
+            PutToSleep();
+            const bool off = WaitFor(3000, [&] { return remote.GetSnapshot().state == State::Off; });
+            const bool alive = g_thread && WaitForSingleObject(g_thread, 0) == WAIT_TIMEOUT;
+            Log("music apps test: step %u \"sleep\": state: %s; the media thread is %s", step,
+                off ? "off" : StateWord(remote.GetSnapshot().state), alive ? "still running" : "gone");
+            Sleep(400);
+            continue;
+        }
+        if (lstrcmpW(name, L"wake") == 0) {
+            remote.Start();
+            const ULONGLONG wakeStart = GetTickCount64();
+            const bool back = WaitFor(5000, [&] { return remote.GetSnapshot().available; });
+            Log("music apps test: step %u \"wake\": state: %s after %llu ms", step,
+                back ? "ready" : StateWord(remote.GetSnapshot().state), GetTickCount64() - wakeStart);
+            Sleep(400);
+            continue;
+        }
         if (lstrcmpW(name, L"read") == 0) {
             // What the panel would see. Whether a title is shared, never the title itself.
             const Snapshot s = remote.GetSnapshot();
@@ -1909,7 +2018,7 @@ DWORD WINAPI TestScriptThread(LPVOID) {
         }
         Sleep(400);
     }
-    Log("music apps test: finished; the media thread keeps running");
+    Log("music apps test: finished without \"quit\"; the media thread keeps running");
     return 0;
 }
 
