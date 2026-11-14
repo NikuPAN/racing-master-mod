@@ -20,7 +20,8 @@
 //           prints what the fake player received. Scenarios: basic, ignore-pause, no-repeat,
 //           vanish, late (the player appears 2 s after start), guard, lifecycle. The mod's test
 //           script decides what is sent; the scenario decides how the fake player behaves.
-//           Exits 0 if the script finished.
+//           Exits 0 if the script finished. The fake player's app id comes from
+//           RACING_MASTER_MOD_TEST_FAKE_PLAYER_ID (new for every run; see fake_player.h).
 //
 // Reading a flip-model frame back: the hook draws into buffer 0 before the real Present runs.
 // A normal Present then rotates the buffers, so the host clears buffer 0 and presents it with
@@ -1542,12 +1543,14 @@ void ScriptOtherReal(Host& host) {
     Click(host, Item("play_pause"));
     Check("O2 a click on play makes the other app play",
           WaitLayout(host, [](const LayoutFile& l) { return l.Int("other_playing") == 1; }, 6000));
+    // This run's own fake player, by its id (see fake_player.h), never just "a fake player".
+    const std::string id = fake_player::AppIdUtf8();
     Key(host, VK_F8);
     Check("O3 F8 sends \"next track\" to the other app and it accepts",
-          WaitForModLog(host, "\"next track\" sent to RacingMasterMod.TestHost.FakePlayer: accepted", 6000));
+          WaitForModLog(host, ("\"next track\" sent to " + id + ": accepted").c_str(), 6000));
     Key(host, VK_F9);
     Check("O4 F9 changes what the other app repeats",
-          WaitForModLog(host, "\"loop one\" sent to RacingMasterMod.TestHost.FakePlayer: accepted", 6000));
+          WaitForModLog(host, ("\"loop one\" sent to " + id + ": accepted").c_str(), 6000));
     Key(host, VK_F7);
     Check("O5 F7 pauses the other app", WaitLayout(host, [](const LayoutFile& l) { return l.Int("other_playing") == 0; }, 6000));
 

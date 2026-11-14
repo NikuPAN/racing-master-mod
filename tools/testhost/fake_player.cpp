@@ -39,6 +39,8 @@ bool g_repeatSubscribed = false;
 wm::MediaPlaybackStatus g_status = wm::MediaPlaybackStatus_Closed;
 int g_track = 1;
 char g_received[1024] = "";
+wchar_t g_appId[128] = L"";
+char g_appId8[128] = "";
 
 struct StringRef {
     HSTRING_HEADER header = {};
@@ -185,8 +187,27 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 
 }  // namespace
 
+const wchar_t* AppId() {
+    return g_appId;
+}
+
+const char* AppIdUtf8() {
+    return g_appId8;
+}
+
 bool PrepareProcess() {
-    HRESULT hr = SetCurrentProcessExplicitAppUserModelID(kAppId);
+    // The mod's remote reads app ids into 128 characters (other_app.cpp), so the id must fit.
+    const DWORD n = GetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_FAKE_PLAYER_ID", g_appId, 128);
+    if (n >= 128) {
+        printf("fake player: RACING_MASTER_MOD_TEST_FAKE_PLAYER_ID is %lu characters; at most 127 fit\n", n);
+        return false;
+    }
+    if (n == 0) {
+        swprintf_s(g_appId, L"%s.%lu", kAppIdPrefix, GetCurrentProcessId());
+    }
+    WideCharToMultiByte(CP_UTF8, 0, g_appId, -1, g_appId8, sizeof(g_appId8), nullptr, nullptr);
+    printf("fake player: app id %s%s\n", g_appId8, n == 0 ? " (RACING_MASTER_MOD_TEST_FAKE_PLAYER_ID unset, so the process id was added)" : "");
+    HRESULT hr = SetCurrentProcessExplicitAppUserModelID(g_appId);
     if (FAILED(hr)) {
         printf("fake player: could not set the app id (0x%08lx)\n", static_cast<unsigned long>(hr));
         return false;

@@ -14,9 +14,18 @@
 
 namespace fake_player {
 
-// The app id Windows shows for the session. The mod's test guard only lets commands through to
-// this id (RACING_MASTER_MOD_TEST_MEDIA_APP).
-constexpr wchar_t kAppId[] = L"RacingMasterMod.TestHost.FakePlayer";
+// Every fake player's app id starts with this. The id itself comes from
+// RACING_MASTER_MOD_TEST_FAKE_PLAYER_ID, which tools\run-host-test.ps1 makes new for every run;
+// without it the process id is appended. Windows matches sessions by app id only, so two test runs
+// sharing one id (another run on the same PC at the same time) would command each other's player.
+// The mod's test guard only lets commands through to RACING_MASTER_MOD_TEST_MEDIA_APP, which the
+// script sets to this same id.
+constexpr wchar_t kAppIdPrefix[] = L"RacingMasterMod.TestHost.FakePlayer";
+
+// The app id this process publishes under, as wide text and as UTF-8 (the mod writes it to its log
+// in UTF-8). Valid after PrepareProcess().
+const wchar_t* AppId();
+const char* AppIdUtf8();
 
 enum class Behaviour {
     ApplyAll,        // does what it is asked; listens for loop changes
@@ -25,8 +34,9 @@ enum class Behaviour {
     VanishOnPause,   // switches its media session off when asked to pause
 };
 
-// Gives the process its app id and initialises COM on this thread (single-threaded apartment).
-// Must run on the main thread before any window is created and before Start().
+// Gives the process its app id (printed as "fake player: app id ...") and initialises COM on this
+// thread (single-threaded apartment). Must run on the main thread before any window is created and
+// before Start().
 bool PrepareProcess();
 
 // Publishes the session (paused, title "Test track 1"). Returns false with a printed reason.
