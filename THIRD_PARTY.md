@@ -1,9 +1,10 @@
 # Third-party software
 
-The music engine in `version.dll` is built from the libraries below. Each is fetched by
-`build\fetch-deps.ps1` from its publisher, pinned to one version and one SHA-256, and never
-committed to this repository. When the DLL is published, this file goes with it: the three Xiph
-libraries are under BSD licences that require their notices to travel with binaries.
+The music engine and the in-game panel in `version.dll` are built from the libraries below.
+Each is fetched by `build\fetch-deps.ps1` from its publisher, pinned to one version and one
+SHA-256 per file, and never committed to this repository. When the DLL is published, this file
+goes with it: Dear ImGui's MIT licence and the three Xiph libraries' BSD licences require their
+notices to travel with binaries.
 
 | Library | Version | Used for | Licence |
 |---|---|---|---|
@@ -12,6 +13,7 @@ libraries are under BSD licences that require their notices to travel with binar
 | libogg | 1.3.6 | Ogg container for Opus | BSD 3-clause, notice below |
 | opus | 1.6.1 | Opus decoding | BSD 3-clause, notice below (with the royalty-free patent licences it names) |
 | opusfile | 0.12 | Opus file reading, seeking, gapless trimming | BSD 3-clause, notice below |
+| Dear ImGui | 1.93.0 (13 files of the tagged release) | drawing the in-game music panel, with its Direct3D 11 backend | MIT, notice below |
 
 Windows components the mod uses but does not ship: Media Foundation (M4A/AAC decoding and the tags
 of MP3, FLAC, WAV and M4A), COM and the shell's file dialog.
@@ -20,6 +22,32 @@ Used only by the test program `out\musictest.exe`, never linked into `version.dl
 shipped: **libvorbis 1.3.7** (BSD 3-clause, Copyright (c) 2002-2020 Xiph.org Foundation), whose
 encoder makes the OGG Vorbis test fixture because Windows has no Vorbis encoder. The test program
 also uses the opus encoder from the same opus release to make the Opus fixture.
+
+## Dear ImGui 1.93.0
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2014-2026 Omar Cornut
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 ## opus 1.6.1
 
