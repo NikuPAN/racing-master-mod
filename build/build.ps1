@@ -232,7 +232,10 @@ $loaderSources = @(
     'src\remote\remote.cpp'
 )
 # The music engine. link_anchor.cpp keeps it inside version.dll until the panel calls it (see there).
-$musicSources = @()
+$musicSources = @(
+    'src\music\atomic_file.cpp',
+    'src\music\text.cpp'
+)
 $loaderObjects = Build-Objects $loaderSources @()
 $musicObjects = @(Build-Objects $musicSources $musicIncludes)
 
@@ -320,8 +323,22 @@ $bystanderObject = Join-Path $obj 'bystander.obj'
 Invoke-Tool $cl ($hostFlags + @("/Fo$bystanderObject", (Join-Path $root 'tools\testhost\bystander.cpp')))
 Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'bystander.exe')", '/SUBSYSTEM:CONSOLE', $bystanderObject)
 
+# musictest.exe links the very same engine objects that go into version.dll and runs them without
+# a sound device (see tools\testhost\musictest.cpp). Same flags as the mod, so the STL is built the
+# same way on both sides. Media Foundation is imported normally here: a test program on this PC.
+# One file per area of the engine; each registers its own cases (see musictest.h).
+$musicTestSources = @(
+    'tools\testhost\musictest.cpp',
+    'tools\testhost\musictest_text.cpp'
+)
+$musicTestObjects = Build-Objects $musicTestSources ($musicIncludes + @("/I$(Join-Path $root 'src')", "/I$(Join-Path $vorbisDir 'include')"))
+$engineObjects = @($musicObjects | Where-Object { [IO.Path]::GetFileName($_) -ne 'link_anchor.obj' })
+Invoke-Tool $link (@('/nologo', "/OUT:$(Join-Path $out 'musictest.exe')", '/SUBSYSTEM:CONSOLE', '/DEBUG',
+    "/PDB:$(Join-Path $obj 'musictest.pdb')", '/OPT:REF', 'kernel32.lib', 'user32.lib') + $musicLibs +
+    $musicTestObjects + @((Join-Path $obj 'log.obj')) + $engineObjects + @($miniaudioObject, $stbObject, $xiphLib, $vorbisLib))
 
 Write-Host ''
 Write-Host "Built: $dll"
 Write-Host "Built: $(Join-Path $out 'testhost.exe')"
 Write-Host "Built: $(Join-Path $out 'bystander.exe')"
+Write-Host "Built: $(Join-Path $out 'musictest.exe')"

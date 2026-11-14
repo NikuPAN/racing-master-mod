@@ -34,6 +34,11 @@
 #                  freshness check, and rebuild mode (the fallback when change notices stop)
 #  22. media, flag unset: the mod stays dormant, no log folder, nothing sent
 #
+# Music engine (src\music):
+#  23. musictest.exe               silent: decoding, playlist logic, gapless, persistence, picker.
+#                                  One check per PASS/FAIL line it prints; SKIPPED lines are listed
+#                                  with their reason and never count as passes.
+#
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
 
@@ -43,7 +48,8 @@ $root = Split-Path -Parent $PSScriptRoot
 $dll = Join-Path $root 'out\version.dll'
 $hostExe = Join-Path $root 'out\testhost.exe'
 $bystanderExe = Join-Path $root 'out\bystander.exe'
-foreach ($file in $dll, $hostExe, $bystanderExe) {
+$musicTestExe = Join-Path $root 'out\musictest.exe'
+foreach ($file in $dll, $hostExe, $bystanderExe, $musicTestExe) {
     if (-not (Test-Path $file)) {
         throw 'Build first: powershell -ExecutionPolicy Bypass -File build\build.ps1'
     }
@@ -55,6 +61,7 @@ Copy-Item $dll, $hostExe, $bystanderExe $work
 
 $realLocalAppData = $env:LOCALAPPDATA
 $results = @()
+$skipped = @()
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
 function Record([string]$Name, [bool]$Ok) {
@@ -289,12 +296,25 @@ try {
     $run = Invoke-Media '22. media mode, flag unset: mod must stay dormant' 'basic' 'play;pause;quit' 'lad-media-dormant' @{} $false 4
     Record 'media dormant: the fake player was published, no log folder, nothing received' ((@($run.Lines -match '^fake player published at start: yes').Count -eq 1) -and -not (Test-Path (Join-Path $run.LogRoot 'RacingMasterMod')) -and $run.Received -eq 'nothing')
 
+    # --- music engine ---------------------------------------------------------------------------------
+    # 23. The engine's own test program: no sound device (manual and null output only), no window,
+    # the file dialog configured but never shown. It links the same objects as version.dll.
+    $run = Invoke-Run '23. musictest.exe: the music engine, silent' $musicTestExe @((Join-Path $work 'music'), $root) @{} (Join-Path $work 'lad-music')
+    foreach ($line in $run.Lines) {
+        if ($line -match '^PASS (.+)$') { Record "music: $($Matches[1])" $true }
+        elseif ($line -match '^FAIL (.+)$') { Record "music: $($Matches[1])" $false }
+        elseif ($line -match '^SKIPPED (.+)$') { $skipped += "music: $($Matches[1])" }
+    }
+    # The total line proves the program ran to its end (a crash part-way would leave cases unseen).
+    Record 'music: the test program ran to the end and reported its total' (@($run.Lines -match '^musictest: \d+ passed').Count -eq 1)
+
     Write-Host ''
     Write-Host 'Summary'
     foreach ($r in $results) { Write-Host ("  " + $(if ($r.Ok) { 'PASS' } else { 'FAIL' }) + "  $($r.Name)") }
+    foreach ($s in $skipped) { Write-Host "  SKIPPED  $s" }
     $failed = @($results | Where-Object { -not $_.Ok }).Count
     Write-Host ''
-    Write-Host ("$($results.Count - $failed) of $($results.Count) checks passed" + $(if ($failed) { "; $failed FAILED" } else { '' }))
+    Write-Host ("$($results.Count - $failed) of $($results.Count) checks passed" + $(if ($failed) { "; $failed FAILED" } else { '' }) + $(if ($skipped.Count) { "; $($skipped.Count) skipped (listed above with the reason)" } else { '' }))
 } finally {
     Remove-Item Env:\RACING_MASTER_MOD_TEST_HOST -ErrorAction SilentlyContinue
     Remove-Item Env:\RACING_MASTER_MOD_TEST_FAULT -ErrorAction SilentlyContinue
