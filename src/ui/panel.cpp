@@ -165,11 +165,15 @@ void FormatTime(double seconds, char* buffer, int size) {
 }
 
 // Text that ends in "..." when it does not fit `width`.
+// Like ImGui::Text after AlignTextToFramePadding, it sits on the same baseline as the buttons
+// beside it: the text is drawn at the line's text offset, not at the top of the line.
 void TextFit(const char* text, float width) {
-    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const float offset = ImGui::GetCurrentWindow()->DC.CurrLineTextBaseOffset;   // set by AlignTextToFramePadding
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    pos.y += offset;
     const float height = ImGui::GetTextLineHeight();
     const ImVec2 size = ImGui::CalcTextSize(text);
-    ImGui::Dummy(ImVec2(width, height));
+    ImGui::ItemSize(ImVec2(width, height), offset);
     ImGui::RenderTextEllipsis(ImGui::GetWindowDrawList(), pos, ImVec2(pos.x + width, pos.y + height), pos.x + width,
                               text, nullptr, &size);
 }
