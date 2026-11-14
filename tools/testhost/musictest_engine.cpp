@@ -94,10 +94,16 @@ void Render(double seconds, mt::Signal* capture) {
     float buffer[kChunk * 2];
     const size_t total = static_cast<size_t>(seconds * 48000);
     for (size_t done = 0; done < total; done += kChunk) {
+        const uint64_t consumedBefore = testing::GetCounters().consumed;
         testing::Render(buffer, kChunk);
         if (capture) capture->samples.insert(capture->samples.end(), buffer, buffer + kChunk * 2);
         const testing::Counters c = testing::GetCounters();
-        if (c.produced - c.consumed < 24000) testing::Sync(2000);
+        // Render pulls far faster than real time. Wait for the player thread when the ring runs
+        // low, and also when nothing was taken: the output is holding at a point where the player
+        // must decide (a late loop change, the end of the list, a pause). The ring can still be
+        // full of a dropped successor there, so the first test alone would read the whole window
+        // as silence before the player thread has had a turn; a real device leaves it time.
+        if (c.produced - c.consumed < 24000 || c.consumed == consumedBefore) testing::Sync(2000);
     }
 }
 

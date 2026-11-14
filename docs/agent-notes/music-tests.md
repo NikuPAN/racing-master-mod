@@ -29,7 +29,8 @@ AAC with Windows' Media Foundation encoders (a missing encoder makes that case S
 libopus + libogg; OGG Vorbis with libvorbis 1.3.7, which only the test program links.
 
 **Engine cases** use the Manual output: the test pulls audio through the real callback in 10 ms
-pieces and calls `testing::Sync` (a full player-thread pass) whenever less than 0.5 s is queued.
+pieces and calls `testing::Sync` (a full player-thread pass) whenever less than 0.5 s is queued,
+and also whenever a piece consumed nothing (the output is holding for a player decision).
 Tracks are told apart by frequency in 50 ms windows (`mt::Sequence`, e.g. "AB." = A, B,
 silence). Gapless is checked as "no sample step above the sine's own, no run of zeros" around the
 exact boundary frame, at 48 kHz and through the resampler from 44.1 kHz. One case runs the null
@@ -39,7 +40,11 @@ without losing the position.
 Two cases were flaky and fixed on 2026-11-15: "removing the only track" pulled audio without
 `testing::Sync`, and "loop one set late" labelled a 50 ms window that straddled A's restart as
 the 500 Hz G; it now labels against the two songs it plays only. When a case labels windows,
-give it only the tones it can hear.
+give it only the tones it can hear. It failed once more later the same day as "A.": after the
+late loop change the output holds at A's last sample until the player thread decides again, but
+the ring still held the dropped B, so the 0.5 s rule never waited and the whole window was pulled
+as silence before the player thread ran. The helper now also syncs when a piece consumed nothing.
+A real device pulls in real time, so in play the gap is only the player thread's reaction time.
 
 Gotchas: call `testing::Sync` after a command and before pulling audio (silence pulled before the
 player acted consumes nothing and makes positions look late); a WAV cut in half is not "damaged"
