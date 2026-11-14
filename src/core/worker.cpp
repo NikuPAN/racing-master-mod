@@ -114,17 +114,25 @@ void WatchFrames(bool musicStarted) {
             StopMusicParts();
             return;
         }
-        if (PresentHookSwitchedOff()) {
-            // The fault handler already wrote the reason, and the panel is off with the rest of
-            // the per-frame code: nothing could pause or stop the music any more.
-            if (!faultHandled) {
-                faultHandled = true;
-                if (musicStarted) {
-                    music::Player::Get().Pause();
+        const bool hookOff = PresentHookSwitchedOff();
+        if (!faultHandled && (hookOff || PanelSwitchedOff())) {
+            // The panel is the only way to pause or stop the music in the game. Once it is off for
+            // the session (a fault in the frame code, which also stops the marker; or a panel
+            // error on its own: an ImGui assertion or a fault in the window procedure), a song
+            // that is playing would play on with nothing to stop it.
+            faultHandled = true;
+            if (musicStarted) {
+                music::Player::Get().Pause();
+                if (hookOff) {
                     Log("music: paused, because the panel that controls it has switched off with the rest of the "
                         "mod after the error above; it plays again after the game is restarted and a song is chosen");
+                } else {
+                    Log("music: paused, because the music panel has switched itself off after an error (see the "
+                        "panel line in this log); it plays again after the game is restarted and a song is chosen");
                 }
             }
+        }
+        if (hookOff) {
             if (!musicStarted) {
                 return;
             }

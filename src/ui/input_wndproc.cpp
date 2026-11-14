@@ -61,6 +61,9 @@ bool g_consumedKeys[256] = {};       // keys whose "down" the mod consumed
 bool g_textKeys[256] = {};           // keys whose "down" went to a panel text field
 ULONGLONG g_lastMediaCommandTick = 0;
 volatile LONG g_procedureFaulted = 0;
+volatile LONG g_testPanelOff = 0;                 // test host only: a TestPanelOff value for F12
+volatile LONG g_testAssertRequested = 0;          // test host only: F12 asked for an ImGui assertion
+volatile int* volatile g_testFaultTarget = nullptr;
 
 SharedInput g_shared;
 
@@ -210,6 +213,13 @@ enum class Verdict { Forward, Consume };
 Verdict HandleKeyDown(HWND window, WPARAM wParam, LPARAM lParam) {
     if (wParam >= 256) {
         return Verdict::Forward;
+    }
+    if (g_testPanelOff != 0 && wParam == VK_F12) {   // test host only
+        if (InterlockedExchange(&g_testPanelOff, 0) == static_cast<LONG>(TestPanelOff::WindowProcedureFault)) {
+            *g_testFaultTarget = 1;   // a deliberate fault inside the guard
+        } else {
+            InterlockedExchange(&g_testAssertRequested, 1);
+        }
     }
     const bool repeat = (lParam & (1LL << 30)) != 0;
     const HotkeyTable* table = g_shared.hotkeys.load(std::memory_order_acquire);
@@ -529,4 +539,12 @@ bool InstallWindowSubclass(HWND window) {
 
 bool WindowProcedureFaulted() {
     return g_procedureFaulted != 0;
+}
+
+void InputScheduleTestPanelOff(TestPanelOff what) {
+    InterlockedExchange(&g_testPanelOff, static_cast<LONG>(what));
+}
+
+bool InputTakeTestAssertRequest() {
+    return g_testAssertRequested != 0 && InterlockedExchange(&g_testAssertRequested, 0) != 0;
 }

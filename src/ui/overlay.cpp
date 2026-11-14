@@ -72,7 +72,6 @@ UINT g_failedWidth = 0, g_failedHeight = 0;
 bool g_failureLogged = false;
 bool g_formatLogged = false;
 bool g_openWithoutDrawLogged = false;
-bool g_procedureFaultLogged = false;
 unsigned g_panelFrames = 0;
 bool g_exclusiveFullscreen = false;
 char g_lastLayout[8192] = "";
@@ -584,6 +583,9 @@ bool DrawFrame(IDXGISwapChain* swapChain, FrameRefs& refs, bool panelOpen) {
     Shared().wantTextInput.store(io.WantTextInput, std::memory_order_relaxed);
 
     ++g_panelFrames;
+    if (g_testHost && InputTakeTestAssertRequest()) {
+        ModImGuiAssertFail("test host: a deliberate assertion", __FILE__, __LINE__);   // test host only
+    }
     refs.context1->SwapDeviceContextState(g_state, &refs.gameState);   // the game's whole pipeline state is parked
     if (g_testFaultAtPanelFrame != 0 && g_panelFrames == g_testFaultAtPanelFrame) {
         *g_faultTarget = 1;   // test host only: fault while our state is swapped in
@@ -631,6 +633,15 @@ void PanelStart(const UiSettings& settings, bool testHost) {
             if (g_testFaultAtPanelFrame) {
                 Log("test host: a deliberate fault is scheduled for panel frame %u, between the two state swaps",
                     g_testFaultAtPanelFrame);
+            }
+        }
+        if (ReadEnv(L"RACING_MASTER_MOD_TEST_PANEL_OFF", value, 64)) {
+            if (lstrcmpiW(value, L"wndproc") == 0) {
+                InputScheduleTestPanelOff(TestPanelOff::WindowProcedureFault);
+                Log("test host: the mod's part of the window procedure will fail deliberately at the first F12");
+            } else if (lstrcmpiW(value, L"assert") == 0) {
+                InputScheduleTestPanelOff(TestPanelOff::ImGuiAssert);
+                Log("test host: the panel will raise a deliberate Dear ImGui assertion after the first F12");
             }
         }
     }
@@ -683,9 +694,14 @@ void PanelOnFrame(IDXGISwapChain* swapChain, UINT presentFlags, FrameRefs& refs)
     if (!g_started || g_dead.load(std::memory_order_relaxed)) {
         return;
     }
-    if (WindowProcedureFaulted() && !g_procedureFaultLogged) {
-        g_procedureFaultLogged = true;
-        Log("panel: the mod's part of the game window procedure failed; clicks and keys go to the game from now on");
+    if (WindowProcedureFaulted()) {
+        // Without the window procedure nothing could close an open panel or reach the music any
+        // more (Insert and F5-F9 now go to the game), so the panel closes for the session, as
+        // after any other panel error, and the worker pauses the music.
+        Log("panel: the mod's part of the game window procedure failed; clicks and keys go to the game from now on, "
+            "and the panel is closed for this session");
+        PanelOnFault();
+        return;
     }
     // Hotkeys run every frame, whether or not the panel is drawn.
     SharedInput& shared = Shared();
@@ -780,4 +796,8 @@ void PanelOnFault() {
 
 HWND PanelGameWindow() {
     return g_publishedWindow.load(std::memory_order_acquire);
+}
+
+bool PanelSwitchedOff() {
+    return g_dead.load(std::memory_order_relaxed) || WindowProcedureFaulted();
 }

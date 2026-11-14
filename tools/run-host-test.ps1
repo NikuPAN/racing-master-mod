@@ -60,6 +60,9 @@
 #  41. end to end, "Other app"     the real media remote and the silent fake player: play, F8, F9,
 #                                  F7 reach it and nothing else; screenshot in out\preview\integrated
 #  42. settings.ini beside the DLL ignored, and the log says so once, with the two paths it reads
+#  43-44. panel switched off       a fault in the window procedure, then a Dear ImGui assertion (both
+#                                  at the first F12): the panel closes, the game gets every key and
+#                                  click, and the worker pauses the song that was playing
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
@@ -172,7 +175,7 @@ foreach ($song in $songNames) { New-ToneWav (Join-Path $songs $song.Name) $song.
 
 # One music panel run (testhost.exe panel ...). marker_seconds=0 so nothing but the panel is on
 # screen; each run is also checked for a Dear ImGui assertion or reported mistake in its log.
-function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashtable]$Environment, [string[]]$Ini, [string]$Songs = $songs) {
+function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashtable]$Environment, [string[]]$Ini, [string]$Songs = $songs, [bool]$AssertExpected = $false) {
     $logRoot = Join-Path $work ('lad-panel-' + ($Title -replace '[^A-Za-z0-9]+', '-'))
     Write-Ini (Join-Path $logRoot 'RacingMasterMod\settings.ini') (@('[mod]', 'marker_seconds=0') + $Ini) 'utf8'
     New-Item -ItemType Directory -Force (Join-Path $logRoot 'RacingMasterMod\music') | Out-Null
@@ -182,7 +185,12 @@ function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashta
     $result = Invoke-Run $Title (Join-Path $work 'testhost.exe') $arguments ($flag + $Environment) $logRoot
     $text = Read-Log $result.Log
     Record "$($Title): host checks pass" ($result.Exit -eq 0)
-    Record "$($Title): no Dear ImGui assertion or reported mistake in the log" (-not ($text -match 'IMGUI ASSERT|reported a mistake'))
+    if ($AssertExpected) {
+        # Only the deliberate assertion, logged once.
+        Record "$($Title): only the deliberate Dear ImGui assertion in the log, once" (([regex]::Matches($text, 'IMGUI ASSERT')).Count -eq 1 -and $text.Contains('IMGUI ASSERT "test host: a deliberate assertion"') -and -not $text.Contains('reported a mistake'))
+    } else {
+        Record "$($Title): no Dear ImGui assertion or reported mistake in the log" (-not ($text -match 'IMGUI ASSERT|reported a mistake'))
+    }
     Record "$($Title): when the game window closed, the music was stopped and saved" ($text.Contains('music: the game window has closed; stopping the music and saving the list') -and $text.Contains('music: stopped and saved'))
     return @{ Exit = $result.Exit; Log = $text; Lines = $result.Lines }
 }
@@ -493,6 +501,15 @@ try {
     Record 'misplaced settings.ini: one line names it as ignored and gives the full paths of the two files the mod reads' (([regex]::Matches($log, [regex]::Escape($expected))).Count -eq 1)
     Record 'misplaced settings.ini: its stage=0 was not applied (the mod runs, the marker shows)' (($run.Lines -match '^marker: found').Count -eq 1 -and -not $log.Contains('stage 0: the mod is switched off'))
     Record 'no misplaced-file line when there is none (panel input run)' (-not (Read-Log (Join-Path $work 'lad-panel-panel-input\RacingMasterMod\mod.log')).Contains('next to version.dll and ignored it'))
+
+    # 43-44. The panel switches itself off without a fault in the frame code (the marker and the
+    # frame hook carry on): a fault in the mod's part of the window procedure, and a Dear ImGui
+    # assertion. The panel closes and the worker pauses the song that was playing.
+    $panelRun = Invoke-PanelRun '43. panel off after a fault in the window procedure' 'panel-off' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_TEST_PANEL_OFF = 'wndproc' } @()
+    Record 'window procedure fault: the panel says it is closed for the session, the worker paused the music' ($panelRun.Log.Contains('the panel is closed for this session') -and $panelRun.Log.Contains('music: paused, because the music panel has switched itself off after an error'))
+    Record 'window procedure fault: the frame code did not switch off (no fault line)' (-not $panelRun.Log.Contains('frame code failed'))
+    $panelRun = Invoke-PanelRun '44. panel off after a Dear ImGui assertion' 'panel-off' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_TEST_PANEL_OFF = 'assert' } @() $songs $true
+    Record 'ImGui assertion: the worker paused the music, once' (([regex]::Matches($panelRun.Log, 'music: paused, because')).Count -eq 1 -and $panelRun.Log.Contains('music: paused, because the music panel has switched itself off after an error'))
 
     Write-Host ''
     Write-Host 'Summary'

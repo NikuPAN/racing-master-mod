@@ -1518,6 +1518,36 @@ void ScriptOtherReal(Host& host) {
     CheckShot("O6 the panel showing the other app", Shoot(host, "integrated-other-app"), true);
 }
 
+// The panel switching itself off without a fault in the frame code, at the first F12: a fault in
+// the mod's part of the window procedure (RACING_MASTER_MOD_TEST_PANEL_OFF=wndproc) or a Dear
+// ImGui assertion (=assert). Either way the panel closes, the game gets every key and click, and
+// the worker pauses the song that was playing (the script checks its log line).
+void ScriptPanelOff(Host& host) {
+    bool ok = WaitLayout(host, [](const LayoutFile& l) {
+        return l.Int("enabled") == 1 && l.Int("open") == 1 && l.Int("drawn") == 1 && l.Has("next");
+    }, 10000);
+    ok = ok && WaitLayout(host, SongsReady, 10000);
+    Check("W0 the panel is open, watching the window, with the songs listed", ok);
+    if (!ok) return;
+    const POINT next = Item("next");
+    Key(host, VK_F7);
+    Check("W0 F7 plays a song", WaitLayout(host, [](const LayoutFile& l) { return l.Int("state") == 1; }));
+    Key(host, VK_F12);
+    Check("W1 the worker paused the music once the panel had switched itself off",
+          WaitForModLog(host, "music: paused, because the music panel has switched itself off", 6000));
+    Pump(host, 4);
+    CheckShot("W2 after the panel switched itself off", Shoot(host, "panel-off"), false);
+    const int insertDown = g_gotKeyDown[VK_INSERT].load();
+    const int f7Down = g_gotKeyDown[VK_F7].load();
+    const int lDown = g_gotLDown.load();
+    Key(host, VK_INSERT);
+    Key(host, VK_F7);
+    Click(host, next);
+    Check("W3 the game gets every key and click again (Insert, F7 and a click on the old panel spot)",
+          g_gotKeyDown[VK_INSERT].load() == insertDown + 1 && g_gotKeyDown[VK_F7].load() == f7Down + 1 &&
+              g_gotLDown.load() == lDown + 1);
+}
+
 void RunPanel(Host& host, const char* outputFolder, int seconds, const char* script, const char* name) {
     host.chain = CreateChain(host, host.window, kGameLayout);
     if (!host.chain || !AcquireBackBuffer(host) || !CreateGameState(host)) {
@@ -1542,6 +1572,7 @@ void RunPanel(Host& host, const char* outputFolder, int seconds, const char* scr
         else if (what == "input") ScriptInput(host);
         else if (what == "integrated") ScriptIntegrated(host);
         else if (what == "other-real") ScriptOtherReal(host);
+        else if (what == "panel-off") ScriptPanelOff(host);
         else Check("known panel script", false);
     }
     printf("  game pipeline state checked after %d presents, %d differed\n", g_stateChecks, g_stateFailures);

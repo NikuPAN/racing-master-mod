@@ -13,3 +13,11 @@ bool InstallWindowSubclass(HWND window);
 
 // True once a fault inside the mod's part of the window procedure switched input handling off.
 bool WindowProcedureFaulted();
+
+// Test host only (RACING_MASTER_MOD_TEST_PANEL_OFF): what the first F12 key press does, so the
+// ways the panel switches itself off can be tested. `WindowProcedureFault`: the mod's part of the
+// procedure writes through a null pointer. `ImGuiAssert`: the frame thread raises a Dear ImGui
+// assertion on its next panel frame (InputTakeTestAssertRequest).
+enum class TestPanelOff { None, WindowProcedureFault, ImGuiAssert };
+void InputScheduleTestPanelOff(TestPanelOff what);
+bool InputTakeTestAssertRequest();   // frame thread; true once after F12 asked for the assertion

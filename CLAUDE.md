@@ -10,7 +10,7 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 - **Version 0.3.0 integrated on branch `integrate` (not merged to main, not pushed), test host
   only.** The music panel (`src/ui`), the music engine (`src/music`) and the media remote
-  (`src/remote`) are wired into one `version.dll`: 42 hidden runs, 307 checks in
+  (`src/remote`) are wired into one `version.dll`: 44 hidden runs, 316 checks in
   `tools\run-host-test.ps1`, including two end-to-end runs (40 "My files", 41 "Other app" against
   the silent fake player). How the parts are wired: "How the parts are wired" below and
   `docs/agent-notes/integration.md`. **Not in the real game yet**: the owner tries it on the
@@ -104,7 +104,7 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.dll, testhost.exe, bystander.exe, musictest.exe
-powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 42 hidden runs, 307 checks, exit 0 = pass (about 2 min)
+powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 44 hidden runs, 316 checks, exit 0 = pass (about 2 min)
 ```
 
 The test script copies the panel screenshots to `out\screens\*.png` (bar, list, settings row,
@@ -213,8 +213,8 @@ full paths of `racing-master-mod.ini` beside the DLL and the per-user `settings.
   was first built against (`src/ui/standalone/`) was removed once the panel ran on the engine.
 - `tools/testhost/` — `testhost.cpp`: Direct3D 11 program with a never-shown window that stands
   in for the game (game layout, worker render thread, checks T1-T8; `media` mode for the remote; `panel`
-  mode with the scripts `shots`, `shot1`, `resize`, `fault`, `display`, `input`, and the end-to-end
-  `integrated` and `other-real`);
+  mode with the scripts `shots`, `shot1`, `resize`, `fault`, `display`, `input`, `panel-off`, and the
+  end-to-end `integrated` and `other-real`);
   `fake_player.cpp`: a silent media session the remote tests command; `bystander.cpp`: a
   kernel32-only console program that must see plain forwarding and nothing else;
   `musictest*.cpp`: the silent music engine tests (`docs/agent-notes/music-tests.md`).
@@ -261,8 +261,10 @@ Details and the reasons: `docs/agent-notes/integration.md`.
   with the reason while a file window is open and in exclusive full screen.
 - Shutdown: `WatchFrames` checks every 250 ms whether the window the panel draws into is gone and
   no frame arrived for a second; then `Player::Shutdown()` (fade, final save) and
-  `other_app::Shutdown()`. Nothing runs from `DllMain`. After a fault in the per-frame code the
-  worker pauses the music (nothing could control it any more) and says why.
+  `other_app::Shutdown()`. Nothing runs from `DllMain`. Whenever the panel is off for the session
+  (a fault in the per-frame code, an ImGui assertion, or a fault in the window procedure, which
+  also closes the panel) the worker pauses the music once (nothing could control it any more) and
+  says why (`PanelSwitchedOff()`; runs 36, 43, 44).
 - `src/music/link_anchor.cpp` is gone: the engine is really called now, and gate 1 still sees its
   DLLs.
 
@@ -336,7 +338,8 @@ Details and the reasons: `docs/agent-notes/integration.md`.
   sides. Before the merge the panel used `/EHsc`; do not switch it back.
 - **Test-only switches** (read only with the test-host flag): `RACING_MASTER_MOD_PANEL=open`,
   `_LANG`, `_TEXT_SIZE`, `_SOURCE`, `_LIST=open`, `_SETTINGS_ROW=open`, `_TEST_PANEL_FAULT=<panel
-  frame>`, `_TEST_TEXT_FIELD=1` (adds a text field to the settings row), `_TEST_REMOTE=limited|full|none|real`
+  frame>`, `_TEST_PANEL_OFF=wndproc|assert` (the first F12 faults the window procedure, or raises
+  an ImGui assertion on the next panel frame), `_TEST_TEXT_FIELD=1` (adds a text field to the settings row), `_TEST_REMOTE=limited|full|none|real`
   (the example "Other app", or the real remote), `_TEST_PICKER_FILES=<path>|<path>` (a suppressed
   file dialog reports these instead of a cancel), and for `testhost.exe` itself
   `_TEST_FAKE_PLAYER=1` (panel mode publishes the silent fake player). In the test host the mod writes `%LOCALAPPDATA%\RacingMasterMod\test-layout.txt`

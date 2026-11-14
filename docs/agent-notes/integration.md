@@ -33,8 +33,11 @@ it changed (`CurrentSnapshot`).
 **Shutdown:** the worker watches the panel's window every 250 ms. Gone, and no frame for a second:
 `Player::Shutdown()` (fade, final save) and `other_app::Shutdown()` (in the game the media thread
 only lets go and sleeps). A gone window while frames still arrive is logged once and ignored.
-After a fault in the per-frame code the worker pauses the music, because the panel that could
-stop it is off for the session. Nothing runs from `DllMain`.
+Whenever the panel is off for the session the worker pauses the music once, because nothing could
+stop it any more: after a fault in the per-frame code (which also stops the marker), an ImGui
+assertion, or a fault in the window procedure (which now also closes the panel, since Insert goes
+to the game from then on). `PanelSwitchedOff()` in `overlay.h`; runs 36, 43 and 44. Nothing runs
+from `DllMain`.
 
 **settings.ini:** the panel's writer and the engine's I/O thread both rewrite it; both hold
 `SettingsFileLock` (`src/core/settings_file_lock.h`). A `settings.ini` next to the DLL is

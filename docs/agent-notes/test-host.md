@@ -4,10 +4,11 @@ description: How tools/run-host-test.ps1 and testhost.exe check the loader and t
 type: reference
 ---
 
-`tools\run-host-test.ps1` runs 42 hidden programs (runs 1-14 the loader, runs 15-22 the media
+`tools\run-host-test.ps1` runs 44 hidden programs (runs 1-14 the loader, runs 15-22 the media
 remote (see `media-remote-tests.md`), run 23 the music engine's `musictest.exe` with one check
 per line it prints (see `music-tests.md`), runs 25-38 the music panel driving the real engine,
-39-42 the integration: `[panel] mode=off`, the two end-to-end runs, a misplaced settings.ini)
+39-44 the integration: `[panel] mode=off`, the two end-to-end runs, a misplaced settings.ini, and
+the panel switching itself off after a window-procedure fault or an ImGui assertion)
 with `LOCALAPPDATA`
 pointed at its own temp folder, one folder per run, so the real `mod.log` from a game run is
 never archived or overwritten. Runs 7-9, 12-14, 24, 25 and 26 are settings-file cases (UTF-8 BOM,
