@@ -126,4 +126,10 @@ void SetRepeat(remote::Repeat repeat) {
     Log("test app: repeat changed");
 }
 
+void Shutdown() {
+    if (Real() && g_started.load()) {
+        remote::Remote::Get().Shutdown();
+    }
+}
+
 }  // namespace other_app

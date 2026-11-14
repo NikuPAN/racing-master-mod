@@ -61,6 +61,7 @@ std::atomic<bool> g_dead{false};          // fault or ImGui assertion: never cal
 ID3D11Device* g_device = nullptr;          // AddRef'd; compared with the swap chain's device every frame
 ID3DDeviceContextState* g_state = nullptr; // our pipeline state; holds no bindings between frames
 HWND g_window = nullptr;
+std::atomic<HWND> g_publishedWindow{nullptr};   // g_window for the worker (PanelGameWindow)
 IDXGISwapChain* g_lastSwapChain = nullptr; // compared only, never dereferenced across frames
 bool g_wasDrawing = false;                 // false -> true is a gap: ImGui's mouse state is cleared
 bool g_imguiFocused = true;
@@ -223,6 +224,7 @@ bool InitOnFrameThread(IDXGISwapChain* swapChain, FrameRefs& refs) {
         return false;
     }
     g_window = desc.OutputWindow;
+    g_publishedWindow.store(g_window, std::memory_order_release);
     g_lastSwapChain = swapChain;
 
     IMGUI_CHECKVERSION();
@@ -717,6 +719,7 @@ void PanelOnFrame(IDXGISwapChain* swapChain, UINT presentFlags, FrameRefs& refs)
         DXGI_SWAP_CHAIN_DESC desc = {};
         if (SUCCEEDED(swapChain->GetDesc(&desc)) && desc.OutputWindow != g_window) {
             g_window = desc.OutputWindow;
+            g_publishedWindow.store(g_window, std::memory_order_release);
             if (g_mode == UiModeOn) {
                 InstallWindowSubclass(g_window);
             }
@@ -765,4 +768,8 @@ void PanelOnFault() {
     for (int i = 0; i < kMaxPanelRects; ++i) {
         shared.rects[i].store(0, std::memory_order_relaxed);
     }
+}
+
+HWND PanelGameWindow() {
+    return g_publishedWindow.load(std::memory_order_acquire);
 }

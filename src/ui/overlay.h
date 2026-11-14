@@ -30,3 +30,7 @@ void PanelOnFrame(IDXGISwapChain* swapChain, UINT presentFlags, FrameRefs& refs)
 // From the fault handler only, after the game's pipeline state was put back. Sets atomics only:
 // no ImGui, no Direct3D, no allocation.
 void PanelOnFault();
+
+// Any thread: the window the panel draws into (the swap chain's output window), or null before
+// the panel's first frame. The worker watches it to stop the music when the game closes.
+HWND PanelGameWindow();

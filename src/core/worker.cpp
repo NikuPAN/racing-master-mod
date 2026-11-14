@@ -57,18 +57,81 @@ unsigned ParseDigits(const wchar_t* text) {
     return value;
 }
 
-// Runs after the hook is in place: the periodic status line and the watchdog. Nothing periodic
-// is written from the thread that presents frames.
-void WatchFrames() {
+// Watches the window the panel draws into. The game is closing when that window is gone and no
+// frame has reached the hook for a second; a window that is gone while frames still arrive (the
+// game moved to a new window) is not a close, and is logged once.
+class GameWindowWatch {
+public:
+    // Called every 250 ms. True once the game window has closed.
+    bool Closed() {
+        const HWND window = PanelGameWindow();
+        if (!window || IsWindow(window)) {
+            quietTicks_ = 0;
+            return false;
+        }
+        const unsigned long long calls = PresentHookGetCounters().hookCalls;
+        if (calls != lastCalls_) {
+            lastCalls_ = calls;
+            quietTicks_ = 0;
+            if (!replacedLogged_) {
+                replacedLogged_ = true;
+                Log("the game window closed but frames still arrive; the music keeps playing");
+            }
+            return false;
+        }
+        return ++quietTicks_ >= 4;
+    }
+
+private:
+    unsigned long long lastCalls_ = 0;
+    unsigned quietTicks_ = 0;
+    bool replacedLogged_ = false;
+};
+
+// When the game closes: the music fades out instead of being cut off mid-sound, the list and
+// settings get their final save, and the other-app control lets go.
+void StopMusicParts() {
+    Log("music: the game window has closed; stopping the music and saving the list");
+    music::Player::Get().Shutdown();
+    other_app::Shutdown();
+    Log("music: stopped and saved");
+}
+
+// Runs after the hook is in place: the periodic status line, the watchdog, and (when the music
+// started) the game window, every 250 ms. Nothing periodic is written from the thread that
+// presents frames.
+void WatchFrames(bool musicStarted) {
     const ULONGLONG attachedAt = GetTickCount64();
     ULONGLONG lastReport = attachedAt;
     unsigned long long framesAtLastReport = 0;
     bool warned = false;
     bool resumedLogged = false;
-    for (;;) {
-        Sleep(1000);
+    bool faultHandled = false;
+    GameWindowWatch window;
+    for (unsigned tick = 1;; ++tick) {
+        Sleep(250);
+        if (musicStarted && window.Closed()) {
+            StopMusicParts();
+            return;
+        }
         if (PresentHookSwitchedOff()) {
-            return;   // the fault handler already wrote the reason
+            // The fault handler already wrote the reason, and the panel is off with the rest of
+            // the per-frame code: nothing could pause or stop the music any more.
+            if (!faultHandled) {
+                faultHandled = true;
+                if (musicStarted) {
+                    music::Player::Get().Pause();
+                    Log("music: paused, because the panel that controls it has switched off with the rest of the "
+                        "mod after the error above; it plays again after the game is restarted and a song is chosen");
+                }
+            }
+            if (!musicStarted) {
+                return;
+            }
+            continue;   // only the game window is still watched, for the final save
+        }
+        if (tick % 4 != 0) {
+            continue;
         }
         const PresentHookCounters counters = PresentHookGetCounters();
         const ULONGLONG now = GetTickCount64();
@@ -110,11 +173,11 @@ void WatchFrames() {
 // sound device and no Media Foundation until the first song plays. The control of other music
 // apps starts here only when "Other app" was the player's last choice; otherwise the panel starts
 // it when the player picks "Other app".
-void StartMusicParts(const UiSettings& ui) {
+bool StartMusicParts(const UiSettings& ui) {
     if (ui.mode == UiModeOff) {
         Log("music: neither your own songs nor other music apps are started, because the panel is off "
             "([panel] mode=off)");
-        return;
+        return false;
     }
     music::Player& player = music::Player::Get();
     player.Start();
@@ -126,6 +189,7 @@ void StartMusicParts(const UiSettings& ui) {
     if (ui.source == 1) {
         other_app::Start();   // "Other app" was the player's last choice
     }
+    return true;
 }
 
 DWORD WINAPI ModThread(LPVOID) {
@@ -190,7 +254,7 @@ DWORD WINAPI ModThread(LPVOID) {
     // The music panel's start-up work that must not happen on the game's threads (settings,
     // hotkeys, loading the shader compiler). Before the hook, so the first frame finds it done.
     PanelStart(settings.ui, g_testHost);
-    StartMusicParts(settings.ui);
+    const bool musicStarted = StartMusicParts(settings.ui);
 
     PresentHookOptions options;
     options.markerSeconds = settings.markerSeconds;
@@ -210,7 +274,7 @@ DWORD WINAPI ModThread(LPVOID) {
         return 0;
     }
     Log("ready: a white square appears in the top-left corner for %u s", settings.markerSeconds);
-    WatchFrames();
+    WatchFrames(musicStarted);
     return 0;
 }
 

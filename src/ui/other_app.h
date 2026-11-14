@@ -27,4 +27,8 @@ void Next();
 void Previous();
 void SetRepeat(remote::Repeat repeat);
 
+// Worker, when the game window has closed: lets go of the other app if Start ever ran (in the
+// game the media thread only lets go and sleeps; see remote.h).
+void Shutdown();
+
 }  // namespace other_app

@@ -1586,6 +1586,14 @@ int main(int argc, char** argv) {
     CloseHandle(thread);
     DestroyWindow(host.secondWindow);
     DestroyWindow(host.window);
+    if (strcmp(mode, "panel") == 0) {
+        // The mod notices the closed "game" window within about a second and a half, then lets
+        // the music fade out and saves. Waiting here keeps the process alive for that.
+        const ULONGLONG end = GetTickCount64() + 10000;
+        while (!ModLogContains("music: stopped and saved") && GetTickCount64() < end) Sleep(50);
+        printf("music stopped and saved after the window closed: %s\n",
+               ModLogContains("music: stopped and saved") ? "yes" : "no");
+    }
 
     const bool ok = forwardingOk && standInOk && (strcmp(mode, "quick") == 0 || g_allPassed);
     printf("result: %s\n", ok ? "PASS" : "FAIL");

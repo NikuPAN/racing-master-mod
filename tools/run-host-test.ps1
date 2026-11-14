@@ -175,6 +175,7 @@ function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashta
     $text = Read-Log $result.Log
     Record "$($Title): host checks pass" ($result.Exit -eq 0)
     Record "$($Title): no Dear ImGui assertion or reported mistake in the log" (-not ($text -match 'IMGUI ASSERT|reported a mistake'))
+    Record "$($Title): when the game window closed, the music was stopped and saved" ($text.Contains('music: the game window has closed; stopping the music and saving the list') -and $text.Contains('music: stopped and saved'))
     return @{ Exit = $result.Exit; Log = $text; Lines = $result.Lines }
 }
 $gameFirstFrame = 'first frame: 2558x1360, format 24, buffers 2, swap effect 4, windowed 1, samples 1'
@@ -417,6 +418,7 @@ try {
     # 36. A fault inside the panel, between its two state swaps.
     $panelRun = Invoke-PanelRun 'panel fault' 'fault' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_TEST_PANEL_FAULT = '60' } @()
     Record 'panel fault: one log line names the exception and the module and says the mod switched itself off' ($panelRun.Log -match 'frame code failed \(exception 0x[0-9A-Fa-f]{8} at .+version\.dll\+0x[0-9a-f]+\) and has switched itself off')
+    Record 'panel fault: the music is paused because nothing can control it any more, and the log says so' ($panelRun.Log.Contains('music: paused, because the panel that controls it has switched off with the rest of the mod'))
 
     # 37. [panel] mode=display: drawn, but no window procedure and no keys.
     $panelRun = Invoke-PanelRun 'panel display mode' 'display' '' @{} @('[panel]', 'mode=display')
