@@ -193,6 +193,7 @@ try {
     $log = Read-Log $run.Log
     Record 'game layout: host checks T1-T6 pass' ($run.Exit -eq 0)
     Record 'game layout: log has the first-frame line the real game wrote' ($log.Contains($gameFirstFrame))
+    Record 'version 0.3.0: in the DLL''s version resource and in the first log line' ([Diagnostics.FileVersionInfo]::GetVersionInfo($dll).FileVersion -eq '0.3.0' -and $log.Contains('Racing Master Mod 0.3.0 (') -and $log.Contains(' loaded into '))
     Record 'game layout: log says the hook attached to Present and Present1' ($log.Contains('attached to the frame presentation functions (Present and Present1)'))
 
     # 2. Injected fault.
