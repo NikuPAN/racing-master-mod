@@ -9,6 +9,10 @@ namespace {
 bool ReadByKind(const std::wstring* path, Kind kind, Tags* tags) {
     switch (kind) {
         case Kind::Vorbis: return ReadVorbisTags(*path, tags);
+        case Kind::Wav:
+        case Kind::Flac:
+        case Kind::Mp3:
+        case Kind::MediaFoundation: return ReadMediaFoundationTags(*path, tags);
         default: return false;
     }
 }
