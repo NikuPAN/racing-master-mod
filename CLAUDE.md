@@ -38,6 +38,12 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ## Rules that must not be "fixed" away
 
+- **Small, logical commits, one concern each.** Every commit builds with `build\build.ps1` and
+  passes `tools\run-host-test.ps1`; tests land with the code they test. Feature work happens on
+  a branch (worktrees under `../racing-master-mod-wt/`); work-in-progress checkpoints are
+  replaced by logical commits before merging; pushed history is never rewritten. Subagents
+  that commit are told this rule explicitly.
+
 - **No anti-cheat bypass, ever.** No hiding the module, no unhooking the game's checks, no
   injector that opens the game process from outside. If the game blocks the DLL, stop and
   tell the owner. This was promised to the owner and is stated in the README.
