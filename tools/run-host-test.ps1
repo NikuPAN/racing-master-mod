@@ -192,6 +192,8 @@ function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashta
         Record "$($Title): no Dear ImGui assertion or reported mistake in the log" (-not ($text -match 'IMGUI ASSERT|reported a mistake'))
     }
     Record "$($Title): when the game window closed, the music was stopped and saved" ($text.Contains('music: the game window has closed; stopping the music and saving the list') -and $text.Contains('music: stopped and saved'))
+    # Frames drawn while the window still existed must not count as "frames still arrive".
+    Record "$($Title): no ""frames still arrive"" line at an ordinary close" (-not $text.Contains('frames still arrive'))
     return @{ Exit = $result.Exit; Log = $text; Lines = $result.Lines }
 }
 $gameFirstFrame = 'first frame: 2558x1360, format 24, buffers 2, swap effect 4, windowed 1, samples 1'

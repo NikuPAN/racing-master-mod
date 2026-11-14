@@ -66,10 +66,20 @@ public:
     bool Closed() {
         const HWND window = PanelGameWindow();
         if (!window || IsWindow(window)) {
+            goneSeen_ = false;
             quietTicks_ = 0;
             return false;
         }
         const unsigned long long calls = PresentHookGetCounters().hookCalls;
+        if (!goneSeen_) {
+            // The first tick without the window only takes the count: frames drawn in the last
+            // 250 ms before the window went are not "frames still arrive". It counts as the first
+            // quiet tick, so the music still stops about a second after the window went.
+            goneSeen_ = true;
+            lastCalls_ = calls;
+            quietTicks_ = 1;
+            return false;
+        }
         if (calls != lastCalls_) {
             lastCalls_ = calls;
             quietTicks_ = 0;
@@ -85,6 +95,7 @@ public:
 private:
     unsigned long long lastCalls_ = 0;
     unsigned quietTicks_ = 0;
+    bool goneSeen_ = false;
     bool replacedLogged_ = false;
 };
 
