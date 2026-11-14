@@ -239,6 +239,7 @@ $musicSources = @(
     'src\music\source_opus.cpp',
     'src\music\source_mf.cpp',
     'src\music\tag_reader.cpp',
+    'src\music\playlist_store.cpp',
     'src\music\atomic_file.cpp',
     'src\music\text.cpp'
 )
@@ -341,7 +342,8 @@ $musicTestSources = @(
     'tools\testhost\musictest_miniaudio.cpp',
     'tools\testhost\musictest_vorbis.cpp',
     'tools\testhost\musictest_mf.cpp',
-    'tools\testhost\musictest_opus.cpp'
+    'tools\testhost\musictest_opus.cpp',
+    'tools\testhost\musictest_store.cpp'
 )
 $musicTestObjects = Build-Objects $musicTestSources ($musicIncludes + @("/I$(Join-Path $root 'src')", "/I$(Join-Path $vorbisDir 'include')"))
 $engineObjects = @($musicObjects | Where-Object { [IO.Path]::GetFileName($_) -ne 'link_anchor.obj' })
