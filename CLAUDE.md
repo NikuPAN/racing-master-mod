@@ -29,8 +29,14 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   `tools\run-host-test.ps1`). Not started anywhere in the game yet: the music panel calls
   `remote::Remote::Get().Start()` itself. Whether it works from the elevated game is open
   (`docs/agent-notes/media-remote-elevated-game.md`).
-- **In design:** music panel and DLSS (verified design briefs are being written in
-  `docs/agent-notes/local/design/`).
+- **Music engine built and tested silently, not yet called by the loader** (branch
+  `music/engine`): `src/music`, MP3/FLAC/WAV/OGG/Opus/M4A, gapless, playlist and settings saved
+  crash-safe, drop-in folder, file picker. `tools\run-host-test.ps1` run 23 (`out\musictest.exe`)
+  checks it with no sound and no window. It sits in `version.dll` only through
+  `src/music/link_anchor.cpp`; wiring it to the worker and the panel is the next step
+  (`docs/agent-notes/music-engine-open-items.md`).
+- **In design:** music panel and DLSS (verified design briefs in `docs/agent-notes/local/design/`
+  of the main repository).
 
 ## Order of work
 
@@ -61,12 +67,21 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   game is read-only and on disk.
 - **The mod stays dormant outside the game.** `UniCrashReporter.exe` and other programs in the
   game folder also import `version.dll`; they must get plain forwarding and nothing else. That
-  is why `version.dll` statically imports **KERNEL32 only**: `user32` is delay-loaded, and
+  is why `version.dll` statically imports **KERNEL32 only**; everything else is delay-loaded.
   `build.ps1` fails if any other DLL appears in the import table, if the import dump did not
-  list KERNEL32 at all (an empty dump must not pass), or if USER32 is missing from the
-  delay-load list. Every system DLL a later
-  feature needs gets its own `/DELAYLOAD:` line or is loaded with `LoadLibraryW` from the
-  worker thread. `tools\run-host-test.ps1` checks a bystander program for this.
+  list KERNEL32 at all (an empty dump must not pass), or if the delay-load list differs from
+  `$delayLoads` in `build.ps1` (today USER32, ole32, SHELL32, MFPlat, MFReadWrite; each must be there,
+  which also proves the music engine is still linked in). Every system DLL a later feature
+  needs gets its own `/DELAYLOAD:` line and an entry in that list, or is loaded with
+  `LoadLibraryW` from the worker thread. `tools\run-host-test.ps1` checks a bystander program.
+  Media Foundation must stay delay-loaded: Windows "N" editions lack it, and a normal import
+  would stop the game from starting there.
+- **No start-up constructors in the mod's own code** (build gate 3: no `??__E` symbol from our
+  objects in `version.map`). Anything like that runs inside every program that loads the DLL.
+  Use function-local statics or constant initialisation; the music engine object is created on
+  first use and never destroyed.
+- **Third-party C is compiled with `/DNDEBUG`** (a live `assert()` shows a message box and ends
+  the game) and never with opus's `ENABLE_HARDENING`/`ENABLE_ASSERTIONS` (they call `abort()`).
 - **Nothing is held across frames** that would block the game's `ResizeBuffers` (no cached
   back buffer references). Everything the per-frame code acquires goes into `FrameRefs`
   (`src/core/frame.h`), never into a local below the guard.
@@ -79,13 +94,17 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 ## Commands
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.dll, out\testhost.exe, out\bystander.exe
-powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 22 hidden-window runs, 52 checks, exit 0 = pass (about 3 min)
+powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.dll, testhost.exe, bystander.exe, musictest.exe
+powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 24 hidden runs (loader, media remote, music engine), about 240 checks, exit 0 = pass (about 5 min)
 ```
 
 `build\fetch-deps.ps1` downloads the Windows SDK (Microsoft NuGet packages, SHA-256 pinned in
-the script) into `.deps\`. With `-MsvcCrt` it also downloads the Visual C++ runtime headers and
-libraries; `build.ps1` asks for that automatically when Visual Studio has the compiler but no
+the script) into `.deps\`, and the music libraries: miniaudio 0.11.26, stb_vorbis 1.24, libogg
+1.3.6, opus 1.6.1, opusfile 0.12, and libvorbis 1.3.7 (test program only), each pinned to one
+SHA-256. Licences and the notices that must ship with the DLL: `THIRD_PARTY.md`. The Xiph
+libraries are built once into `out\obj\xiph.lib` (and `vorbisenc.lib` for the tests); a stamp
+file rebuilds them when the recipe changes. In a worktree `.deps` is a junction to the main
+repo's. With `-MsvcCrt` it also downloads the Visual C++ runtime headers and libraries; `build.ps1` asks for that automatically when Visual Studio has the compiler but no
 headers. The build also writes `out\version.pdb` and `out\version.map` for turning a fault
 offset from the log into a source line. **Never ship the PDB next to the DLL.**
 
@@ -94,7 +113,10 @@ dumpbin: `link.exe /DUMP /NOLOGO /IMPORTS out\version.dll` (the fetched SDK has 
 
 ## Settings
 
-Two files, both optional, same `[mod]` keys (`stage` 0/1/2, `marker_seconds` 0..600):
+Two files, both optional, same `[mod]` keys (`stage` 0/1/2, `marker_seconds` 0..600). The music
+engine keeps its own `[music]` section in the first one (volume, loop, pause_when_game_unfocused,
+current, position_ms) and rewrites only that section, in UTF-8, keeping the `[mod]` lines; the
+loader skips `[music]` without logging "changed nothing".
 
 1. `%LOCALAPPDATA%\RacingMasterMod\settings.ini` (no administrator rights, survives game updates)
 2. `racing-master-mod.ini` next to `version.dll` (overrides 1 when present)
@@ -123,10 +145,17 @@ misses a section after a BOM and turns `-1` into 4294967295.
   `remote.h` is the panel's interface (plain types; `Snapshot` with a `Message` id for
   translation); `remote.cpp` is the only file that includes the WinRT ABI headers. See
   `docs/agent-notes/media-remote-design.md`.
+- `src/music/` — the music engine (`docs/agent-notes/music-engine.md`): `player.h` is the
+  public interface the panel codes against, `picker.h` the file dialogs, `player.cpp` the threads
+  and playback, `audio_output` the ring/callback/device, `source*.cpp` one file per decoder
+  family, `playlist_logic.h` the state machine, `playlist_store` the file formats, `testing.h`
+  test-only hooks, `link_anchor.cpp` keeps the engine linked until the loader calls it.
+- `src/third_party/` — the one translation unit each for miniaudio and stb_vorbis.
 - `tools/testhost/` — `testhost.cpp`: Direct3D 11 program with a never-shown window that stands
   in for the game (game layout, worker render thread, checks T1-T8; `media` mode for the remote);
   `fake_player.cpp`: a silent media session the remote tests command; `bystander.cpp`: a
-  kernel32-only console program that must see plain forwarding and nothing else.
+  kernel32-only console program that must see plain forwarding and nothing else;
+  `musictest*.cpp`: the silent music engine tests (`docs/agent-notes/music-tests.md`).
 - `build/` — build and dependency scripts. No CMake, no solution file.
 
 ## Threads and what each may do
@@ -140,6 +169,12 @@ misses a section after a BOM and turns `-1` into 4294967295.
 | Media (`MediaThread`, created by `Remote::Start`) | every WinRT call, session reading, commands | COM in the multithreaded apartment, waits with deadlines, logging | leave the apartment in the game (`RoUninitialize` is test host only) |
 | Windows' COM threads | media change notices | set an event and return | anything else |
 | Frame / panel code | `GetSnapshot`, `Play`, `Pause` ... | copy the snapshot, queue a command | call WinRT, wait for the media thread |
+| `rmm-player` (music, once started) | commands, decoding into the ring, the device, the snapshot | file reads of the music | tag reads, scans, saves |
+| `rmm-io` (music) | folder scans, tags, crash-safe saves | file I/O | the ring or the device |
+| miniaudio device thread | the audio callback | copy, gain, atomics | locks, allocation, system calls |
+
+The frame thread may call every `music::Player` method: each only posts a command (Pause, Stop
+and SetVolume also store one atomic), and `GetSnapshot` holds a lock only for a few assignments.
 
 ## Gotchas
 
@@ -190,3 +225,13 @@ misses a section after a BOM and turns `-1` into 4294967295.
   appears. App ids and names may.
 - The PowerShell tool in this environment may start in the game folder (`C:\Program Files
   (x86)\g112`): always call the scripts by absolute path, never by `build\build.ps1`.
+- The music engine refuses WASAPI whenever `RACING_MASTER_MOD_TEST_HOST=1` (null device instead),
+  and the picker then never calls `Show()`. `musictest.exe` sets that flag for itself. Never run
+  the engine with a real device in an automated test on this PC.
+- In engine tests, call `testing::Sync` after a command before pulling audio with
+  `testing::Render`: silence pulled before the player thread acted consumes nothing and makes
+  positions look late.
+- Fixture and test strings use neutral Chinese text ("測試"), never a real artist or song name.
+- The media remote's runs (15-22) depend on Windows' media sessions at that moment and failed
+  intermittently on 2026-11-14 (also on main's own commit). When they fail while every loader
+  and music check passes, run the suite again before suspecting the music engine.

@@ -1,0 +1,56 @@
+---
+name: music-engine
+description: How the music engine in src/music is built - threads, data flow, gapless, the gate, files on disk, the public interface - and the rules that keep it safe inside the game
+type: reference
+---
+
+The engine plays the player's own MP3, FLAC, WAV, OGG Vorbis, Opus and M4A/AAC files inside the
+game process. The public interface is `src/music/player.h` (`music::Player`, the panel codes
+against it) and `src/music/picker.h` (file and folder dialogs). The verified design brief is
+machine-local: `docs/agent-notes/local/design/audio-engine.md` in the main repository.
+
+**Decoders** (`source*.cpp`, chosen by file content, then extension, never by trial and error):
+miniaudio 0.11.26 for WAV/FLAC/MP3, stb_vorbis 1.24 (pull API, `_wfopen`) for OGG Vorbis,
+libopusfile for Opus (see `opus-decoder.md`), the Media Foundation Source Reader for M4A/AAC/ALAC
+and raw ADTS. Every decoder call goes through an SEH guard (`GuardedRead/Seek`, `ContainableFault`);
+a fault marks the file damaged and the decoder object is leaked on purpose.
+
+**Threads**
+
+| Thread | Does | Never does |
+|---|---|---|
+| Frame thread (panel) | `Player::*` (posts a command), `GetSnapshot`; `Pause`, `Stop`, `SetVolume` also store an atomic so sound reacts within one 20 ms period | file I/O, decoding, COM, waiting on a lock held during I/O |
+| `rmm-player` | commands, playlist logic, opening and decoding into the 2 s ring, track boundaries, device start/stop/re-create, watchdog, snapshot | tag reads, scans, saves |
+| miniaudio device thread | the audio callback: copy from the ring, gate fade, volume ramp, count `consumed` | locks, allocation, system calls |
+| `rmm-io` | folder scans (background priority), tag reads, crash-safe saves | touching the ring or the device |
+| dialog thread | one short-lived STA thread per open file dialog | anything else |
+
+**Gapless:** when the decoding track ends, the player thread asks the playlist logic on a copy
+what follows, opens it at once and writes it right behind the last sample, through the same
+resampler when the format matches. Each queued track records `startFrame` (in the callback's
+`consumed` count); passing it makes the track audible. A change that alters the successor after
+it was queued (loop mode, list edit) sets `playLimit` to the boundary and the decision is taken
+again there (`InvalidateSuccessorIfChanged`; identity is the entry id, not the index).
+
+**The gate:** every manual change (Stop, Seek, Next, play another track, remove the playing one)
+closes the gate, waits for the callback's acknowledgement (at most 100 ms), only then resets the
+ring. On a timeout the ring is not touched; the callback discards up to `discardBefore` instead.
+In Manual (test) output an SRW lock between `Render` and the reset gives the same guarantee.
+
+**Files** in `%LOCALAPPDATA%\RacingMasterMod\`: `playlist.tsv` (+ `.bak`, `.broken`),
+`settings.ini` `[music]` section (volume, loop, pause_when_game_unfocused, current, position_ms;
+the loader's `[mod]` lines are kept, any encoding Notepad offers is read), `music\` drop-in folder.
+Saves: temp file, flush, `ReplaceFileW`, list 2 s after the last change, settings 0.5 s after.
+The final save at `Shutdown` runs after the I/O thread has stopped (one writer per file).
+
+**Start-up:** `Start()` reads playlist and settings on the calling thread, restores the cued track
+and position stopped, starts the two threads, scans the drop-in folder. No device and no Media
+Foundation DLL until the first Play. The engine object is created on first use and never
+destroyed; nothing in `src/music` may have a start-up constructor (build gate 3).
+
+**Why:** the frame thread must never wait on disk or device, a broken file must never take the
+game down or spin, and a crash at any moment must never lose or shorten the saved list.
+
+**How to apply:** new engine work keeps these thread rules; new DLL imports get `/DELAYLOAD:` and
+an entry in `$delayLoads` in `build.ps1`; new behaviour gets a case in
+`tools/testhost/musictest_*.cpp` (see `music-tests.md`).

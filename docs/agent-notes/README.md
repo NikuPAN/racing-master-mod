@@ -13,3 +13,7 @@ One fact per file. Machine-specific notes live in `local/` (gitignored).
 - [media-remote-elevated-game.md](media-remote-elevated-game.md) — open question: media sessions from the elevated game, and the log lines that answer it
 - [music-engine-playlist-table.md](music-engine-playlist-table.md) — the 50-row playlist state machine table and where each row is tested
 - [opus-decoder.md](opus-decoder.md) — why Opus uses libopus + libopusfile + libogg, how they are built without CMake, why .webm is left out
+- [music-engine.md](music-engine.md) — how the music engine (src/music) is built: threads, gapless, the gate, files on disk, start-up rules
+- [music-engine-review.md](music-engine-review.md) — what the unbuilt first draft of the engine got wrong and what changed (do not bring it back)
+- [music-tests.md](music-tests.md) — how musictest.exe checks the engine without sound or windows, its fixtures, what only a person can check
+- [music-engine-open-items.md](music-engine-open-items.md) — integration checklist for the panel and what stays unverified until an in-game run
