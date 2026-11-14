@@ -61,7 +61,12 @@ DWORD WINAPI DialogThread(LPVOID param) {
         dialog->SetTitle(request->folder ? L"Add a music folder" : L"Add music files");
 
         if (Suppressed()) {
-            Log("music: file dialog suppressed (test mode); reporting cancel");
+            // The owner is named so the test can check that the dialog would sit on the game's
+            // top-level window (it then stays above the game and gives the focus back).
+            const char* owner = !request->owner                                     ? "no owner window"
+                                : GetAncestor(request->owner, GA_ROOT) == request->owner ? "owned by a top-level window"
+                                                                                          : "owned by a child window";
+            Log("music: file dialog suppressed (test mode); reporting cancel (%s)", owner);
             hr = HRESULT_FROM_WIN32(ERROR_CANCELLED);
         } else {
             hr = dialog->Show(request->owner);

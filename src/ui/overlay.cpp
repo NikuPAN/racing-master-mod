@@ -74,6 +74,7 @@ bool g_formatLogged = false;
 bool g_openWithoutDrawLogged = false;
 bool g_procedureFaultLogged = false;
 unsigned g_panelFrames = 0;
+bool g_exclusiveFullscreen = false;
 char g_lastLayout[8192] = "";
 
 // ---- small helpers -------------------------------------------------------------------------------
@@ -563,6 +564,13 @@ bool DrawFrame(IDXGISwapChain* swapChain, FrameRefs& refs, bool panelOpen) {
     info.displayWidth = io.DisplaySize.x;
     info.displayHeight = io.DisplaySize.y;
     info.displayOnly = g_mode == UiModeDisplay;
+    // Exclusive full screen is checked about once a second while the panel is drawn (the file
+    // window is not offered there).
+    if (g_panelFrames % 60 == 0) {
+        BOOL fullscreen = FALSE;
+        g_exclusiveFullscreen = SUCCEEDED(swapChain->GetFullscreenState(&fullscreen, nullptr)) && fullscreen;
+    }
+    info.exclusiveFullscreen = g_exclusiveFullscreen;
     BuildPanel(info, panelOpen);
     ImGui::Render();
 

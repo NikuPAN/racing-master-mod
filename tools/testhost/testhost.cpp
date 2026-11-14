@@ -1251,8 +1251,10 @@ void ScriptInput(Host& host) {
     const int before = ReadLayout().Int("tracks");
     Click(host, Item("add_files"));
     // In the test host the engine's picker prepares the dialog but never shows it and reports a cancel.
-    Check("I11 Add files asks the engine's picker, which never shows a window in the test host",
-          WaitForModLog(host, "music: file dialog suppressed (test mode)") && ReadLayout().Int("tracks") == before);
+    Check("I11 Add files asks the engine's picker for a window owned by the game's top-level window (never shown "
+          "in the test host)",
+          WaitForModLog(host, "music: file dialog suppressed (test mode); reporting cancel (owned by a top-level window)") &&
+              ReadLayout().Int("tracks") == before);
     Click(host, Item("remove0"));
     Check("I11 the remove button takes a song off the list",
           WaitLayout(host, [&](const LayoutFile& l) { return l.Int("tracks") == before - 1; }));

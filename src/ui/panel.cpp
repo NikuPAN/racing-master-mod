@@ -53,6 +53,7 @@ char g_toast[256] = "";
 ULONGLONG g_toastUntil = 0;
 ULONGLONG g_noticeUntil = 0;
 char g_testText[64] = "";
+char g_musicFolder[MAX_PATH * 3] = "";   // the engine's music folder, UTF-8 (set on the first frame)
 
 PanelTestItem g_items[64];
 int g_itemCount = 0;
@@ -583,19 +584,33 @@ void ControlsOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, 
     (void)width;
 }
 
-void SongList(const music::Snapshot& snapshot, HWND window) {
+void SongList(const music::Snapshot& snapshot, const PanelFrameInfo& info) {
     const Strings& s = S();
     ImGui::Separator();
-    if (ImGui::Button((std::string(s.addFiles) + "##add_files").c_str())) {
-        music::OpenAddFilesDialog(window, &FilesChosen);
+    // The file window belongs to the game's top-level window, so it stays above the game and
+    // gives the focus back when it closes; Windows keeps the game from taking input meanwhile
+    // (the hints say so). In exclusive full screen it would minimise the game, so it is not
+    // offered there, and only one can be open at a time.
+    const HWND owner = info.window ? GetAncestor(info.window, GA_ROOT) : nullptr;
+    char fullscreenReason[MAX_PATH * 3 + 512];
+    snprintf(fullscreenReason, sizeof(fullscreenReason), s.reasonFullscreen,
+             g_musicFolder[0] ? g_musicFolder : "%LOCALAPPDATA%\\RacingMasterMod\\music");
+    const bool canPick = !info.exclusiveFullscreen && !snapshot.dialogOpen;
+    const char* pickReason = info.exclusiveFullscreen ? fullscreenReason : s.reasonDialogOpen;
+    ImGui::BeginDisabled(!canPick);
+    if (ImGui::Button((std::string(s.addFiles) + "##add_files").c_str()) && canPick) {
+        music::OpenAddFilesDialog(owner, &FilesChosen);
     }
-    Tip(s.addFilesHint);
+    ImGui::EndDisabled();
+    Tip(s.addFilesHint, canPick ? nullptr : pickReason);
     Mark("add_files");
     ImGui::SameLine();
-    if (ImGui::Button((std::string(s.addFolder) + "##add_folder").c_str())) {
-        music::OpenAddFolderDialog(window, &FolderChosen);
+    ImGui::BeginDisabled(!canPick);
+    if (ImGui::Button((std::string(s.addFolder) + "##add_folder").c_str()) && canPick) {
+        music::OpenAddFolderDialog(owner, &FolderChosen);
     }
-    Tip(s.addFolderHint);
+    ImGui::EndDisabled();
+    Tip(s.addFolderHint, canPick ? nullptr : pickReason);
     Mark("add_folder");
     const int count = static_cast<int>(snapshot.tracks.size());
     char countText[64];
@@ -824,7 +839,7 @@ void DrawBar(const PanelFrameInfo& info) {
         char message[512];
         MutedWrapped(Utf8(snapshot.message, message, sizeof(message)));
         if (g_listOpen && !info.displayOnly) {
-            SongList(snapshot, info.window);
+            SongList(snapshot, info);
         }
     } else {
         const remote::Snapshot snapshot = other_app::GetSnapshot();
@@ -899,6 +914,7 @@ void PanelConfigure(const UiSettings& settings, const HotkeyTable& keys, bool te
 
 void PanelFirstFrame() {
     music::Player::Get().SetPauseWhenGameUnfocused(g_settings.pauseWhenUnfocused);
+    Utf8(music::Player::Get().MusicFolder(), g_musicFolder, sizeof(g_musicFolder));
     const Hotkey& toggle = g_keys.keys[static_cast<int>(Command::TogglePanel)];
     if (!g_testHost && toggle.vk != 0 && !Shared().panelOpen.load()) {
         // A first-time player learns the key without reading anything.

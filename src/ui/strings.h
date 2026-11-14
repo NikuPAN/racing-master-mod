@@ -73,6 +73,8 @@ struct Strings {
     const char* reasonNoLength;          // a song whose length is not known cannot be moved through
     const char* reasonAlreadyStopped;
     const char* reasonDisplayOnly;       // [panel] mode=display
+    const char* reasonDialogOpen;        // Add files / Add folder while a file window is open
+    const char* reasonFullscreen;        // Add files / Add folder in exclusive full screen; %s = the music folder
 
     // "Other app"
     const char* noAppPlaying;            // row 1 when no app is playing anything
@@ -129,9 +131,11 @@ inline const Strings kStringsEnglish = {
     "This app does not show how far into the song it is.",
 
     "Add files",
-    "Choose songs on your computer to add to the list.",
+    "Choose songs on your computer to add to the list. A Windows file window opens; the game does not react "
+    "to keys or the mouse until you close it.",
     "Add folder",
-    "Add every song in a folder.",
+    "Add every song in a folder. A Windows folder window opens; the game does not react to keys or the mouse "
+    "until you close it.",
     "1 song",
     "%d songs",
     "No songs yet. Use Add files or Add folder to add some.",
@@ -149,6 +153,10 @@ inline const Strings kStringsEnglish = {
     "The length of this song is not known, so you cannot move through it.",
     "The music is already stopped.",
     "This is a display test: the panel cannot be used until mode=on in the settings file.",
+    "A file window is already open. Pick your songs there, or close it first.",
+    "Not available while the game runs in exclusive full screen: the file window would minimise the game. "
+    "Switch the game to windowed or borderless, or copy songs into %s; they are added the next time the game "
+    "starts.",
 
     "No other app is playing anything",
     "Start music in Spotify, a web browser or another player and it shows here.",
@@ -205,9 +213,9 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "這個程式沒有提供播放進度。",
 
     "加入檔案",
-    "選擇電腦裡的歌曲加入清單。",
+    "選擇電腦裡的歌曲加入清單。會開啟 Windows 的檔案視窗，關掉它之前，遊戲不會回應鍵盤和滑鼠。",
     "加入資料夾",
-    "加入一個資料夾裡的所有歌曲。",
+    "把一個資料夾裡的歌曲全部加入。會開啟 Windows 的資料夾視窗，關掉它之前，遊戲不會回應鍵盤和滑鼠。",
     "1 首歌",
     "%d 首歌",
     "還沒有歌曲。用「加入檔案」或「加入資料夾」加入。",
@@ -225,6 +233,9 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "不知道這首歌的長度，所以無法跳轉。",
     "音樂已經停止。",
     "這是顯示測試：在設定檔寫 mode=on 之後才能使用面板。",
+    "檔案視窗已經開著，請在那裡選歌，或先把它關掉。",
+    "遊戲在獨佔全螢幕模式時不能用：檔案視窗會讓遊戲縮到最小。請把遊戲改成視窗或無邊框模式，"
+    "或把歌曲複製到 %s，下次開遊戲時就會加入。",
 
     "沒有其他程式在播放",
     "在 Spotify、瀏覽器或其他播放器播放音樂，就會顯示在這裡。",

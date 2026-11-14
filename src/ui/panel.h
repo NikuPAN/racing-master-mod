@@ -15,6 +15,7 @@ struct PanelFrameInfo {
     float displayWidth;   // back buffer, pixels
     float displayHeight;
     bool displayOnly;     // [panel] mode=display: drawn open, cannot be used
+    bool exclusiveFullscreen;   // the game runs in exclusive full screen (no file window then)
 };
 
 // Worker thread, once.
