@@ -6,6 +6,7 @@
 // shell). build.ps1 links with /INCLUDE:MusicEngineLinkAnchor, which keeps this function and so
 // everything it names. The function is never called. Delete this file, its line in build.ps1 and
 // the /INCLUDE option once the panel calls the engine from the worker.
+#include "picker.h"
 #include "player.h"
 
 extern "C" void MusicEngineLinkAnchor() {
@@ -31,5 +32,7 @@ extern "C" void MusicEngineLinkAnchor() {
     music::Snapshot snapshot = player.GetSnapshot();
     player.GetSnapshotInto(snapshot);
     (void)player.MusicFolder();
+    music::OpenAddFilesDialog(nullptr, [](const std::vector<std::wstring>&) {});
+    music::OpenAddFolderDialog(nullptr, [](const std::wstring&) {});
     player.Shutdown();
 }

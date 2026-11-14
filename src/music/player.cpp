@@ -21,6 +21,7 @@
 #include "../core/log.h"
 #include "atomic_file.h"
 #include "audio_output.h"
+#include "picker.h"
 #include "playlist_logic.h"
 #include "playlist_store.h"
 #include "source.h"
@@ -307,6 +308,7 @@ public:
             out.tracks = list ? *list : std::vector<TrackInfo>();
             out.listVersion = version;
         }
+        out.dialogOpen = IsDialogOpen();
     }
 
     std::wstring MusicFolder() const {

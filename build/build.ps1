@@ -244,6 +244,7 @@ $musicSources = @(
     'src\music\playlist_store.cpp',
     'src\music\atomic_file.cpp',
     'src\music\text.cpp',
+    'src\music\picker.cpp',
     'src\music\link_anchor.cpp'
 )
 $loaderObjects = Build-Objects $loaderSources @()
@@ -265,7 +266,7 @@ Invoke-Tool $rc @('/nologo', "/fo$resObject", (Join-Path $root 'src\loader\versi
 # loading there. Never ship the PDB.
 # The DLL names in the spelling the import dump prints them. Gate 1 below insists on exactly this
 # list, so a new delay-loaded DLL is a conscious change here.
-$delayLoads = @('USER32.dll', 'ole32.dll', 'MFPlat.DLL', 'MFReadWrite.dll')
+$delayLoads = @('USER32.dll', 'ole32.dll', 'SHELL32.dll', 'MFPlat.DLL', 'MFReadWrite.dll')
 $musicLibs = @('ole32.lib', 'shell32.lib', 'mfplat.lib', 'mfreadwrite.lib', 'mfuuid.lib', 'propsys.lib')
 # The music engine in the DLL, kept there by link_anchor.cpp (/INCLUDE) until the loader calls it.
 $dllMusic = @('/INCLUDE:MusicEngineLinkAnchor') + $musicLibs + $musicObjects + @($miniaudioObject, $stbObject, $xiphLib)
@@ -347,7 +348,8 @@ $musicTestSources = @(
     'tools\testhost\musictest_mf.cpp',
     'tools\testhost\musictest_opus.cpp',
     'tools\testhost\musictest_store.cpp',
-    'tools\testhost\musictest_engine.cpp'
+    'tools\testhost\musictest_engine.cpp',
+    'tools\testhost\musictest_picker.cpp'
 )
 $musicTestObjects = Build-Objects $musicTestSources ($musicIncludes + @("/I$(Join-Path $root 'src')", "/I$(Join-Path $vorbisDir 'include')"))
 $engineObjects = @($musicObjects | Where-Object { [IO.Path]::GetFileName($_) -ne 'link_anchor.obj' })
