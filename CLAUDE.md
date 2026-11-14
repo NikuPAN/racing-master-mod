@@ -10,7 +10,7 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 - **Version 0.3.0 integrated on branch `integrate` (not merged to main, not pushed), test host
   only.** The music panel (`src/ui`), the music engine (`src/music`) and the media remote
-  (`src/remote`) are wired into one `version.dll`: 44 hidden runs, 332 checks in
+  (`src/remote`) are wired into one `version.dll`: 44 hidden runs, 334 checks in
   `tools\run-host-test.ps1`, including two end-to-end runs (40 "My files", 41 "Other app" against
   the silent fake player). How the parts are wired: "How the parts are wired" below and
   `docs/agent-notes/integration.md`. **Not in the real game yet**: the owner tries it on the
@@ -104,7 +104,7 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.dll, testhost.exe, bystander.exe, musictest.exe
-powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 44 hidden runs, 332 checks, exit 0 = pass (about 2 min)
+powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 44 hidden runs, 334 checks, exit 0 = pass (about 2 min)
 ```
 
 The test script copies the panel screenshots to `out\screens\*.png` (bar, list, settings row,
@@ -176,7 +176,9 @@ per-user `settings.ini` when the player changes them (`src/ui/ui_settings.cpp`: 
 other line kept, written to `settings.ini.new` and swapped in). It never writes the ini beside the DLL.
 The engine's I/O thread rewrites `[music]` in the same file, so **both writers hold
 `SettingsFileLock`** (`src/core/settings_file_lock.h`) from reading the file until the new copy is
-in place, and log only after letting go. A new writer of `settings.ini` must take it too.
+in place, and log only after letting go. A new writer of `settings.ini` must take it too. Neither writer replaces a
+`settings.ini` it could not read (held by another program; for the engine also over 1 MB):
+writing only its own section would drop the others, so it leaves the file as it is and logs why.
 
 `settings.ini` (any letter case) **next to `version.dll` is not read**: the owner put one there
 once and it was silently ignored. `ReadSettings` now logs one line naming it as ignored, with the

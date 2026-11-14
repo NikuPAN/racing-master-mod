@@ -400,6 +400,7 @@ try {
     Record 'music log: a missing file is skipped with its reason' ($log -match 'music: skipped .+ \(file not found\)')
     Record 'music log: the watchdog restarted the output after the device loss' ($log.Contains('restarting the output device'))
     Record 'music log: Chinese file names are written in full (UTF-8)' ($log.Contains('music: started A ' + [string][char]0x6E2C + [string][char]0x8A66 + ' 440.wav'))
+    Record 'music log: a settings.ini the engine cannot read is left as it is, and the log says why' ($log.Contains('music: settings.ini is there but could not be read just now (Windows error 223: larger than 1 MB), so it was left as it is'))
     Record 'music: no real audio device was opened (manual and null output only)' ($log.Contains('music: output opened (manual') -and -not $log.Contains('output opened (shared mode'))
 
     # 24. Only a [music] section (what the music engine writes when the player has no settings

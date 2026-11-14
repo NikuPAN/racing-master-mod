@@ -1509,20 +1509,45 @@ private:
         if (!SaveFileAtomically(playlistPath_, FormatPlaylist(Stored()), &error)) {
             Log("music: the playlist could not be saved (Windows error %lu)", error);
         }
-        if (!SaveSettings(settingsPath_, CurrentSettings(), &error)) {
-            Log("music: the settings could not be saved (Windows error %lu)", error);
+        bool leftAsIs = false;
+        if (!SaveSettings(settingsPath_, CurrentSettings(), &error, &leftAsIs)) {
+            if (leftAsIs) {
+                LogSettingsLeftAsIs(error);
+            } else {
+                Log("music: the settings could not be saved (Windows error %lu)", error);
+            }
         }
         listDirty_ = false;
         settingsDirty_ = false;
     }
 
     // Rewrites only the [music] section of settings.ini; the loader's [mod] lines and anything
-    // else in the file stay as they are.
-    static bool SaveSettings(const std::wstring& path, const MusicSettings& settings, unsigned long* error) {
+    // else in the file stay as they are. A file that is there but cannot be read at this moment
+    // (another program holds it, or it is over 1 MB) is left alone: writing only [music] would
+    // drop every other section. *leftAsIs then says so, and the caller logs it after the lock.
+    static bool SaveSettings(const std::wstring& path, const MusicSettings& settings, unsigned long* error,
+                             bool* leftAsIs) {
+        *leftAsIs = false;
         const SettingsFileLock lock;  // the panel rewrites its [panel] lines in the same file
+        constexpr size_t kMaxBytes = 1u << 20;
         std::string existing;
-        ReadWholeFile(path, &existing, 1u << 20);
+        if (!ReadWholeFile(path, &existing, kMaxBytes)) {
+            const DWORD readError = GetLastError();
+            WIN32_FILE_ATTRIBUTE_DATA data = {};
+            if (GetFileAttributesExW(ToExtendedPath(path).c_str(), GetFileExInfoStandard, &data)) {
+                const bool tooLarge = data.nFileSizeHigh != 0 || data.nFileSizeLow > kMaxBytes;
+                *error = tooLarge ? ERROR_FILE_TOO_LARGE : (readError != 0 ? readError : ERROR_READ_FAULT);
+                *leftAsIs = true;
+                return false;
+            }
+        }
         return SaveFileAtomically(path, WriteMusicSection(existing, settings), error);
+    }
+
+    static void LogSettingsLeftAsIs(unsigned long error) {
+        Log("music: settings.ini is there but could not be read just now (Windows error %lu%s), so it was left as it "
+            "is and its other sections are kept; the music settings are saved again at the next change",
+            error, error == ERROR_FILE_TOO_LARGE ? ": larger than 1 MB" : "");
     }
 
     // ================================================================================================
@@ -1561,9 +1586,19 @@ private:
                         // Saves still run after Quit was seen in the same batch: losing them would
                         // lose the user's last change.
                         unsigned long error = 0;
-                        const bool ok = job.kind == IoJob::Kind::SaveFile ? SaveFileAtomically(job.path, job.content, &error)
-                                                                          : SaveSettings(job.path, job.settings, &error);
-                        if (!ok) {
+                        bool leftAsIs = false;
+                        const bool ok = job.kind == IoJob::Kind::SaveFile
+                                            ? SaveFileAtomically(job.path, job.content, &error)
+                                            : SaveSettings(job.path, job.settings, &error, &leftAsIs);
+                        if (leftAsIs) {
+                            LogSettingsLeftAsIs(error);
+                            Command failed;
+                            failed.kind = CommandKind::IoMessage;
+                            failed.text = FileName(job.path, false) +
+                                          L" could not be read just now, so the music settings were not saved into it; "
+                                          L"they are saved again at the next change";
+                            Post(std::move(failed));
+                        } else if (!ok) {
                             Log("music: could not save %s (Windows error %lu)", Utf8(FileName(job.path, false)).c_str(), error);
                             Command failed;
                             failed.kind = CommandKind::IoMessage;

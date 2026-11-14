@@ -504,6 +504,24 @@ MT_TEST(600, EngineSettingsFiles, "engine: settings.ini shared with the loader, 
                   "a UTF-16 settings.ini keeps the loader's [mod] lines when the music settings are saved");
     }
     {
+        // A settings.ini that is there but cannot be read when the engine saves (here: over the
+        // engine's 1 MB limit; in the game also an editor or scanner holding it) is left as it
+        // is. Writing only [music] would drop the [mod], [panel] and [keys] lines.
+        const std::wstring dir = mt::NewDir(L"settings unreadable");
+        std::string bytes = "[mod]\r\nstage=1\r\n[panel]\r\nmode=display\r\n; ";
+        bytes.append(1100000, 'x');
+        bytes += "\r\n";
+        mt::WriteBytes(dir + L"\\settings.ini", bytes);
+        {
+            Session session(dir, OutputMode::Manual, false);
+            P().SetVolume(0.25f);
+            testing::Sync(5000);
+            testing::WaitForIdleIo(5000);
+        }
+        mt::Check(mt::ReadBytes(dir + L"\\settings.ini") == bytes,
+                  "a settings.ini the engine cannot read is left as it is, not replaced by one with only [music]");
+    }
+    {
         const std::wstring dir = mt::NewDir(L"damaged playlist");
         mt::WriteBytes(dir + L"\\playlist.tsv", "RMM-PLAYLIST\t1\r\nT\t0\t0\t-1\t\t\tC:\\one.mp3\r\n");  // cut before END
         mt::WriteBytes(dir + L"\\playlist.tsv.bak", "RMM-PLAYLIST\t1\r\nT\t0\t0\t-1\t\t\tC:\\backup.mp3\r\nEND\t1\r\n");
