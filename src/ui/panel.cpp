@@ -463,11 +463,14 @@ void TimeRowMyFiles(const music::Snapshot& snapshot, float width, bool displayOn
     Mark("list");
 }
 
+// Another app has no list here (the list holds the player's own songs) and no seek: only its
+// timeline, when it reports one, or a line saying it does not. Nothing when no app is playing.
 void TimeRowOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, float width) {
     const Strings& s = S();
-    const float listWidth = ImMax(ButtonWidth(s.showList), ButtonWidth(s.hideList));
-    const float spacing = ImGui::GetStyle().ItemSpacing.x;
-    if (view.session && snapshot.durationSeconds > 0.0) {
+    if (!view.session) {
+        return;
+    }
+    if (snapshot.durationSeconds > 0.0) {
         // The app reports a timeline: shown, but another app cannot be moved through from here.
         const float timeWidth = ImGui::CalcTextSize("00:00").x;
         char elapsed[16], total[16];
@@ -479,7 +482,8 @@ void TimeRowOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, f
         float fraction = static_cast<float>(snapshot.positionSeconds / snapshot.durationSeconds);
         fraction = fraction < 0.0f ? 0.0f : (fraction > 1.0f ? 1.0f : fraction);
         ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImGui::GetStyleColorVec4(ImGuiCol_SliderGrab));
-        ImGui::ProgressBar(fraction, ImVec2(ImMax(width - timeWidth * 2.0f - listWidth - spacing * 3.0f, U() * 40.0f),
+        const float spacing = ImGui::GetStyle().ItemSpacing.x;
+        ImGui::ProgressBar(fraction, ImVec2(ImMax(width - timeWidth * 2.0f - spacing * 2.0f, U() * 40.0f),
                                             ImGui::GetFrameHeight() * 0.5f),
                            "");
         ImGui::PopStyleColor();
@@ -489,18 +493,9 @@ void TimeRowOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, f
     } else {
         ImGui::AlignTextToFramePadding();
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-        TextFit(view.session ? s.noTimeline : "", ImMax(width - listWidth - spacing, U() * 40.0f));
+        TextFit(s.noTimeline, width);
         ImGui::PopStyleColor();
     }
-    ImGui::SameLine();
-    ImGui::SetCursorPosX(ImGui::GetStyle().WindowPadding.x + width - listWidth);
-    char listLabel[64];
-    snprintf(listLabel, sizeof(listLabel), "%s##list", s.showList);
-    ImGui::BeginDisabled(true);
-    ImGui::Button(listLabel, ImVec2(listWidth, 0.0f));
-    ImGui::EndDisabled();
-    Tip(s.listHint, s.reasonListOtherApp);
-    Mark("list");
 }
 
 void ControlsMyFiles(const music::Snapshot& snapshot, float width, bool displayOnly) {
@@ -574,22 +569,15 @@ void ControlsOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, 
     Mark("next");
     ImGui::SameLine();
     const bool unknown = snapshot.repeat == remote::Repeat::Unknown;
-    if (LoopButton(RepeatLabel(snapshot.repeat), live && c.repeat, unknown ? s.loopUnknownHint : s.loopHint, reason)) {
+    const bool canRepeat = live && c.repeat;
+    // Greyed: what the app does not allow, and (when it does not say) that it does not say; never
+    // "click to change".
+    const char* repeatHint = canRepeat ? (unknown ? s.loopUnknownHint : s.loopHint) : (unknown ? s.loopUnknownInfo : nullptr);
+    if (LoopButton(RepeatLabel(snapshot.repeat), canRepeat, repeatHint, reason)) {
         app.SetRepeat(NextRepeat(snapshot.repeat));
     }
-    ImGui::SameLine();
-    const float sliderWidth = width - (ImGui::GetCursorPosX() - ImGui::GetStyle().WindowPadding.x);
-    // A greyed field with the word only: a slider would show a position, which would read as
-    // "volume zero".
-    char volumeLabel[64];
-    snprintf(volumeLabel, sizeof(volumeLabel), "%s##volume", s.volumeWord);
-    ImGui::BeginDisabled(true);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
-    ImGui::Button(volumeLabel, ImVec2(ImMax(sliderWidth, U() * 60.0f), 0.0f));
-    ImGui::PopStyleColor();
-    ImGui::EndDisabled();
-    Tip(s.volumeHint, s.reasonAppVolume);
-    Mark("volume");
+    // No volume here: another app's volume is set in that app.
+    (void)width;
 }
 
 void SongList(const music::Snapshot& snapshot, HWND window) {

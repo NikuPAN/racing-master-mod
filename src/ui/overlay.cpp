@@ -123,6 +123,7 @@ void ApplyBaseStyle() {
     // Slider tracks, the checkbox box and drop-down fields: an opaque grey-blue that stands out
     // from the window background (ImGui's default is a faint translucent blue that all but
     // disappears on it).
+    style.DisabledAlpha = 0.4f;   // greyed controls look clearly unavailable (ImGui's default is 0.6)
     style.Colors[ImGuiCol_FrameBg] = ImVec4(0.20f, 0.24f, 0.31f, 1.0f);
     style.Colors[ImGuiCol_FrameBgHovered] = ImVec4(0.26f, 0.31f, 0.40f, 1.0f);
     style.Colors[ImGuiCol_FrameBgActive] = ImVec4(0.30f, 0.36f, 0.47f, 1.0f);

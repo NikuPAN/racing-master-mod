@@ -39,6 +39,7 @@ struct Strings {
     const char* loopUnknown;             // another app that does not say
     const char* loopHint;
     const char* loopUnknownHint;
+    const char* loopUnknownInfo;         // hover text when the app neither says nor allows it
     const char* volumeWord;              // in front of the volume slider (the slider shows the percentage)
     const char* volumeHint;
 
@@ -69,8 +70,6 @@ struct Strings {
     const char* reasonAppNoControl;      // %s = the app's name
     const char* reasonAppNoControlNoName;
     const char* reasonNoApp;
-    const char* reasonAppVolume;
-    const char* reasonListOtherApp;
     const char* reasonNoLength;          // a song whose length is not known cannot be moved through
     const char* reasonAlreadyStopped;
     const char* reasonDisplayOnly;       // [panel] mode=display
@@ -120,6 +119,7 @@ inline const Strings kStringsEnglish = {
     "Repeat: unknown",
     "Click to change what repeats: nothing, this song, or the whole list.",
     "This app does not say what repeats. Click to change it.",
+    "This app does not say what repeats.",
     "Volume",
     "Drag to make the music louder or quieter.",
 
@@ -147,8 +147,6 @@ inline const Strings kStringsEnglish = {
     "%s does not allow this from here.",
     "This app does not allow this from here.",
     "No other app is playing anything right now.",
-    "Change this app's volume in the app itself.",
-    "The list holds your own songs. Choose My files to see it.",
     "The length of this song is not known, so you cannot move through it.",
     "The music is already stopped.",
     "This is a display test: the panel cannot be used until mode=on in the settings file.",
@@ -198,6 +196,7 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "重複：不明",
     "按一下切換重複方式：不重複、這一首、整個清單。",
     "這個程式沒有提供重複方式。按一下可以切換。",
+    "這個程式沒有提供重複方式。",
     "音量",
     "拖曳可以調整音量。",
 
@@ -225,8 +224,6 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "%s 不允許從這裡操作。",
     "這個程式不允許從這裡操作。",
     "目前沒有其他程式在播放。",
-    "請在那個程式裡調整音量。",
-    "清單只放你自己的歌曲。選「我的檔案」就能看到。",
     "不知道這首歌的長度，所以無法跳轉。",
     "音樂已經停止。",
     "這是顯示測試：在設定檔寫 mode=on 之後才能使用面板。",
