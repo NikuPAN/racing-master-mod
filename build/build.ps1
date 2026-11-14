@@ -235,7 +235,7 @@ $loaderSources = @(
     'src\core\worker.cpp',
     'src\remote\remote.cpp'
 )
-# The music engine. link_anchor.cpp keeps it inside version.dll until the loader calls it (see there).
+# The music engine (src\music). The worker starts it and the panel calls it.
 $musicSources = @(
     'src\music\player.cpp',
     'src\music\audio_output.cpp',
@@ -248,8 +248,7 @@ $musicSources = @(
     'src\music\playlist_store.cpp',
     'src\music\atomic_file.cpp',
     'src\music\text.cpp',
-    'src\music\picker.cpp',
-    'src\music\link_anchor.cpp'
+    'src\music\picker.cpp'
 )
 $loaderObjects = Build-Objects $loaderSources @()
 $musicObjects = @(Build-Objects $musicSources $musicIncludes)
@@ -300,8 +299,7 @@ Invoke-Tool $rc @('/nologo', "/fo$resObject", (Join-Path $root 'src\loader\versi
 # list, so a new delay-loaded DLL is a conscious change here.
 $delayLoads = @('USER32.dll', 'ole32.dll', 'SHELL32.dll', 'MFPlat.DLL', 'MFReadWrite.dll', 'd3dcompiler_47.dll')
 $musicLibs = @('ole32.lib', 'shell32.lib', 'mfplat.lib', 'mfreadwrite.lib', 'mfuuid.lib', 'propsys.lib')
-# The music engine in the DLL, kept there by link_anchor.cpp (/INCLUDE) until the loader calls it.
-$dllMusic = @('/INCLUDE:MusicEngineLinkAnchor') + $musicLibs + $musicObjects + @($miniaudioObject, $stbObject, $xiphLib)
+$dllMusic = $musicLibs + $musicObjects + @($miniaudioObject, $stbObject, $xiphLib)
 $dllPanel = @('d3dcompiler.lib') + $uiObjects + $imguiObjects
 $dll = Join-Path $out 'version.dll'
 Invoke-Tool $link (@('/nologo', '/DLL', "/OUT:$dll",
@@ -388,7 +386,7 @@ $musicTestSources = @(
     'tools\testhost\musictest_picker.cpp'
 )
 $musicTestObjects = Build-Objects $musicTestSources ($musicIncludes + @("/I$(Join-Path $root 'src')", "/I$(Join-Path $vorbisDir 'include')"))
-$engineObjects = @($musicObjects | Where-Object { [IO.Path]::GetFileName($_) -ne 'link_anchor.obj' })
+$engineObjects = $musicObjects
 Invoke-Tool $link (@('/nologo', "/OUT:$(Join-Path $out 'musictest.exe')", '/SUBSYSTEM:CONSOLE', '/DEBUG',
     "/PDB:$(Join-Path $obj 'musictest.pdb')", '/OPT:REF', 'kernel32.lib', 'user32.lib') + $musicLibs +
     $musicTestObjects + @((Join-Path $obj 'log.obj')) + $engineObjects + @($miniaudioObject, $stbObject, $xiphLib, $vorbisLib))

@@ -186,7 +186,7 @@ other line kept, written to `settings.ini.new` and swapped in). It never writes 
   public interface the panel codes against, `picker.h` the file dialogs, `player.cpp` the threads
   and playback, `audio_output` the ring/callback/device, `source*.cpp` one file per decoder
   family, `playlist_logic.h` the state machine, `playlist_store` the file formats, `testing.h`
-  test-only hooks, `link_anchor.cpp` keeps the engine linked until the loader calls it.
+  test-only hooks.
 - `src/third_party/` — the one translation unit each for miniaudio and stb_vorbis.
 - `src/ui/` — the music panel. `overlay` (start-up, per-frame sequence inside a swapped device
   context state, input feed, fault latch, test layout file), `panel` (the only file that calls
