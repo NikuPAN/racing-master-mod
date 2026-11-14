@@ -5,10 +5,11 @@
 #include "settings.h"
 
 #include "../remote/remote.h"
+#include "../ui/overlay.h"
 
 namespace {
 
-constexpr char kVersion[] = "0.2.0 (loader)";
+constexpr char kVersion[] = "0.3.0-dev (loader and music panel)";
 
 HMODULE g_self = nullptr;
 bool g_testHost = false;
@@ -158,6 +159,9 @@ DWORD WINAPI ModThread(LPVOID) {
     if (!g_testHost) {
         Sleep(3000);
     }
+    // The music panel's start-up work that must not happen on the game's threads (settings,
+    // hotkeys, loading the shader compiler). Before the hook, so the first frame finds it done.
+    PanelStart(settings.ui, g_testHost);
 
     PresentHookOptions options;
     options.markerSeconds = settings.markerSeconds;

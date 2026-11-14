@@ -6,12 +6,13 @@
 # Usage:  powershell -ExecutionPolicy Bypass -File build\build.ps1
 #
 # After linking, two gates run and fail the build if they do not hold:
-#   1. version.dll imports KERNEL32.dll only. Everything else (user32 today) is delay-loaded, so
-#      a bystander program that merely imports version.dll gets no extra DLL loaded. The gate also
-#      insists that the import dump actually listed KERNEL32 and the delay-loaded USER32, so an
-#      empty or unreadable dump fails the build instead of passing it. The media remote
-#      (src\remote) resolves combase, shell32 and advapi32 with GetProcAddress at run time for
-#      the same reason; calling one of their functions directly would fail this gate.
+#   1. version.dll imports KERNEL32.dll only. Everything else (user32, d3dcompiler_47) is
+#      delay-loaded, so a bystander program that merely imports version.dll gets no extra DLL
+#      loaded. The gate also insists that the import dump actually listed KERNEL32 and the
+#      delay-loaded USER32 and D3DCOMPILER_47, so an empty or unreadable dump fails the build
+#      instead of passing it. The media remote (src\remote) resolves combase, shell32 and
+#      advapi32 with GetProcAddress at run time for the same reason; calling one of their
+#      functions directly would fail this gate.
 #   2. No "%ls" under src\: log lines are UTF-8 and wide strings go through LogUtf8().
 #
 # The music panel (src\ui) uses Dear ImGui (.deps\imgui-1.93.0, fetched by fetch-deps.ps1). While
@@ -147,7 +148,9 @@ $uiSources = @(
     (Join-Path $root 'src\ui\hotkeys.cpp'),
     (Join-Path $root 'src\ui\input_wndproc.cpp'),
     (Join-Path $root 'src\ui\ui_settings.cpp'),
-    (Join-Path $root 'src\ui\other_app.cpp')
+    (Join-Path $root 'src\ui\other_app.cpp'),
+    (Join-Path $root 'src\ui\panel.cpp'),
+    (Join-Path $root 'src\ui\overlay.cpp')
 )
 if ($uiStandalone) { $uiSources += (Join-Path $root 'src\ui\standalone\stubs.cpp') }
 foreach ($source in $uiSources) {
@@ -198,6 +201,9 @@ if ($extra.Count) {
 }
 if ($delayed -notcontains 'USER32.dll') {
     throw "version.dll should delay-load USER32.dll, but the import dump lists these delay-loaded DLLs: '$($delayed -join ', ')'. Check the /DELAYLOAD line."
+}
+if (-not ($delayed | Where-Object { $_ -ieq 'd3dcompiler_47.dll' })) {
+    throw "version.dll should delay-load d3dcompiler_47.dll (the panel's shader compiler), but the import dump lists these delay-loaded DLLs: '$($delayed -join ', ')'. Check the /DELAYLOAD line."
 }
 Write-Host "version.dll static imports: $($eager -join ', '); delay-loaded: $($delayed -join ', ')"
 
