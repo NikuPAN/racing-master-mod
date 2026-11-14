@@ -13,6 +13,8 @@
 #      (src\remote) resolves combase, shell32 and advapi32 with GetProcAddress at run time for
 #      the same reason; calling one of their functions directly would fail this gate.
 #   2. No "%ls" under src\: log lines are UTF-8 and wide strings go through LogUtf8().
+#
+# The music panel (src\ui) uses Dear ImGui (.deps\imgui-1.93.0, fetched by fetch-deps.ps1).
 
 $ErrorActionPreference = 'Stop'
 
@@ -92,6 +94,20 @@ if ($wideFormat) {
     throw "src\ must not use %ls (log lines are UTF-8; pass wide strings through LogUtf8 and %s): $($wideFormat | ForEach-Object { "$($_.Path):$($_.LineNumber)" })"
 }
 
+# --- the music panel's flags -----------------------------------------------------------------------
+# /EHsc: the panel uses std::wstring and std::vector from the music interfaces. /utf-8: the string
+# table has Chinese literals. IMGUI_USER_CONFIG selects src\ui\imconfig_mod.h for every file that
+# includes imgui.h (the angle-bracket form needs no quoting through PowerShell).
+$imgui = Join-Path $root '.deps\imgui-1.93.0'
+if (-not (Test-Path (Join-Path $imgui 'imgui.h'))) {
+    throw "Dear ImGui is missing from $imgui. Run build\fetch-deps.ps1."
+}
+$uiFlags = @('/nologo', '/c', '/std:c++20', '/O2', '/W4', '/WX', '/EHsc', '/GR-', '/MT', '/GS', '/guard:cf',
+             '/Zi', "/Fd$(Join-Path $obj 'vc.pdb')",
+             '/DUNICODE', '/D_UNICODE', '/DWIN32_LEAN_AND_MEAN', '/DNOMINMAX', '/D_CRT_SECURE_NO_WARNINGS',
+             '/utf-8', '/DIMGUI_USER_CONFIG=<imconfig_mod.h>',
+             "/I$(Join-Path $root 'src\ui')", "/I$imgui", "/I$(Join-Path $imgui 'backends')")
+
 # --- version.dll ----------------------------------------------------------------------------------
 $sources = @(
     'src\loader\dllmain.cpp',
@@ -110,6 +126,19 @@ foreach ($source in $sources) {
     Invoke-Tool $cl ($cflags + @("/Fo$object", (Join-Path $root $source)))
     $objects += $object
 }
+$uiSources = @(
+    (Join-Path $imgui 'imgui.cpp'),
+    (Join-Path $imgui 'imgui_draw.cpp'),
+    (Join-Path $imgui 'imgui_tables.cpp'),
+    (Join-Path $imgui 'imgui_widgets.cpp'),
+    (Join-Path $imgui 'backends\imgui_impl_dx11.cpp'),
+    (Join-Path $root 'src\ui\imgui_errors.cpp')
+)
+foreach ($source in $uiSources) {
+    $object = Join-Path $obj ([IO.Path]::GetFileNameWithoutExtension($source) + '.obj')
+    Invoke-Tool $cl ($uiFlags + @("/Fo$object", $source))
+    $objects += $object
+}
 $asmObject = Join-Path $obj 'proxy_exports.obj'
 Invoke-Tool $ml64 @('/nologo', '/c', "/Fo$asmObject", (Join-Path $root 'src\loader\proxy_exports.asm'))
 $resObject = Join-Path $obj 'version.res'
@@ -119,14 +148,15 @@ Invoke-Tool $rc @('/nologo', "/fo$resObject", (Join-Path $root 'src\loader\versi
 # /PDBALTPATH keeps the build folder (and the user name in it) out of the published DLL.
 # /OPT:REF /OPT:ICF stay explicit because /DEBUG would otherwise switch them off.
 # user32 is delay-loaded: it is only called from the mod's own thread inside the game, and a
-# bystander program that imports version.dll must not get it loaded. Never ship the PDB.
+# bystander program that imports version.dll must not get it loaded. d3dcompiler_47 (the panel's
+# two shaders) likewise; the panel loads it by full path from the worker. Never ship the PDB.
 $dll = Join-Path $out 'version.dll'
 Invoke-Tool $link (@('/nologo', '/DLL', "/OUT:$dll",
     "/DEF:$(Join-Path $root 'src\loader\version.def')", "/IMPLIB:$(Join-Path $obj 'version_proxy.lib')",
     '/DEBUG', "/PDB:$(Join-Path $out 'version.pdb')", '/PDBALTPATH:version.pdb', "/MAP:$(Join-Path $out 'version.map')",
     '/OPT:REF', '/OPT:ICF', '/guard:cf', '/DYNAMICBASE', '/NXCOMPAT',
-    '/DELAYLOAD:user32.dll',
-    'kernel32.lib', 'user32.lib', 'delayimp.lib') + $objects + @($asmObject, $resObject))
+    '/DELAYLOAD:user32.dll', '/DELAYLOAD:d3dcompiler_47.dll',
+    'kernel32.lib', 'user32.lib', 'd3dcompiler.lib', 'delayimp.lib') + $objects + @($asmObject, $resObject))
 
 # --- gate 1: static imports are KERNEL32.dll only -----------------------------------------------------
 # link.exe /DUMP is dumpbin; the fetched SDK has no dumpbin.exe of its own.
