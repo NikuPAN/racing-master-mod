@@ -37,12 +37,15 @@
 # mod (no real media session is read or sent anything). Screenshots are copied to out\screens
 # before the temporary folder is removed.
 #  23. [panel] and [keys] values   good values accepted, bad ones refused with a reason, mod keeps running
+#  24. [keys] chosen by the player the panel uses them; an unknown key name keeps the default and says why
 #  25-30. screenshots              English and draft Chinese, small/medium/large text: bar, list,
 #                                  settings row, "Other app"; PNG files with pixel checks
 #  31-32. "Other app" variants     an app that allows everything, and no app at all
 #  33. panel and ResizeBuffers     four sizes with the panel and list drawing
 #  34. fault inside the panel      game state put back, nothing leaked, mouse and keys back to the game
 #  35. [panel] mode=display        drawn, but nothing taken from the game
+#  36. panel input                 clicks, pass-through, hotkeys, Insert, wheel, ClearInputMouse after
+#                                  a gap, drop-down closing, text field, focus, "Other app", heartbeat
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
@@ -344,6 +347,17 @@ try {
     # 35. [panel] mode=display: drawn, but no window procedure and no keys.
     $panelRun = Invoke-PanelRun 'panel display mode' 'display' '' @{} @('[panel]', 'mode=display')
     Record 'panel display mode: the log says so and the game window is not watched' ($panelRun.Log.Contains('mode display only') -and -not $panelRun.Log.Contains('watching the game window'))
+
+    # 24. Keys chosen in [keys]: taken by the panel; an unknown key name keeps the default and says why.
+    $keysRoot = Join-Path $work 'lad-ini-keys'
+    Write-Ini (Join-Path $keysRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=0', '[keys]', 'panel=none', 'next=Ctrl+F2', 'stop=Banana', 'media_keys=0') 'utf8'
+    $run = Invoke-Run '24. settings.ini with keys chosen by the player' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $keysRoot
+    $log = Read-Log $run.Log
+    Record 'keys: the chosen keys are used, an unknown name keeps the default with a reason' ($log.Contains('panel: keys none panel, F5 stop, F6 previous, F7 play or pause, Ctrl+F2 next, F9 repeat; media keys off') -and $log.Contains('"stop=Banana" under [keys] is not a key name the mod knows; the default stays'))
+
+    # 36. Input through the window procedure: clicks, pass-through, hotkeys, Insert and the rest.
+    $panelRun = Invoke-PanelRun 'panel input' 'input' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_TEXT_FIELD = '1' } @()
+    Record 'panel input: the player and the other app were told what the keys and clicks asked for' ($panelRun.Log.Contains('test app: pause') -and -not $panelRun.Log.Contains('test app: next') -and -not $panelRun.Log.Contains('test app: stop') -and $panelRun.Log.Contains('test player: the game is not in focus') -and $panelRun.Log.Contains('test player: files added') -and $panelRun.Log.Contains('panel: settings saved to'))
 
     Write-Host ''
     Write-Host 'Summary'

@@ -509,6 +509,7 @@ void RunQuick(Host& host, int seconds) {
 //   resize            ResizeBuffers to four sizes with the panel and list open
 //   fault             a fault inside the panel code (RACING_MASTER_MOD_TEST_PANEL_FAULT)
 //   display           [panel] mode=display: drawn, nothing taken from the game
+//   input             clicks, pass-through, hotkeys, Insert, ClearInputMouse after a gap, text field
 //
 // Every message is posted to this program's own hidden window with PostMessageW: it goes through
 // the mod's window procedure exactly as the game's messages would. Nothing leaves the process and
@@ -850,6 +851,13 @@ void Click(Host& host, POINT p) {
     Sync(host);
 }
 
+void Wheel(Host& host, POINT client, int steps) {
+    POINT screen = client;
+    ClientToScreen(host.window, &screen);
+    PostMessageW(host.window, WM_MOUSEWHEEL, MAKEWPARAM(0, WHEEL_DELTA * steps), MAKELPARAM(screen.x, screen.y));
+    Sync(host);
+}
+
 // A point in the client area that no panel window covers.
 POINT OutsidePanel() {
     return POINT{120, 700};
@@ -1101,6 +1109,248 @@ void ScriptDisplay(Host& host) {
           layout.Int("enabled") == 0 && g_gotKeyDown[VK_INSERT].load() == insertDown + 1 && g_gotLDown.load() == lDown + 1);
 }
 
+void ScriptInput(Host& host) {
+    const bool ready = WaitLayout(host, [](const LayoutFile& l) { return l.Int("enabled") == 1; }, 10000);
+    Check("I0 the panel is ready and watching the window", ready);
+    if (!ready) return;
+
+    // Insert opens the panel; the game never sees the key.
+    int down = g_gotKeyDown[VK_INSERT].load(), up = g_gotKeyUp[VK_INSERT].load();
+    Key(host, VK_INSERT);
+    bool ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 1 && l.Int("drawn") == 1 && l.Has("next"); });
+    Check("I1 Insert opens the panel and is kept from the game",
+          ok && g_gotKeyDown[VK_INSERT].load() == down && g_gotKeyUp[VK_INSERT].load() == up);
+
+    // A driving key goes to the game.
+    down = g_gotKeyDown['W'].load();
+    up = g_gotKeyUp['W'].load();
+    Key(host, 'W');
+    Check("I2 a driving key (W) reaches the game while the panel is open",
+          g_gotKeyDown['W'].load() == down + 1 && g_gotKeyUp['W'].load() == up + 1);
+
+    const POINT outside = OutsidePanel();
+    int moves = g_gotMove.load();
+    Move(host, outside);
+    Sync(host);
+    Check("I3 a mouse move outside the panel reaches the game", g_gotMove.load() == moves + 1);
+    moves = g_gotMove.load();
+    Move(host, Item("next"));
+    Sync(host);
+    Check("I4 a mouse move over the panel is kept from the game", g_gotMove.load() == moves);
+
+    int lDown = g_gotLDown.load(), lUp = g_gotLUp.load();
+    Click(host, outside);
+    Check("I5 a click outside the panel reaches the game (down and up)",
+          g_gotLDown.load() == lDown + 1 && g_gotLUp.load() == lUp + 1);
+
+    LayoutFile layout = ReadLayout();
+    const int tracks = layout.Int("tracks");
+    int index = layout.Int("index");
+    lDown = g_gotLDown.load();
+    lUp = g_gotLUp.load();
+    Click(host, Item("next"));
+    int expected = (index + 1) % tracks;
+    ok = WaitLayout(host, [&](const LayoutFile& l) { return l.Int("index") == expected; });
+    Check("I6 a click on Next presses it and is kept from the game",
+          ok && g_gotLDown.load() == lDown && g_gotLUp.load() == lUp);
+
+    // Hotkeys with the panel open. None of them reaches the game.
+    const UINT keys[5] = {VK_F5, VK_F6, VK_F7, VK_F8, VK_F9};
+    int keyDowns[5], keyUps[5];
+    for (int i = 0; i < 5; ++i) {
+        keyDowns[i] = g_gotKeyDown[keys[i]].load();
+        keyUps[i] = g_gotKeyUp[keys[i]].load();
+    }
+    index = ReadLayout().Int("index");
+    Key(host, VK_F8);
+    expected = (index + 1) % tracks;
+    Check("I7 F8 plays the next song", WaitLayout(host, [&](const LayoutFile& l) { return l.Int("index") == expected; }));
+    Key(host, VK_F6);
+    Check("I7 F6 plays the previous song", WaitLayout(host, [&](const LayoutFile& l) { return l.Int("index") == index; }));
+    const int state = ReadLayout().Int("state");
+    Key(host, VK_F7);
+    Check("I7 F7 plays or pauses", WaitLayout(host, [&](const LayoutFile& l) { return l.Int("state") != state; }));
+    const int loop = ReadLayout().Int("loop");
+    Key(host, VK_F9);
+    Check("I7 F9 changes what repeats",
+          WaitLayout(host, [&](const LayoutFile& l) { return l.Int("loop") == (loop + 1) % 3; }));
+    Key(host, VK_F7);   // back to playing, so Stop has something to stop
+    Key(host, VK_F5);
+    Check("I7 F5 stops", WaitLayout(host, [](const LayoutFile& l) { return l.Int("state") == 0; }));
+    bool none = true;
+    for (int i = 0; i < 5; ++i) {
+        none = none && g_gotKeyDown[keys[i]].load() == keyDowns[i] && g_gotKeyUp[keys[i]].load() == keyUps[i];
+    }
+    Check("I7 none of F5-F9 reached the game", none);
+
+    // Auto-repeat of a held hotkey is kept from the game and does not act again.
+    index = ReadLayout().Int("index");
+    PostKey(host, VK_F8, true);
+    PostKey(host, VK_F8, true, true);
+    PostKey(host, VK_F8, true, true);
+    PostKey(host, VK_F8, false);
+    Sync(host);
+    Pump(host, 6);
+    Check("I8 a held F8 (with auto-repeat) acts once",
+          ReadLayout().Int("index") == (index + 1) % tracks && g_gotKeyDown[VK_F8].load() == keyDowns[3]);
+
+    // Insert closes the panel; hotkeys still work; clicks on the empty spot go to the game.
+    const POINT nextPoint = Item("next");
+    Key(host, VK_INSERT);
+    Check("I9 Insert closes the panel", WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 0; }));
+    index = ReadLayout().Int("index");
+    Key(host, VK_F8);
+    expected = (index + 1) % tracks;
+    Check("I9 F8 works with the panel closed", WaitLayout(host, [&](const LayoutFile& l) { return l.Int("index") == expected; }));
+    Key(host, VK_F9);
+    Check("I9 F9 with the panel closed shows a short notice of what now repeats",
+          WaitLayout(host, [](const LayoutFile& l) { return l.Int("toast") == 1; }));
+    lDown = g_gotLDown.load();
+    Click(host, nextPoint);
+    Check("I9 with the panel closed a click where it was reaches the game", g_gotLDown.load() == lDown + 1);
+
+    // The list, and the wheel over it.
+    Key(host, VK_INSERT);
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 1 && l.Has("list"); });
+    Click(host, Item("list"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 1 && l.Has("row3"); });
+    Check("I10 Show list opens the list", ok);
+    int wheels = g_gotWheel.load();
+    Wheel(host, Item("row0"), -1);
+    Check("I10 the wheel over the list is kept from the game", g_gotWheel.load() == wheels);
+    Wheel(host, outside, -1);
+    Check("I10 the wheel outside the panel reaches the game", g_gotWheel.load() == wheels + 1);
+    Wheel(host, Item("row3"), 1);   // scroll the list back to the top
+    WaitLayout(host, [](const LayoutFile& l) { return l.Has("row0") && l.Has("remove0"); });
+
+    const int before = ReadLayout().Int("tracks");
+    Click(host, Item("add_files"));
+    Check("I11 Add files adds the chosen files",
+          WaitLayout(host, [&](const LayoutFile& l) { return l.Int("tracks") == before + 2; }));
+    Click(host, Item("remove0"));
+    Check("I11 the remove button takes a song off the list",
+          WaitLayout(host, [&](const LayoutFile& l) { return l.Int("tracks") == before + 1; }));
+    Click(host, Item("row3"));
+    Check("I11 clicking a song plays it", WaitLayout(host, [](const LayoutFile& l) { return l.Int("index") == 3; }));
+
+    // ClearInputMouse after a gap: press on the volume slider, close the panel, release, reopen,
+    // move along the slider. If the press were still held, the volume would follow the pointer.
+    const POINT volume = Item("volume");
+    Move(host, volume);
+    PostMessageW(host.window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(volume.x, volume.y));
+    Sync(host);
+    const int volumeAfterPress = ReadLayout().Int("volume");
+    lUp = g_gotLUp.load();
+    Key(host, VK_INSERT);
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 0; });
+    PostMessageW(host.window, WM_LBUTTONUP, 0, MAKELPARAM(volume.x, volume.y));
+    Sync(host);
+    Key(host, VK_INSERT);
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 1 && l.Int("drawn") == 1; });
+    Move(host, POINT{volume.x - 60, volume.y});
+    Sync(host);
+    Move(host, POINT{volume.x - 90, volume.y});
+    Sync(host);
+    const int volumeAfterGap = ReadLayout().Int("volume");
+    printf("  volume after the press %d, after closing, releasing, reopening and moving %d\n", volumeAfterPress,
+           volumeAfterGap);
+    Check("I12 a press held across closing the panel is let go when it reopens (the slider does not follow)",
+          volumeAfterGap == volumeAfterPress && g_gotLUp.load() == lUp);
+
+    // Settings row: language drop-down, saved to settings.ini.
+    Click(host, Item("list"));
+    Click(host, Item("settings"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("settings") == 1 && l.Has("language"); });
+    Click(host, Item("language"));
+    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Has("language_item2"); });
+    Click(host, Item("language_item2"));
+    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Int("language") == 2 && l.Int("saves") >= 1; });
+    const std::string ini = ReadWholeFile(ModFolder() + L"\\settings.ini");
+    printf("  settings.ini after the change:\n%s\n", ini.c_str());
+    Check("I13 choosing Traditional Chinese in the settings row switches the panel and saves language=zh-TW",
+          ok && ini.find("language=zh-TW") != std::string::npos && ini.find("marker_seconds=0") != std::string::npos);
+    Click(host, Item("language"));
+    WaitLayout(host, [](const LayoutFile& l) { return l.Has("language_item1"); });
+    Click(host, Item("language_item1"));
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("language") == 1; });
+
+    // A click outside closes an open drop-down, and reaches the game.
+    Click(host, Item("text_size"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Has("text_size_item0") && l.windows.size() >= 2; });
+    lDown = g_gotLDown.load();
+    Click(host, outside);
+    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return !l.Has("text_size_item0") && l.windows.size() == 1; });
+    Check("I14 a click outside closes the open drop-down and reaches the game", ok && g_gotLDown.load() == lDown + 1);
+
+    // Text field: keys are the panel's only while it has focus.
+    Click(host, Item("test_field"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("wanttext") == 1; });
+    down = g_gotKeyDown['A'].load();
+    const int chars = g_gotChar.load();
+    PostKey(host, 'A', true);
+    PostMessageW(host.window, WM_CHAR, 'a', 1);
+    PostKey(host, 'A', false);
+    Sync(host);
+    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Text("textfield") == "a"; });
+    Check("I15 typing into a focused text field goes to the panel, not the game",
+          ok && g_gotKeyDown['A'].load() == down && g_gotChar.load() == chars);
+    Click(host, outside);
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("wanttext") == 0; });
+    PostKey(host, 'A', true);
+    PostMessageW(host.window, WM_CHAR, 'a', 1);
+    PostKey(host, 'A', false);
+    Sync(host);
+    Check("I15 after clicking into the game, typing goes to the game again",
+          ok && g_gotKeyDown['A'].load() == down + 1 && g_gotChar.load() == chars + 1);
+
+    // The game losing and regaining focus is passed on (to the game and to the player).
+    const int activations = g_gotActivateApp.load();
+    PostMessageW(host.window, WM_ACTIVATEAPP, FALSE, 0);
+    Sync(host);
+    PostMessageW(host.window, WM_ACTIVATEAPP, TRUE, 0);
+    Sync(host);
+    Check("I16 focus changes reach the game", g_gotActivateApp.load() == activations + 2);
+
+    // "Other app": hotkeys go to the other app; the keyboard's media keys are left to Windows.
+    Click(host, Item("settings"));
+    Click(host, Item("source_other_app"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("source") == 1; });
+    Key(host, VK_F7);   // the example browser allows play and pause
+    Key(host, VK_F8);   // ... but not next: refused, nothing sent to it
+    const int mediaDown = g_gotKeyDown[VK_MEDIA_NEXT_TRACK].load();
+    Key(host, VK_MEDIA_NEXT_TRACK);
+    Check("I17 with Other app chosen the keyboard's media keys are left to Windows",
+          ok && g_gotKeyDown[VK_MEDIA_NEXT_TRACK].load() == mediaDown + 1);
+    Key(host, VK_INSERT);
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 0; });
+    Key(host, VK_F5);   // the example app does not allow Stop
+    Check("I17 a key the other app refuses shows a notice with the reason",
+          WaitLayout(host, [](const LayoutFile& l) { return l.Int("toast") == 1; }));
+    Key(host, VK_INSERT);
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 1 && l.Has("source_my_files"); });
+    Click(host, Item("source_my_files"));
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("source") == 0; });
+    index = ReadLayout().Int("index");
+    const int tracksNow = ReadLayout().Int("tracks");
+    Key(host, VK_MEDIA_NEXT_TRACK);
+    Check("I17 with My files chosen the media key Next is the panel's",
+          WaitLayout(host, [&](const LayoutFile& l) { return l.Int("index") == (index + 1) % tracksNow; }) &&
+              g_gotKeyDown[VK_MEDIA_NEXT_TRACK].load() == mediaDown + 1);
+
+    // Heartbeat: when the panel stops being drawn, the mouse goes back to the game within half a
+    // second, even though the panel is still "open".
+    const POINT nextAgain = Item("next");
+    Sleep(800);
+    lDown = g_gotLDown.load();
+    Move(host, nextAgain);
+    PostMessageW(host.window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(nextAgain.x, nextAgain.y));
+    PostMessageW(host.window, WM_LBUTTONUP, 0, MAKELPARAM(nextAgain.x, nextAgain.y));
+    Sync(host, false);
+    Check("I18 a click over the panel reaches the game when the panel has not been drawn for 0.8 s",
+          g_gotLDown.load() == lDown + 1);
+    Pump(host, 10);
+}
+
 void RunPanel(Host& host, const char* outputFolder, int seconds, const char* script, const char* name) {
     host.chain = CreateChain(host, host.window, kGameLayout);
     if (!host.chain || !AcquireBackBuffer(host) || !CreateGameState(host)) {
@@ -1122,6 +1372,7 @@ void RunPanel(Host& host, const char* outputFolder, int seconds, const char* scr
         else if (what == "resize") ScriptResize(host);
         else if (what == "fault") ScriptFault(host);
         else if (what == "display") ScriptDisplay(host);
+        else if (what == "input") ScriptInput(host);
         else Check("known panel script", false);
     }
     printf("  game pipeline state checked after %d presents, %d differed\n", g_stateChecks, g_stateFailures);
