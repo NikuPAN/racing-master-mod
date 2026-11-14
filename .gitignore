@@ -1,0 +1,12 @@
+# Downloaded build dependencies (Windows SDK, Visual C++ runtime libraries)
+.deps/
+
+# Build output
+out/
+
+# Agent notes that must stay on this machine
+docs/agent-notes/local/
+
+# Editor
+.vs/
+*.user
