@@ -19,7 +19,6 @@
 #  12. settings.ini UTF-16 BE      T13: stage=0 switches the mod off; the log starts with "loaded into"
 #  13. ini without [mod], CR-only  keys before any heading count as [mod]; CR-only line endings split
 #  14. ini under a wrong heading   the log says the file changed nothing and names [mod]
-#
 # Media remote (src\remote), against the silent fake player in testhost.exe media mode. Each run
 # publishes the fake player for a few seconds; while it exists it is Windows' current media
 # session (media keys and the Windows flyout point at it). No command can reach any other
@@ -33,6 +32,9 @@
 #  21. lifecycle   the game's Shutdown (sleep, wake), a media thread that stops answering, the
 #                  freshness check, and rebuild mode (the fallback when change notices stop)
 #  22. media, flag unset: the mod stays dormant, no log folder, nothing sent
+#
+# Music panel (src\ui):
+#  23. [panel] and [keys] values   good values accepted, bad ones refused with a reason, mod keeps running
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
@@ -102,7 +104,6 @@ function Write-Ini([string]$Path, [string[]]$Lines, [string]$Encoding) {
 }
 
 $flag = @{ RACING_MASTER_MOD_TEST_HOST = '1' }
-$gameFirstFrame = 'first frame: 2558x1360, format 24, buffers 2, swap effect 4, windowed 1, samples 1'
 
 try {
     # 1. Game layout, mod active.
@@ -288,6 +289,14 @@ try {
     # 22. Without the test flag the mod stays dormant: no media code runs, nothing is sent.
     $run = Invoke-Media '22. media mode, flag unset: mod must stay dormant' 'basic' 'play;pause;quit' 'lad-media-dormant' @{} $false 4
     Record 'media dormant: the fake player was published, no log folder, nothing received' ((@($run.Lines -match '^fake player published at start: yes').Count -eq 1) -and -not (Test-Path (Join-Path $run.LogRoot 'RacingMasterMod')) -and $run.Received -eq 'nothing')
+
+    # --- music panel ------------------------------------------------------------------------------
+    # 23. [panel] and [keys]: good values are taken, bad ones refused with a reason; the mod runs on.
+    $panelIniRoot = Join-Path $work 'lad-ini-panel'
+    Write-Ini (Join-Path $panelIniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=3', '[panel]', 'language=zh-TW', 'text_size=huge', 'mode=sometimes', 'source=other_app', 'colour=red', '[keys]', 'next=F2', 'jump=F3') 'utf8'
+    $run = Invoke-Run '23. settings.ini with [panel] and [keys] values' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $panelIniRoot
+    $log = Read-Log $run.Log
+    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, display or on') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2, marker for 3 s') -and ($run.Lines -match '^marker: found').Count -eq 1)
 
     Write-Host ''
     Write-Host 'Summary'
