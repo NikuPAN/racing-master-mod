@@ -157,6 +157,7 @@ Source* OpenByKind(const std::wstring* path, Kind kind, OpenError* error) {
         case Kind::Flac:
         case Kind::Mp3: source = OpenMiniaudioSource(*path, kind, error); break;
         case Kind::Vorbis: source = OpenVorbisSource(*path, error); break;
+        case Kind::Opus: source = OpenOpusSource(*path, error); break;
         case Kind::MediaFoundation: source = OpenMediaFoundationSource(*path, error); break;
         default: *error = OpenError::Unsupported; break;
     }
