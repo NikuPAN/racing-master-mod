@@ -270,6 +270,27 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
     return true;
 }
 
+// A player who copies settings.ini next to version.dll (into the game folder) would otherwise see
+// it ignored without a word. `dllIniPath` is the full path of racing-master-mod.ini; `name` points
+// at its file name inside that buffer, which is reused for the check. Any letter case matches
+// (Windows file names are not case-sensitive).
+void ReportMisplacedSettingsFile(wchar_t* dllIniPath, wchar_t* name) {
+    char dllIni8[MAX_PATH * 3];
+    LogUtf8(dllIniPath, dllIni8, sizeof(dllIni8));
+    lstrcpyW(name, kLocalIniName);
+    const DWORD attributes = GetFileAttributesW(dllIniPath);
+    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) ||
+        lstrcmpiW(dllIniPath, g_userSettingsPath) == 0) {
+        return;
+    }
+    char found8[MAX_PATH * 3], user8[MAX_PATH * 3];
+    LogUtf8(dllIniPath, found8, sizeof(found8));
+    LogUtf8(g_userSettingsPath, user8, sizeof(user8));
+    Log("settings: found %s next to version.dll and ignored it; the mod reads %s or %s, so rename the file to "
+        "racing-master-mod.ini or move it into that second folder",
+        found8, dllIni8, user8[0] ? user8 : "%LOCALAPPDATA%\\RacingMasterMod\\settings.ini");
+}
+
 }  // namespace
 
 IniFileState LoadIniFileText(const wchar_t* path, char* text, int textSize, DWORD* error, bool* hadByteOrderMark) {
@@ -342,6 +363,7 @@ Settings ReadSettings(HMODULE self) {
         if (slash && (slash - path) + 1 + lstrlenW(kDllIniName) < MAX_PATH) {
             lstrcpyW(slash + 1, kDllIniName);
             ApplyIniFile(path, &settings);
+            ReportMisplacedSettingsFile(path, slash + 1);
         }
     }
     return settings;

@@ -58,6 +58,7 @@
 #                                  screenshot with the marker, kept in out\preview\integrated
 #  41. end to end, "Other app"     the real media remote and the silent fake player: play, F8, F9,
 #                                  F7 reach it and nothing else; screenshot in out\preview\integrated
+#  42. settings.ini beside the DLL ignored, and the log says so once, with the two paths it reads
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
@@ -476,6 +477,20 @@ try {
     Record 'end to end other app: the worker started the control of other apps (last choice) and followed only the test player' ($panelRun.Log.Contains('other app: starting the control of other music apps') -and $panelRun.Log.Contains('other app: test host, so only the test player'))
     Record 'end to end other app: the fake player received play, next, loop one and pause, in that order' ($received -eq 'play, next, loop one, pause')
     Test-MediaSafety @{ Text = $panelRun.Log } 'end to end other app'
+
+    # 42. A settings file under the per-user name, but next to the DLL (where the owner first put
+    # it). Upper case on purpose. It holds stage=0, which would switch the mod off if it were read.
+    $misplacedDir = Join-Path $work 'misplaced'
+    New-Item -ItemType Directory -Force $misplacedDir | Out-Null
+    Copy-Item $dll, $hostExe $misplacedDir
+    Write-Ini (Join-Path $misplacedDir 'SETTINGS.INI') @('[mod]', 'stage=0') 'utf8'
+    $misplacedRoot = Join-Path $work 'lad-misplaced'
+    $run = Invoke-Run '42. settings.ini next to the DLL is ignored, with one plain log line' (Join-Path $misplacedDir 'testhost.exe') @('quick', $work, '1') $flag $misplacedRoot
+    $log = Read-Log $run.Log
+    $expected = 'settings: found ' + (Join-Path $misplacedDir 'settings.ini') + ' next to version.dll and ignored it; the mod reads ' + (Join-Path $misplacedDir 'racing-master-mod.ini') + ' or ' + (Join-Path $misplacedRoot 'RacingMasterMod\settings.ini') + ', so rename the file to racing-master-mod.ini or move it into that second folder'
+    Record 'misplaced settings.ini: one line names it as ignored and gives the full paths of the two files the mod reads' (([regex]::Matches($log, [regex]::Escape($expected))).Count -eq 1)
+    Record 'misplaced settings.ini: its stage=0 was not applied (the mod runs, the marker shows)' (($run.Lines -match '^marker: found').Count -eq 1 -and -not $log.Contains('stage 0: the mod is switched off'))
+    Record 'no misplaced-file line when there is none (panel input run)' (-not (Read-Log (Join-Path $work 'lad-panel-panel-input\RacingMasterMod\mod.log')).Contains('next to version.dll and ignored it'))
 
     Write-Host ''
     Write-Host 'Summary'
