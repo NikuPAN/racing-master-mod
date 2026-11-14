@@ -1,7 +1,9 @@
 ﻿# Downloads the build dependencies into .deps/ (gitignored). Safe to re-run: it only fetches what is missing.
 #
 # The Windows SDK headers and libraries come from Microsoft's official NuGet packages, so no
-# system-wide Windows SDK install (and no administrator prompt) is needed.
+# system-wide Windows SDK install (and no administrator prompt) is needed. The music engine's
+# libraries (miniaudio, stb_vorbis, libogg, opus, opusfile) come from their publishers, each pinned
+# to one SHA-256. Licences: THIRD_PARTY.md.
 #
 # -MsvcCrt also fetches the Visual C++ runtime headers and libraries from Microsoft's Visual
 # Studio package feed. build.ps1 asks for this only when the installed Visual Studio has the
@@ -45,6 +47,72 @@ foreach ($p in $packages) {
     Expand-Archive -Path $zip -DestinationPath $target
     Remove-Item $zip
     Set-Content -Path (Join-Path $target '.complete') -Value $sdkVersion -Encoding utf8
+}
+
+# --- music engine libraries -------------------------------------------------------------------------
+# Each is pinned to one version and one SHA-256, checked here on 2026-11-14. The miniaudio and
+# stb_vorbis hashes are the ones in the engine design brief; the three Xiph tarballs match the
+# SHA256SUMS files Xiph publishes next to them. A new version needs a new hash: download the file,
+# run Get-FileHash, compare with the publisher's checksum list, paste the result.
+#   miniaudio 0.11.26     WAV, FLAC, MP3 decoders and the WASAPI/null output device
+#   stb_vorbis 1.24       OGG Vorbis (pull API)
+#   libogg, opus, opusfile  Opus in Ogg (.opus); opus also carries the encoder the tests use
+#   libvorbis 1.3.7       test program only: the Vorbis encoder that makes the OGG test fixture
+#                         (Windows has none). Never linked into version.dll.
+$music = @(
+    @{ Name = 'miniaudio 0.11.26'; Dir = 'miniaudio-0.11.26'; File = 'miniaudio.h'
+       Url = 'https://raw.githubusercontent.com/mackron/miniaudio/877ea4a7c2601c7b0f2a44e83dfac42e6470fea6/miniaudio.h'
+       Sha256 = '6B376C7FBB1352BA1E0E432AB66069B335EA9405E45CB6C30B97EF0F3C9C3E0E' },
+    @{ Name = 'stb_vorbis 1.24'; Dir = 'stb-9f755b6'; File = 'stb_vorbis.c'
+       Url = 'https://raw.githubusercontent.com/nothings/stb/9f755b604db3492df2cbeb39bf84b81e3e3932e3/stb_vorbis.c'
+       Sha256 = 'B52CF518355F7B2D181F18B97B812F361FFEB26299D935C8CF29E842401D60A6' },
+    @{ Name = 'libogg 1.3.6'; Dir = 'libogg-1.3.6'; Tarball = $true
+       Url = 'https://downloads.xiph.org/releases/ogg/libogg-1.3.6.tar.gz'
+       Sha256 = '83E6704730683D004D20E21B8F7F55DCB3383CDF84C0DAEDF30BDE175F774638' },
+    @{ Name = 'opus 1.6.1'; Dir = 'opus-1.6.1'; Tarball = $true
+       Url = 'https://downloads.xiph.org/releases/opus/opus-1.6.1.tar.gz'
+       Sha256 = '6FFCB593207BE92584DF15B32466ED64BBEC99109F007C82205F0194572411A1' },
+    @{ Name = 'opusfile 0.12'; Dir = 'opusfile-0.12'; Tarball = $true
+       Url = 'https://downloads.xiph.org/releases/opus/opusfile-0.12.tar.gz'
+       Sha256 = '118D8601C12DD6A44F52423E68CA9083CC9F2BFE72DA7A8C1ACB22A80AE3550B' },
+    @{ Name = 'libvorbis 1.3.7'; Dir = 'libvorbis-1.3.7'; Tarball = $true
+       Url = 'https://downloads.xiph.org/releases/vorbis/libvorbis-1.3.7.tar.gz'
+       Sha256 = '0E982409A9C3FC82EE06E08205B1355E5C6AA4C36BCA58146EF399621B0CE5AB' }
+)
+foreach ($m in $music) {
+    $target = Join-Path $deps $m.Dir
+    if (Test-Path (Join-Path $target '.complete')) {
+        Write-Host "$($m.Name) already present"
+        continue
+    }
+    $download = Join-Path $deps "$($m.Dir).download"
+    Write-Host "Downloading $($m.Name) ..."
+    Invoke-WebRequest -Uri $m.Url -OutFile $download
+    $hash = (Get-FileHash $download -Algorithm SHA256).Hash
+    if ($hash -ne $m.Sha256) {
+        Remove-Item $download
+        throw "Checksum mismatch for $($m.Name) (got $hash). The download is not the file this script expects; nothing was unpacked."
+    }
+    # Unpack into a fresh folder first, so a half-finished run never leaves a folder marked complete.
+    $staging = Join-Path $deps "$($m.Dir).staging"
+    if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
+    New-Item -ItemType Directory -Force $staging | Out-Null
+    if ($m.Tarball) {
+        # Windows 10 and 11 ship tar.exe in System32; the archive's top folder is the version folder.
+        & (Join-Path $env:SystemRoot 'System32\tar.exe') -xzf $download -C $staging
+        if ($LASTEXITCODE -ne 0) { throw "Unpacking $($m.Name) failed (tar exit code $LASTEXITCODE)" }
+        $unpacked = Join-Path $staging $m.Dir
+        if (-not (Test-Path $unpacked)) { throw "$($m.Name): the archive did not contain the folder $($m.Dir)" }
+        if (Test-Path $target) { Remove-Item $target -Recurse -Force }
+        Move-Item $unpacked $target
+        Remove-Item $staging -Recurse -Force
+    } else {
+        Move-Item $download (Join-Path $staging $m.File)
+        if (Test-Path $target) { Remove-Item $target -Recurse -Force }
+        Move-Item $staging $target
+    }
+    if (Test-Path $download) { Remove-Item $download }
+    Set-Content -Path (Join-Path $target '.complete') -Value $m.Sha256 -Encoding utf8
 }
 
 if ($MsvcCrt) {
