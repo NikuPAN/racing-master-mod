@@ -233,6 +233,8 @@ $loaderSources = @(
 )
 # The music engine. link_anchor.cpp keeps it inside version.dll until the panel calls it (see there).
 $musicSources = @(
+    'src\music\source.cpp',
+    'src\music\source_miniaudio.cpp',
     'src\music\atomic_file.cpp',
     'src\music\text.cpp'
 )
@@ -329,8 +331,10 @@ Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'bystander.exe')", '/SUBSY
 # One file per area of the engine; each registers its own cases (see musictest.h).
 $musicTestSources = @(
     'tools\testhost\musictest.cpp',
+    'tools\testhost\musictest_fixtures.cpp',
     'tools\testhost\musictest_text.cpp',
-    'tools\testhost\musictest_logic.cpp'
+    'tools\testhost\musictest_logic.cpp',
+    'tools\testhost\musictest_miniaudio.cpp'
 )
 $musicTestObjects = Build-Objects $musicTestSources ($musicIncludes + @("/I$(Join-Path $root 'src')", "/I$(Join-Path $vorbisDir 'include')"))
 $engineObjects = @($musicObjects | Where-Object { [IO.Path]::GetFileName($_) -ne 'link_anchor.obj' })
