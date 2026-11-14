@@ -355,6 +355,7 @@ MT_TEST(550, EngineRemove, "engine: removing tracks while playing") {
         testing::Sync(5000);
         Render(0.1, nullptr);
         P().Remove(0);
+        testing::Sync(5000);  // without it, audio pulled before the player thread acts is not silent
         mt::Signal out;
         Render(0.2, &out);
         const Snapshot s = Snap();
