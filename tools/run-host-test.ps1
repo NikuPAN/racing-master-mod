@@ -88,6 +88,10 @@ Copy-Item $dll, $hostExe, $bystanderExe $work
 $realLocalAppData = $env:LOCALAPPDATA
 $results = @()
 $skipped = @()
+$notes = @()   # facts about this PC that did not fail a check but should be read (see the summary)
+$readManager = $null            # media session reading (Get-MediaSessionIds), set up on first use
+$stuckPlayers = @()             # fake players from other runs that outlasted the wait (reported once)
+$sessionsUnreadable = $false
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
 function Record([string]$Name, [bool]$Ok) {
@@ -327,6 +331,49 @@ try {
     # every command). See docs/agent-notes/test-host.md.
     $fakePrefix = 'RacingMasterMod.TestHost.FakePlayer'
     function New-FakeId { $fakePrefix + '.' + [Guid]::NewGuid().ToString('N').Substring(0, 12) }
+    # The app ids in Windows' media session list, read only: no title is read and nothing is sent.
+    # Returns @{ Ok; Ids } (Ok is false when Windows' media session API cannot be reached from here).
+    function Get-MediaSessionIds {
+        try {
+            if (-not $script:readManager) {
+                Add-Type -AssemblyName System.Runtime.WindowsRuntime
+                $managerType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime]
+                $asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+                    $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } | Select-Object -First 1
+                $script:readManager = $asTask.MakeGenericMethod($managerType)
+            }
+            $task = $script:readManager.Invoke($null, @([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()))
+            if (-not $task.Wait(3000)) { return @{ Ok = $false; Ids = @() } }
+            return @{ Ok = $true; Ids = @($task.Result.GetSessions() | ForEach-Object { $_.SourceAppUserModelId }) }
+        } catch {
+            return @{ Ok = $false; Ids = @() }
+        }
+    }
+    # Before a run publishes its fake player: wait (at most 10 s) until no fake player from an
+    # earlier run is listed. One that stays is reported in plain words and in the summary, once,
+    # and not waited for again; the run still goes ahead, because its own player has an id of its
+    # own and cannot be confused with it. Sessions of other apps (a browser, a music player) are
+    # ignored and never sent anything.
+    function Wait-NoOtherFakePlayers([string]$Title) {
+        $deadline = [DateTime]::Now.AddSeconds(10)
+        do {
+            $list = Get-MediaSessionIds
+            if (-not $list.Ok) {
+                if (-not $script:sessionsUnreadable) {
+                    $script:sessionsUnreadable = $true
+                    $script:notes += "${Title}: Windows' media session list could not be read from PowerShell, so the script did not check for fake players left by other runs"
+                }
+                return
+            }
+            $left = @($list.Ids | Where-Object { $_ -like "$fakePrefix*" -and $script:stuckPlayers -notcontains $_ })
+            if ($left.Count -eq 0) { return }
+            Start-Sleep -Milliseconds 200
+        } while ([DateTime]::Now -lt $deadline)
+        $script:stuckPlayers += $left
+        $note = "${Title}: Windows still listed a fake test player from another run after 10 s ($($left -join ', ')). Most likely another test run is going on on this PC; only one should run at a time. This run went ahead: its own fake player has an id of its own, so neither run can command the other's player. Later runs do not wait for it again."
+        Write-Host "    $note"
+        $script:notes += $note
+    }
     # Runs one media scenario. The mod's script sets what is sent; the scenario sets how the fake
     # player behaves. Returns the run plus what the fake player received and the id it used.
     function Invoke-Media([string]$Title, [string]$Scenario, [string]$Script, [string]$Folder, [hashtable]$Extra = @{}, [bool]$WithFlag = $true, [int]$Seconds = 40, [string]$FakeId = '') {
@@ -334,6 +381,7 @@ try {
         $environment = @{ RACING_MASTER_MOD_TEST_FAKE_PLAYER_ID = $FakeId; RACING_MASTER_MOD_TEST_MEDIA_APP = $FakeId; RACING_MASTER_MOD_TEST_MEDIA_SCRIPT = $Script }
         if ($WithFlag) { $environment.RACING_MASTER_MOD_TEST_HOST = '1' }
         foreach ($key in $Extra.Keys) { $environment[$key] = $Extra[$key] }
+        Wait-NoOtherFakePlayers $Title
         $run = Invoke-Run $Title (Join-Path $work 'testhost.exe') @('media', $work, "$Seconds", $Scenario) $environment (Join-Path $work $Folder)
         $received = ''
         foreach ($line in $run.Lines) { if ($line -match '^fake player received: (.*)$') { $received = $Matches[1] } }
@@ -515,6 +563,7 @@ try {
     # was the last choice, controlling the host's silent fake player through Windows. For a few
     # seconds the fake player is Windows' current media session (see media-remote-tests.md).
     $otherId = New-FakeId
+    Wait-NoOtherFakePlayers '41. end to end: Other app controlling the silent test player'
     $panelRun = Invoke-PanelRun '41. end to end: Other app controlling the silent test player' 'other-real' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_REMOTE = 'real'; RACING_MASTER_MOD_TEST_FAKE_PLAYER = '1'; RACING_MASTER_MOD_TEST_FAKE_PLAYER_ID = $otherId; RACING_MASTER_MOD_TEST_MEDIA_APP = $otherId } @('[panel]', 'source=other_app')
     $received = ''
     foreach ($line in $panelRun.Lines) { if ($line -match '^fake player received: (.*)$') { $received = $Matches[1] } }
@@ -549,6 +598,7 @@ try {
     Write-Host 'Summary'
     foreach ($r in $results) { Write-Host ("  " + $(if ($r.Ok) { 'PASS' } else { 'FAIL' }) + "  $($r.Name)") }
     foreach ($s in $skipped) { Write-Host "  SKIPPED  $s" }
+    foreach ($n in $notes) { Write-Host "  NOTE  $n" }
     $failed = @($results | Where-Object { -not $_.Ok }).Count
     Write-Host ''
     Write-Host ("$($results.Count - $failed) of $($results.Count) checks passed" + $(if ($failed) { "; $failed FAILED" } else { '' }) + $(if ($skipped.Count) { "; $($skipped.Count) skipped (listed above with the reason)" } else { '' }))
