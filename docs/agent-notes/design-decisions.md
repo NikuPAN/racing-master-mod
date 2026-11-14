@@ -27,6 +27,15 @@ The owner's choices, made with the trade-offs in front of them:
    the seek line and a button that drops the playlist down with "Add files" and "Add folder".
    The larger always-open window was turned down because it covers more of the game.
 
+9. **Hotkeys while racing: F5 stop, F6 previous, F7 play/pause, F8 next, F9 loop mode.**
+   Single keys only (Shift, Ctrl and Alt are game controls); all changeable in settings.
+10. **Clicks outside the panel go to the game.** The owner turned down "panel owns the mouse
+    while open" (the design's recommendation). Clicks on the panel stay on the panel.
+11. **Playback when the game is minimised or unfocused is a setting** (keep playing or pause),
+    not a fixed behaviour.
+12. **Opus is in version 1** (files saved from YouTube are often Opus), alongside MP3, FLAC,
+    WAV, OGG Vorbis and M4A/AAC.
+
 Conditions I attached and the owner accepted by choosing option 2:
 
 - First test on a throwaway account.
