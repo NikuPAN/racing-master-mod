@@ -1,18 +1,21 @@
-# Builds out\version.dll (the mod), out\testhost.exe and out\bystander.exe (developer test programs).
+# Builds out\version.dll (the mod), out\testhost.exe, out\bystander.exe and out\musictest.exe
+# (developer test programs).
 #
-# Needs: Visual Studio with the C++ compiler (any edition, 2022 or newer). The Windows SDK is
-# fetched by fetch-deps.ps1, so it does not have to be installed.
+# Needs: Visual Studio with the C++ compiler (any edition, 2022 or newer). The Windows SDK and the
+# music libraries are fetched by fetch-deps.ps1, so they do not have to be installed.
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File build\build.ps1
 #
-# After linking, two gates run and fail the build if they do not hold:
-#   1. version.dll imports KERNEL32.dll only. Everything else (user32 today) is delay-loaded, so
-#      a bystander program that merely imports version.dll gets no extra DLL loaded. The gate also
-#      insists that the import dump actually listed KERNEL32 and the delay-loaded USER32, so an
-#      empty or unreadable dump fails the build instead of passing it. The media remote
-#      (src\remote) resolves combase, shell32 and advapi32 with GetProcAddress at run time for
-#      the same reason; calling one of their functions directly would fail this gate.
+# After linking, three gates run and fail the build if they do not hold:
+#   1. version.dll imports KERNEL32.dll only. Everything else is delay-loaded, so a bystander
+#      program that merely imports version.dll gets no extra DLL loaded. Only the DLLs in
+#      $delayLoads may be delay-loaded, and each of them must actually appear: an empty or
+#      unreadable dump, or a build that lost the music engine, fails instead of passing. The media
+#      remote (src\remote) resolves combase, shell32 and advapi32 with GetProcAddress at run time
+#      for the same reason; calling one of their functions directly would fail this gate.
 #   2. No "%ls" under src\: log lines are UTF-8 and wide strings go through LogUtf8().
+#   3. No start-up constructor (dynamic initialiser) in the mod's own code: anything like that
+#      would run inside every program that loads version.dll, not only inside the game.
 
 $ErrorActionPreference = 'Stop'
 
@@ -77,14 +80,32 @@ function Invoke-Tool {
 $cl = Join-Path $bin 'cl.exe'
 $ml64 = Join-Path $bin 'ml64.exe'
 $link = Join-Path $bin 'link.exe'
+$lib = Join-Path $bin 'lib.exe'
 $rc = Join-Path $sdkBin 'rc.exe'
+
+# --- music libraries in .deps (fetched and hash-checked by fetch-deps.ps1) ------------------------
+$deps = Join-Path $root '.deps'
+$miniaudioDir = Join-Path $deps 'miniaudio-0.11.26'
+$stbDir = Join-Path $deps 'stb-9f755b6'
+$oggDir = Join-Path $deps 'libogg-1.3.6'
+$opusDir = Join-Path $deps 'opus-1.6.1'
+$opusfileDir = Join-Path $deps 'opusfile-0.12'
+$vorbisDir = Join-Path $deps 'libvorbis-1.3.7'   # test program only
+$musicIncludes = @("/I$miniaudioDir", "/I$stbDir", "/I$(Join-Path $oggDir 'include')", "/I$(Join-Path $opusDir 'include')",
+                   "/I$(Join-Path $opusfileDir 'include')")
 
 # /MT links the C runtime statically, so players need no extra runtime installer.
 # /Zi with /Fd writes debug information into out\obj\vc.pdb (without /Fd the compiler would drop
 # a vc140.pdb wherever the script was started from).
+# /D_HAS_EXCEPTIONS=0: the mod is built without C++ exceptions; without this, ordinary STL calls
+# such as vector::insert fail the build under /EHs-c- /WX. Running out of memory then ends the
+# process instead of throwing, which with exceptions off was never recoverable anyway.
+# /DNDEBUG: no assert() may stay live inside the game (a failed one shows a message box and ends
+# the process). /utf-8: source files are UTF-8 (Chinese text in comments and test strings).
 $cflags = @('/nologo', '/c', '/std:c++20', '/O2', '/W4', '/WX', '/EHs-c-', '/GR-', '/MT', '/GS', '/guard:cf',
             '/Zi', "/Fd$(Join-Path $obj 'vc.pdb')",
-            '/DUNICODE', '/D_UNICODE', '/DWIN32_LEAN_AND_MEAN', '/DNOMINMAX', '/D_CRT_SECURE_NO_WARNINGS')
+            '/DUNICODE', '/D_UNICODE', '/DWIN32_LEAN_AND_MEAN', '/DNOMINMAX', '/D_CRT_SECURE_NO_WARNINGS',
+            '/D_HAS_EXCEPTIONS=0', '/DNDEBUG', '/utf-8')
 
 # --- gate 2: no %ls in the mod's sources ------------------------------------------------------------
 $wideFormat = Get-ChildItem (Join-Path $root 'src') -Recurse -File | Select-String -Pattern '%ls' -SimpleMatch
@@ -92,8 +113,114 @@ if ($wideFormat) {
     throw "src\ must not use %ls (log lines are UTF-8; pass wide strings through LogUtf8 and %s): $($wideFormat | ForEach-Object { "$($_.Path):$($_.LineNumber)" })"
 }
 
-# --- version.dll ----------------------------------------------------------------------------------
-$sources = @(
+# --- third-party C code ------------------------------------------------------------------------------
+# Compiled at /W3, never /W4 (miniaudio's implementation fails /W4 with C4456 and C4244, measured in
+# the design brief), always with /DNDEBUG: miniaudio maps its asserts to the C assert() and
+# stb_vorbis calls it directly; /O2 and /MT do not switch assert() off, only NDEBUG does.
+$tpFlags = @('/nologo', '/c', '/TC', '/O2', '/MT', '/GS', '/guard:cf', '/Z7', '/DNDEBUG', '/DWIN32_LEAN_AND_MEAN',
+             '/DNOMINMAX', '/D_CRT_SECURE_NO_WARNINGS')
+$tpObj = Join-Path $obj 'third_party'
+New-Item -ItemType Directory -Force $tpObj | Out-Null
+
+# miniaudio and stb_vorbis: one translation unit each, /W3 /WX (both are clean there).
+$miniaudioObject = Join-Path $tpObj 'miniaudio_impl.obj'
+Invoke-Tool $cl ($tpFlags + @('/W3', '/WX', "/I$miniaudioDir", "/I$(Join-Path $root 'src\music')", "/Fo$miniaudioObject",
+                              (Join-Path $root 'src\third_party\miniaudio_impl.c')))
+$stbObject = Join-Path $tpObj 'stb_vorbis_impl.obj'
+Invoke-Tool $cl ($tpFlags + @('/W3', '/WX', "/I$stbDir", "/Fo$stbObject", (Join-Path $root 'src\third_party\stb_vorbis_impl.c')))
+
+# libogg, opus and opusfile: about 120 files, built into one static library, out\obj\xiph.lib.
+# The file lists come from opus's own *_sources.mk files, so they follow the pinned release.
+# Plain C only: no SIMD files, no run-time CPU detection, none of the optional neural-network
+# features (deep packet-loss concealment, DRED, OSCE), no HTTP streaming in opusfile. The library
+# is rebuilt only when it is missing or this recipe changed (the stamp file holds the recipe).
+function Get-MkList([string]$File, [string]$Name) {
+    $items = @()
+    $inList = $false
+    foreach ($line in Get-Content $File) {
+        if (-not $inList) {
+            if ($line -match "^$Name\s*=") { $inList = $true; $line = $line -replace "^$Name\s*=", '' } else { continue }
+        }
+        $continued = $line.TrimEnd().EndsWith('\')
+        foreach ($word in ($line -replace '\\\s*$', '').Trim() -split '\s+') { if ($word) { $items += $word } }
+        if (-not $continued) { break }
+    }
+    if (-not $items.Count) { throw "$Name was not found in $File; the opus release layout changed" }
+    return $items
+}
+$xiphGroups = @(
+    @{ Name = 'ogg'; Dir = $oggDir; Files = @('src\framing.c', 'src\bitwise.c'); Includes = @('include'); Defines = @() },
+    @{ Name = 'celt'; Dir = $opusDir; Files = (Get-MkList (Join-Path $opusDir 'celt_sources.mk') 'CELT_SOURCES') },
+    @{ Name = 'silk'; Dir = $opusDir; Files = (Get-MkList (Join-Path $opusDir 'silk_sources.mk') 'SILK_SOURCES') },
+    @{ Name = 'silk_float'; Dir = $opusDir; Files = (Get-MkList (Join-Path $opusDir 'silk_sources.mk') 'SILK_SOURCES_FLOAT') },
+    @{ Name = 'opus'; Dir = $opusDir; Files = ((Get-MkList (Join-Path $opusDir 'opus_sources.mk') 'OPUS_SOURCES') +
+                                               (Get-MkList (Join-Path $opusDir 'opus_sources.mk') 'OPUS_SOURCES_FLOAT')) },
+    @{ Name = 'opusfile'; Dir = $opusfileDir; Files = @('src\opusfile.c', 'src\info.c', 'src\internal.c', 'src\stream.c');
+       Includes = @('include', (Join-Path $opusDir 'include'), (Join-Path $oggDir 'include')); Defines = @('/DOP_DISABLE_HTTP') }
+)
+$opusIncludes = @('include', 'celt', 'silk', 'silk\float', 'src', 'dnn')
+$opusDefines = @('/DOPUS_BUILD', '/DUSE_ALLOCA', '/DHAVE_LRINT', '/DHAVE_LRINTF')
+# /W3 without /WX here: these are upstream releases compiled as their authors ship them; a new
+# compiler warning in their code must not stop the mod's build. Other warnings are still printed.
+# C4244 (double to float, 64 to 32 bit, deliberate in their DSP code; dozens per build) and C4005
+# (opusfile redefines WIN32_LEAN_AND_MEAN) are switched off so real news stays readable.
+$xiphFlags = $tpFlags + @('/W3', '/MP', '/wd4244', '/wd4005')
+$xiphLib = Join-Path $obj 'xiph.lib'
+$xiphStamp = Join-Path $obj 'xiph.stamp'
+$recipe = ($xiphFlags + $opusDefines + ($xiphGroups | ForEach-Object { $_.Name + ':' + ($_.Files -join ',') })) -join ' '
+if (-not (Test-Path $xiphLib) -or -not (Test-Path $xiphStamp) -or (Get-Content $xiphStamp -Raw).Trim() -ne $recipe) {
+    $xiphObjects = @()
+    foreach ($group in $xiphGroups) {
+        $groupObj = Join-Path $tpObj $group.Name
+        if (Test-Path $groupObj) { Remove-Item $groupObj -Recurse -Force }
+        New-Item -ItemType Directory -Force $groupObj | Out-Null
+        $includes = if ($group.Includes) { $group.Includes } else { $opusIncludes }
+        $defines = if ($null -ne $group.Defines) { $group.Defines } else { $opusDefines }
+        $includeFlags = $includes | ForEach-Object { if ([IO.Path]::IsPathRooted($_)) { "/I$_" } else { "/I$(Join-Path $group.Dir $_)" } }
+        $files = $group.Files | ForEach-Object { Join-Path $group.Dir ($_ -replace '/', '\') }
+        # The doubled backslash survives PowerShell's quoting of a path with spaces ("...\" would
+        # otherwise end in \", which the C runtime reads as an escaped quote).
+        Invoke-Tool $cl ($xiphFlags + $includeFlags + $defines + @("/Fo$groupObj\\") + $files)
+        $xiphObjects += (Get-ChildItem $groupObj -Filter '*.obj' | ForEach-Object { $_.FullName })
+    }
+    Invoke-Tool $lib (@('/nologo', "/OUT:$xiphLib") + $xiphObjects)
+    Set-Content -Path $xiphStamp -Value $recipe -Encoding utf8
+} else {
+    Write-Host 'xiph.lib (libogg, opus, opusfile) is up to date'
+}
+
+# libvorbis with its encoder, for musictest.exe only: it makes the OGG Vorbis fixture, because
+# Windows has no Vorbis encoder. version.dll decodes Vorbis with stb_vorbis and never links this.
+$vorbisLib = Join-Path $obj 'vorbisenc.lib'
+$vorbisStamp = Join-Path $obj 'vorbisenc.stamp'
+$vorbisFiles = @('analysis', 'bitrate', 'block', 'codebook', 'envelope', 'floor0', 'floor1', 'info', 'lookup', 'lpc', 'lsp',
+                 'mapping0', 'mdct', 'psy', 'registry', 'res0', 'sharedbook', 'smallft', 'synthesis', 'vorbisenc', 'window')
+$vorbisRecipe = ($xiphFlags + $vorbisFiles) -join ' '
+if (-not (Test-Path $vorbisLib) -or -not (Test-Path $vorbisStamp) -or (Get-Content $vorbisStamp -Raw).Trim() -ne $vorbisRecipe) {
+    $vorbisObj = Join-Path $tpObj 'vorbis'
+    if (Test-Path $vorbisObj) { Remove-Item $vorbisObj -Recurse -Force }
+    New-Item -ItemType Directory -Force $vorbisObj | Out-Null
+    Invoke-Tool $cl ($xiphFlags + @('/wd4267', '/wd4305', "/I$(Join-Path $vorbisDir 'include')", "/I$(Join-Path $vorbisDir 'lib')",
+                                    "/I$(Join-Path $oggDir 'include')", "/Fo$vorbisObj\\") +
+                     ($vorbisFiles | ForEach-Object { Join-Path $vorbisDir "lib\$_.c" }))
+    Invoke-Tool $lib (@('/nologo', "/OUT:$vorbisLib") + (Get-ChildItem $vorbisObj -Filter '*.obj' | ForEach-Object { $_.FullName }))
+    Set-Content -Path $vorbisStamp -Value $vorbisRecipe -Encoding utf8
+} else {
+    Write-Host 'vorbisenc.lib (test fixtures only) is up to date'
+}
+
+# --- the mod's own code ---------------------------------------------------------------------------
+function Build-Objects([string[]]$Sources, [string[]]$Extra) {
+    $built = @()
+    foreach ($source in $Sources) {
+        $object = Join-Path $obj ([IO.Path]::GetFileNameWithoutExtension($source) + '.obj')
+        Invoke-Tool $cl ($cflags + $Extra + @("/Fo$object", (Join-Path $root $source)))
+        $built += $object
+    }
+    return $built
+}
+
+$loaderSources = @(
     'src\loader\dllmain.cpp',
     'src\loader\proxy.cpp',
     'src\core\log.cpp',
@@ -104,12 +231,11 @@ $sources = @(
     'src\core\worker.cpp',
     'src\remote\remote.cpp'
 )
-$objects = @()
-foreach ($source in $sources) {
-    $object = Join-Path $obj ([IO.Path]::GetFileNameWithoutExtension($source) + '.obj')
-    Invoke-Tool $cl ($cflags + @("/Fo$object", (Join-Path $root $source)))
-    $objects += $object
-}
+# The music engine. link_anchor.cpp keeps it inside version.dll until the panel calls it (see there).
+$musicSources = @()
+$loaderObjects = Build-Objects $loaderSources @()
+$musicObjects = @(Build-Objects $musicSources $musicIncludes)
+
 $asmObject = Join-Path $obj 'proxy_exports.obj'
 Invoke-Tool $ml64 @('/nologo', '/c', "/Fo$asmObject", (Join-Path $root 'src\loader\proxy_exports.asm'))
 $resObject = Join-Path $obj 'version.res'
@@ -118,17 +244,27 @@ Invoke-Tool $rc @('/nologo', "/fo$resObject", (Join-Path $root 'src\loader\versi
 # /DEBUG writes out\version.pdb so a fault offset from the log can be turned into a source line.
 # /PDBALTPATH keeps the build folder (and the user name in it) out of the published DLL.
 # /OPT:REF /OPT:ICF stay explicit because /DEBUG would otherwise switch them off.
-# user32 is delay-loaded: it is only called from the mod's own thread inside the game, and a
-# bystander program that imports version.dll must not get it loaded. Never ship the PDB.
+# Every system DLL beyond kernel32 is delay-loaded: user32 (the frame hook's window checks) and,
+# for the music engine, ole32 (COM), shell32 (file dialog), mfplat and mfreadwrite (M4A/AAC
+# through Media Foundation). They load only when the engine first needs them inside the game; a
+# bystander program that imports version.dll gets none of them. Media Foundation is absent on
+# Windows "N" editions: as a normal import it would stop version.dll, and so the game, from
+# loading there. Never ship the PDB.
+# The DLL names in the spelling the import dump prints them. Gate 1 below insists on exactly this
+# list, so a new delay-loaded DLL is a conscious change here.
+$delayLoads = @('USER32.dll')
+$musicLibs = @('ole32.lib', 'shell32.lib', 'mfplat.lib', 'mfreadwrite.lib', 'mfuuid.lib', 'propsys.lib')
+# The music engine in the DLL, kept there by link_anchor.cpp (/INCLUDE) until the loader calls it.
+$dllMusic = @()  # nothing calls the engine yet; it is linked in once the player thread exists
 $dll = Join-Path $out 'version.dll'
 Invoke-Tool $link (@('/nologo', '/DLL', "/OUT:$dll",
     "/DEF:$(Join-Path $root 'src\loader\version.def')", "/IMPLIB:$(Join-Path $obj 'version_proxy.lib')",
     '/DEBUG', "/PDB:$(Join-Path $out 'version.pdb')", '/PDBALTPATH:version.pdb', "/MAP:$(Join-Path $out 'version.map')",
-    '/OPT:REF', '/OPT:ICF', '/guard:cf', '/DYNAMICBASE', '/NXCOMPAT',
-    '/DELAYLOAD:user32.dll',
-    'kernel32.lib', 'user32.lib', 'delayimp.lib') + $objects + @($asmObject, $resObject))
+    '/OPT:REF', '/OPT:ICF', '/guard:cf', '/DYNAMICBASE', '/NXCOMPAT') +
+    ($delayLoads | ForEach-Object { "/DELAYLOAD:$_" }) + @('kernel32.lib', 'user32.lib', 'delayimp.lib') +
+    $loaderObjects + $dllMusic + @($asmObject, $resObject))
 
-# --- gate 1: static imports are KERNEL32.dll only -----------------------------------------------------
+# --- gate 1: static imports are KERNEL32.dll only; delay-loads are the allowed list -------------------
 # link.exe /DUMP is dumpbin; the fetched SDK has no dumpbin.exe of its own.
 # The gate must see a usable dump before it can pass: an empty import list (wrong link.exe path,
 # changed output format) would otherwise pass for "no extra imports".
@@ -150,10 +286,24 @@ $extra = @($eager | Where-Object { $_ -ne 'KERNEL32.dll' })
 if ($extra.Count) {
     throw "version.dll must import KERNEL32.dll only; also found: $($extra -join ', '). Delay-load it (/DELAYLOAD) or call it through LoadLibraryW from the worker thread."
 }
-if ($delayed -notcontains 'USER32.dll') {
-    throw "version.dll should delay-load USER32.dll, but the import dump lists these delay-loaded DLLs: '$($delayed -join ', ')'. Check the /DELAYLOAD line."
+$unexpected = @($delayed | Where-Object { $delayLoads -notcontains $_ })
+if ($unexpected.Count) {
+    throw "version.dll delay-loads DLLs that are not on the list in build.ps1: $($unexpected -join ', '). Add them to `$delayLoads only after checking they exist on every Windows edition the mod supports."
+}
+$missing = @($delayLoads | Where-Object { $delayed -notcontains $_ })
+if ($missing.Count) {
+    throw "version.dll should delay-load $($missing -join ', '), but the import dump lists these delay-loaded DLLs: '$($delayed -join ', ')'. Check the /DELAYLOAD lines and that the music engine is still linked in (link_anchor.cpp)."
 }
 Write-Host "version.dll static imports: $($eager -join ', '); delay-loaded: $($delayed -join ', ')"
+
+# --- gate 3: no start-up constructors in the mod's own code -------------------------------------------
+# The compiler names a dynamic initialiser "??__E<name>"; the map file lists the object it came from.
+$ownObjects = @($loaderObjects + $musicObjects | ForEach-Object { [IO.Path]::GetFileName($_) })
+$initialisers = @(Get-Content (Join-Path $out 'version.map') | Where-Object { $_ -match '\?\?__E' } |
+    Where-Object { $line = $_; $ownObjects | Where-Object { $line -match [regex]::Escape($_) } })
+if ($initialisers.Count) {
+    throw "version.dll has start-up constructors in the mod's own code (they would run in every program that loads it); use function-local statics or constant initialisation instead: $($initialisers -join '; ')"
+}
 
 # --- developer test programs ----------------------------------------------------------------------------
 $hostFlags = @('/nologo', '/c', '/std:c++20', '/O2', '/W4', '/WX', '/EHsc', '/MT', '/DUNICODE', '/D_UNICODE',
@@ -169,6 +319,7 @@ Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'testhost.exe')", '/SUBSYS
 $bystanderObject = Join-Path $obj 'bystander.obj'
 Invoke-Tool $cl ($hostFlags + @("/Fo$bystanderObject", (Join-Path $root 'tools\testhost\bystander.cpp')))
 Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'bystander.exe')", '/SUBSYSTEM:CONSOLE', $bystanderObject)
+
 
 Write-Host ''
 Write-Host "Built: $dll"
