@@ -1041,10 +1041,15 @@ int PanelAppendTestState(char* buffer, int size) {
     if (n <= 0 || n >= size) {
         return 0;
     }
-    // Whole seconds only, so the file changes about once a second while a song plays. The other
-    // app's state only while "Other app" is the source.
-    int extra = snprintf(buffer + n, static_cast<size_t>(size - n), "position %d\n",
-                         static_cast<int>(snapshot.positionSeconds));
+    // Whole seconds only, so the file changes about once a second while a song plays; the number
+    // of songs the engine marked as unplayable. The other app's state only while "Other app" is
+    // the source.
+    int unplayable = 0;
+    for (const music::TrackInfo& track : snapshot.tracks) {
+        unplayable += track.supported ? 0 : 1;
+    }
+    int extra = snprintf(buffer + n, static_cast<size_t>(size - n), "position %d\nunplayable %d\n",
+                         static_cast<int>(snapshot.positionSeconds), unplayable);
     if (g_settings.source == SourceOtherApp && extra > 0 && n + extra < size) {
         const remote::Snapshot other = other_app::GetSnapshot();
         const RemoteView view = ViewOf(other);

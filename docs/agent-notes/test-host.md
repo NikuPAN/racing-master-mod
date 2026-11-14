@@ -68,7 +68,10 @@ code 1 for both "no marker" and "forwarding failed"; the review showed what it d
    (neutral names in Chinese, Japanese, Korean, a character outside the basic plane, one long
    title) and copies them into each panel run's `RacingMasterMod\music` folder, which the engine
    scans at start on its own thread. Scripts that need the list wait for `tracks >= 4` and
-   `scanning 0` in the layout file. The engine plays through miniaudio's null device (it refuses
+   `scanning 0` in the layout file. The screenshot and resize runs also get
+   `06 Cannot be played.wav` (64 bytes that are not audio): the screenshot script clicks it, the
+   engine skips it with its reason and marks it (`unplayable 1` in the layout file), the list shot
+   draws it greyed, and a second click must play nothing. The engine plays through miniaudio's null device (it refuses
    WASAPI whenever the test flag is set), so nothing is heard; the picker prepares the dialog and
    reports a cancel without showing it.
 

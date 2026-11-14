@@ -10,7 +10,7 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 - **Version 0.3.0 integrated on branch `integrate` (not merged to main, not pushed), test host
   only.** The music panel (`src/ui`), the music engine (`src/music`) and the media remote
-  (`src/remote`) are wired into one `version.dll`: 44 hidden runs, 336 checks in
+  (`src/remote`) are wired into one `version.dll`: 44 hidden runs, 342 checks in
   `tools\run-host-test.ps1`, including two end-to-end runs (40 "My files", 41 "Other app" against
   the silent fake player). How the parts are wired: "How the parts are wired" below and
   `docs/agent-notes/integration.md`. **Not in the real game yet**: the owner tries it on the
@@ -104,7 +104,7 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.dll, testhost.exe, bystander.exe, musictest.exe
-powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 44 hidden runs, 336 checks, exit 0 = pass (about 2 min)
+powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 44 hidden runs, 342 checks, exit 0 = pass (about 2 min)
 ```
 
 The test script copies the panel screenshots to `out\screens\*.png` (bar, list, settings row,

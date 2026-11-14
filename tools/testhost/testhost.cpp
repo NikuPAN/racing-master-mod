@@ -1028,6 +1028,9 @@ void MoveAway(Host& host) {
 // generated songs into the run's music folder, which the engine scans on its own thread at start;
 // a script that needs the list waits until the scan and the length reads are done.
 constexpr int kPanelSongs = 4;
+// The file that cannot be played, which some panel runs add to their music folder (the same name
+// as in tools\run-host-test.ps1).
+const wchar_t kUnplayableSong[] = L"06 Cannot be played.wav";
 
 bool SongsReady(const LayoutFile& l) {
     return l.Int("tracks") >= kPanelSongs && l.Int("scanning") == 0;
@@ -1060,8 +1063,30 @@ void ScriptShots(Host& host, const std::string& prefix) {
 
     Click(host, Item("list"));
     Check("S2 Show list opens the list", WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 1 && l.Has("row0"); }));
+    // Runs whose music folder holds a file that cannot be played (tools\run-host-test.ps1 puts
+    // one there for the screenshot and resize runs). The engine finds out when it tries to play
+    // it: the first click marks it (and the engine moves on), the list then draws it in that
+    // state, and a second click plays nothing.
+    const bool hasUnplayable =
+        GetFileAttributesW((ModFolder() + L"\\music\\" + kUnplayableSong).c_str()) != INVALID_FILE_ATTRIBUTES;
+    if (hasUnplayable) {
+        Click(host, Item("row5"));
+        Check("S2 a click on the file that cannot be played: the engine marks it so in the list",
+              WaitLayout(host, [](const LayoutFile& l) { return l.Int("unplayable") == 1 && l.Has("row5"); }, 6000));
+    }
     MoveAway(host);
     CheckShot("S2 list", Shoot(host, (prefix + "-list").c_str()), true);
+    if (hasUnplayable) {
+        const LayoutFile before = ReadLayout();
+        const int lDown = g_gotLDown.load();
+        Click(host, Item("row5"));
+        Pump(host, 10);
+        const LayoutFile after = ReadLayout();
+        Check("S2 a second click on it plays nothing and is kept from the game",
+              after.Int("index") == before.Int("index") && after.Int("state") == before.Int("state") &&
+                  g_gotLDown.load() == lDown);
+        MoveAway(host);
+    }
     Click(host, Item("list"));
 
     Click(host, Item("settings"));

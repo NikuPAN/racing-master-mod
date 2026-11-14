@@ -172,6 +172,14 @@ $songNames = @(
     @{ Name = '05 A very long song title that keeps going well past the edge of the panel.wav'; Hz = 735 }
 )
 foreach ($song in $songNames) { New-ToneWav (Join-Path $songs $song.Name) $song.Hz 20 }
+# The same songs plus a file named .wav whose content is not audio (64 fixed bytes), for the runs
+# that draw the list (screenshots, resize): the engine marks it as unplayable and the panel must
+# draw it in that state (the engine finds out on the first try to play it: the screenshot script
+# clicks it before the list shot).
+$songsWithUnplayable = Join-Path $work 'songs-with-unplayable'
+New-Item -ItemType Directory -Force $songsWithUnplayable | Out-Null
+Copy-Item (Join-Path $songs '*') $songsWithUnplayable
+[IO.File]::WriteAllBytes((Join-Path $songsWithUnplayable '06 Cannot be played.wav'), [byte[]](1..64))
 
 # One music panel run (testhost.exe panel ...). marker_seconds=0 so nothing but the panel is on
 # screen; each run is also checked for a Dear ImGui assertion or reported mistake in its log.
@@ -427,7 +435,8 @@ try {
             # choosing "Other app" must leave that file alone rather than cut off its end.
             $extra = @()
             if ($language -eq 'en' -and $size -eq 'small') { $extra = @('; ' + ('x' * 17000), '[keys]', 'next=F8') }
-            $panelRun = Invoke-PanelRun "panel screenshots, $language, $size text" 'shots' $prefix @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = $language; RACING_MASTER_MOD_TEXT_SIZE = $size } $extra
+            $panelRun = Invoke-PanelRun "panel screenshots, $language, $size text" 'shots' $prefix @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = $language; RACING_MASTER_MOD_TEXT_SIZE = $size } $extra $songsWithUnplayable
+            Record "panel screenshots, $language, $size text: the engine said why the file could not be played" ($panelRun.Log.Contains('music: skipped 06 Cannot be played.wav (the file is damaged or is not what its name says)'))
             if ($extra.Count) {
                 $bigIni = [IO.File]::ReadAllText((Join-Path $work 'lad-panel-panel-screenshots-en-small-text\RacingMasterMod\settings.ini'), [Text.Encoding]::UTF8)
                 Record 'a settings.ini over 16 KB: the panel leaves it as it is (its end is kept) and the log says why' ($panelRun.Log.Contains('is larger than 16 KB, more than the panel reads; the file was left as it is') -and $bigIni.Contains('[keys]') -and $bigIni.Contains('next=F8') -and -not $bigIni.Contains('source=other_app'))
@@ -440,8 +449,9 @@ try {
     Invoke-PanelRun 'panel, Other app with nothing playing' 'shot1' 'panel-zh-TW-medium-other-app-none' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'zh-TW'; RACING_MASTER_MOD_SOURCE = 'other_app'; RACING_MASTER_MOD_TEST_REMOTE = 'none' } @() | Out-Null
 
     # 35. ResizeBuffers while the panel and its list are drawn.
-    # The generated songs (Chinese, Japanese, Korean, CJK Extension B, a long title).
-    Invoke-PanelRun 'panel and ResizeBuffers' 'resize' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LIST = 'open'; RACING_MASTER_MOD_LANG = 'en' } @() | Out-Null
+    # The generated songs (Chinese, Japanese, Korean, CJK Extension B, a long title) and one file
+    # that cannot be played.
+    Invoke-PanelRun 'panel and ResizeBuffers' 'resize' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LIST = 'open'; RACING_MASTER_MOD_LANG = 'en' } @() $songsWithUnplayable | Out-Null
 
     # 36. A fault inside the panel, between its two state swaps.
     $panelRun = Invoke-PanelRun 'panel fault' 'fault' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_TEST_PANEL_FAULT = '60' } @()
