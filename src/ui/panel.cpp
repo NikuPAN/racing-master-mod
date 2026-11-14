@@ -337,7 +337,8 @@ void SourceRow(const char* nowPlaying, float width, bool displayOnly) {
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
     for (unsigned i = 0; i < 2; ++i) {
         if (i == 1) {
-            ImGui::SameLine(0.0f, 0.0f);
+            // A segmented pair: a thin gap of window background between the two halves.
+            ImGui::SameLine(0.0f, ImMax(2.0f, ImFloor(U() * 3.0f)));
         }
         const bool selected = g_settings.source == i;
         if (selected) {
