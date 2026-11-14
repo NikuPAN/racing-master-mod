@@ -143,7 +143,9 @@ $uiSources = @(
     (Join-Path $imgui 'backends\imgui_impl_dx11.cpp'),
     (Join-Path $root 'src\ui\imgui_errors.cpp'),
     (Join-Path $root 'src\ui\fonts.cpp'),
-    (Join-Path $root 'src\ui\scale.cpp')
+    (Join-Path $root 'src\ui\scale.cpp'),
+    (Join-Path $root 'src\ui\hotkeys.cpp'),
+    (Join-Path $root 'src\ui\input_wndproc.cpp')
 )
 if ($uiStandalone) { $uiSources += (Join-Path $root 'src\ui\standalone\stubs.cpp') }
 foreach ($source in $uiSources) {
