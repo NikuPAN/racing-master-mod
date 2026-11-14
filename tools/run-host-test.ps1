@@ -22,7 +22,9 @@
 #
 # Media remote (src\remote), against the silent fake player in testhost.exe media mode. Each run
 # publishes the fake player for a few seconds; while it exists it is Windows' current media
-# session (media keys and the Windows flyout point at it).
+# session (media keys and the Windows flyout point at it). These runs only read.
+#  17. no-repeat   the snapshot shows a player that offers no loop and no next
+#  19. late        the player appears 2 s after the mod: waiting, then ready without a restart
 #  22. media, flag unset: the mod stays dormant, no log folder, nothing sent
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
@@ -221,6 +223,16 @@ try {
         $run.Text = Read-Log $run.Log
         return $run
     }
+
+    # 17. A player that offers neither loop nor next.
+    $run = Invoke-Media '17. media remote: no loop, no next' 'no-repeat' 'read' 'lad-media-norepeat'
+    Record 'media no-repeat: the snapshot offers neither loop nor next and reports no loop' ($run.Exit -eq 0 -and $run.Text.Contains('step 1 "read": state: ready; app: "' + $fakeId + '"; status: paused; offers: play stop previous; loop: not reported; timeline: no; title shared: yes'))
+
+    # 19. The player appears after the mod started.
+    $run = Invoke-Media '19. media remote: player appears late' 'late' 'read' 'lad-media-late'
+    Record 'media late: waiting for the app, then ready' ($run.Exit -eq 0 -and $run.Text.Contains('the pick took effect; state: waiting for the app') -and $run.Text.Contains('the test player is ready after'))
+    Record 'media late: the snapshot reads the player (paused, its controls, loop off, a title, no timeline)' ($run.Text.Contains('step 1 "read": state: ready; app: "' + $fakeId + '"; status: paused; offers: play stop next previous loop; loop: off; timeline: no; title shared: yes'))
+    Record 'media late: nothing sent, no track title in the log' ($run.Received -eq 'nothing' -and -not $run.Text.Contains('Test track'))
 
     # 22. Without the test flag the mod stays dormant: no media code runs, nothing is sent.
     $run = Invoke-Media '22. media mode, flag unset: mod must stay dormant' 'basic' 'play;pause' 'lad-media-dormant' @{} $false 4

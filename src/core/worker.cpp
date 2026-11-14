@@ -4,6 +4,8 @@
 #include "present_hook.h"
 #include "settings.h"
 
+#include "../remote/remote.h"
+
 namespace {
 
 constexpr char kVersion[] = "0.2.0 (loader)";
@@ -115,6 +117,12 @@ DWORD WINAPI ModThread(LPVOID) {
         Log("stage 0: the mod is switched off; nothing else will happen");
         return 0;
     }
+    // Developer test host only: the media-session test script, when one is set. In the game the
+    // music panel starts the remote side itself; nothing here touches it.
+    if (g_testHost) {
+        remote::StartTestScriptIfAsked();
+    }
+
     if (settings.stage == 1) {
         Log("stage 1: loaded only; frames are not hooked");
         for (unsigned minutes = 1;; ++minutes) {
@@ -174,6 +182,10 @@ DWORD WINAPI ModThread(LPVOID) {
 }
 
 }  // namespace
+
+bool ModIsTestHost() {
+    return g_testHost;
+}
 
 void StartModThread(HMODULE self, bool testHost) {
     g_self = self;

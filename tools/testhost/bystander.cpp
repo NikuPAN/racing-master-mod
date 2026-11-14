@@ -63,7 +63,10 @@ int main() {
     // Give a wrongly woken mod time to start and load its libraries before looking.
     Sleep(1500);
 
-    const wchar_t* const extraModules[] = {L"user32.dll", L"gdi32.dll", L"win32u.dll", L"d3d11.dll", L"dxgi.dll"};
+    // combase, shell32 and the media session library are what the music remote loads at run time.
+    const wchar_t* const extraModules[] = {L"user32.dll", L"gdi32.dll",  L"win32u.dll", L"d3d11.dll",
+                                           L"dxgi.dll",   L"combase.dll", L"shell32.dll",
+                                           L"Windows.Media.MediaControl.dll"};
     for (const wchar_t* module : extraModules) {
         char name[64];
         snprintf(name, sizeof(name), "no %ls loaded into a bystander", module);

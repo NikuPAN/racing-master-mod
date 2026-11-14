@@ -9,7 +9,9 @@
 #   1. version.dll imports KERNEL32.dll only. Everything else (user32 today) is delay-loaded, so
 #      a bystander program that merely imports version.dll gets no extra DLL loaded. The gate also
 #      insists that the import dump actually listed KERNEL32 and the delay-loaded USER32, so an
-#      empty or unreadable dump fails the build instead of passing it.
+#      empty or unreadable dump fails the build instead of passing it. The media remote
+#      (src\remote) resolves combase, shell32 and advapi32 with GetProcAddress at run time for
+#      the same reason; calling one of their functions directly would fail this gate.
 #   2. No "%ls" under src\: log lines are UTF-8 and wide strings go through LogUtf8().
 
 $ErrorActionPreference = 'Stop'
