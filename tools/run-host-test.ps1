@@ -451,6 +451,7 @@ try {
     # 37. [panel] mode=display: drawn, but no window procedure and no keys.
     $panelRun = Invoke-PanelRun 'panel display mode' 'display' '' @{} @('[panel]', 'mode=display')
     Record 'panel display mode: the log says so and the game window is not watched' ($panelRun.Log.Contains('mode display only') -and -not $panelRun.Log.Contains('watching the game window'))
+    Record 'panel display mode: the key line says no key works in this mode' ($panelRun.Log.Contains('panel: no keys in display mode ([panel] mode=display); with mode=on they would be Insert panel, F5 stop') -and -not $panelRun.Log.Contains('panel: keys Insert'))
 
     # 26. Keys chosen in [keys]: taken by the panel; an unknown key name keeps the default and says why.
     $keysRoot = Join-Path $work 'lad-ini-keys'

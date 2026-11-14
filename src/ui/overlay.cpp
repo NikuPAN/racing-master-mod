@@ -663,8 +663,15 @@ void PanelStart(const UiSettings& settings, bool testHost) {
     for (int i = 0; i < kCommandCount; ++i) {
         HotkeyDisplayName(table->keys[i], "none", names[i], sizeof(names[i]));
     }
-    Log("panel: keys %s panel, %s stop, %s previous, %s play or pause, %s next, %s repeat; media keys %s", names[0],
-        names[1], names[2], names[3], names[4], names[5], table->mediaKeys ? "on" : "off");
+    if (g_mode == UiModeDisplay) {
+        // Nothing listens for keys in display mode; say so rather than list keys that do nothing.
+        Log("panel: no keys in display mode ([panel] mode=display); with mode=on they would be %s panel, %s stop, "
+            "%s previous, %s play or pause, %s next, %s repeat; media keys %s",
+            names[0], names[1], names[2], names[3], names[4], names[5], table->mediaKeys ? "on" : "off");
+    } else {
+        Log("panel: keys %s panel, %s stop, %s previous, %s play or pause, %s next, %s repeat; media keys %s",
+            names[0], names[1], names[2], names[3], names[4], names[5], table->mediaKeys ? "on" : "off");
+    }
     Shared().hotkeys.store(table, std::memory_order_release);
 
     PanelConfigure(effective, *table, testHost);
