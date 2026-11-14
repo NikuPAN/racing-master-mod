@@ -229,9 +229,61 @@ double FirstWindow(const Signal& s, const std::vector<std::pair<char, double>>& 
 
 }  // namespace mt
 
+namespace {
+
+// musictest.exe --fixtures <folder>: the songs for the end-to-end panel run in the test host
+// (tools\run-host-test.ps1), made with the same writers as the engine's own fixtures. Four 20 s
+// songs in <folder>\music (FLAC and MP3 through Media Foundation's encoders, Opus and OGG Vorbis
+// with title and artist tags), one WAV in <folder>\add for "Add files". A PC without a Media
+// Foundation encoder gets a WAV under the same name instead, and the line says so.
+int MakePanelFixtures(const std::wstring& folder) {
+    SetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_HOST", L"1");
+    if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED)) || FAILED(MFStartup(MF_VERSION, MFSTARTUP_LITE))) {
+        printf("fixtures: COM or Media Foundation could not be started\n");
+        return 1;
+    }
+    const std::wstring music = folder + L"\\music";
+    const std::wstring add = folder + L"\\add";
+    CreateDirectoryW(folder.c_str(), nullptr);
+    CreateDirectoryW(music.c_str(), nullptr);
+    CreateDirectoryW(add.c_str(), nullptr);
+    constexpr double kSeconds = 20.0;
+    bool ok = true;
+    auto encoded = [&](const char* label, const std::wstring& base, const wchar_t* format, const wchar_t* extension,
+                       double frequency) {
+        const long hr = mt::EncodeWithMediaFoundation(base + extension, format, 44100, kSeconds, frequency);
+        if (SUCCEEDED(hr)) {
+            printf("fixture %s: written\n", label);
+            return;
+        }
+        const bool wav = mt::WriteWav(base + L".wav", 44100, 2, static_cast<uint32_t>(kSeconds * 44100), frequency);
+        printf("fixture %s: this PC has no Media Foundation encoder for it (0x%08lx); %s\n", label,
+               static_cast<unsigned long>(hr), wav ? "a WAV was written instead" : "the WAV fallback FAILED");
+        ok = ok && wav;
+    };
+    auto written = [&](const char* label, bool done) {
+        printf("fixture %s: %s\n", label, done ? "written" : "FAILED");
+        ok = ok && done;
+    };
+    encoded("01 FLAC", music + L"\\01 Alpha 測試", L"flac", L".flac", 440.0);
+    encoded("02 MP3", music + L"\\02 Beta 測試", L"mp3", L".mp3", 660.0);
+    written("03 Opus", mt::WriteOpus(music + L"\\03 gamma.opus", 880.0, kSeconds, "Gamma 測試曲", "測試樂團"));
+    written("04 OGG Vorbis", mt::WriteVorbis(music + L"\\04 delta.ogg", 44100, 500.0, kSeconds, "Delta 測試曲", "Test artist"));
+    written("05 WAV for Add files",
+            mt::WriteWav(add + L"\\05 Epsilon 測試.wav", 48000, 2, static_cast<uint32_t>(kSeconds * 48000), 770.0));
+    printf("fixtures: %s\n", ok ? "done" : "FAILED");
+    return ok ? 0 : 1;
+}
+
+}  // namespace
+
 int wmain(int argc, wchar_t** argv) {
+    if (argc == 3 && lstrcmpW(argv[1], L"--fixtures") == 0) {
+        return MakePanelFixtures(argv[2]);
+    }
     if (argc < 3) {
-        printf("usage: musictest.exe <empty work folder> <repository folder>\n");
+        printf("usage: musictest.exe <empty work folder> <repository folder>\n"
+               "       musictest.exe --fixtures <folder>   (songs for the end-to-end panel run)\n");
         return 2;
     }
     // Belt and braces: under this flag the engine refuses WASAPI and the picker never shows.

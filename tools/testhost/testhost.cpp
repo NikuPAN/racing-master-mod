@@ -903,12 +903,18 @@ struct ShotResult {
     long long bright = 0;         // near-white pixels inside (text)
     size_t windows = 0;
     UINT width = 0, height = 0;
+    bool markerOk = false;        // only with a marker rectangle: white frame and dark centre found
 };
+
+// Where the loader draws its "mod is alive" square (present_hook.cpp): white 24..72, dark 36..60.
+const RECT kMarkerArea = {22, 22, 74, 74};
 
 // The host's read-back rule for a flip-model chain: one ordinary Present, then a cleared buffer 0
 // presented without sequencing (the mod draws into it, DXGI does not rotate), then a copy of
 // buffer 0. The layout file written by that last frame says where the panel's windows are.
-ShotResult Shoot(Host& host, const char* name) {
+// `marker`: the loader's square is expected there too; its pixels are not counted as stray, and
+// markerOk says whether it was found.
+ShotResult Shoot(Host& host, const char* name, const RECT* marker = nullptr) {
     ShotResult result;
     PanelFrame(host, 0);
     PanelFrame(host, DXGI_PRESENT_DO_NOT_SEQUENCE);
@@ -972,14 +978,22 @@ ShotResult Shoot(Host& host, const char* name) {
                     break;
                 }
             }
+            const bool inMarker = marker && static_cast<LONG>(x) >= marker->left && static_cast<LONG>(x) < marker->right &&
+                                  static_cast<LONG>(y) >= marker->top && static_cast<LONG>(y) < marker->bottom;
             if (inWindow) {
                 ++inside;
                 if (v != clearValue) ++changed;
                 if (r > 200 && g > 200 && b > 200) ++result.bright;
-            } else if (v != clearValue) {
+            } else if (v != clearValue && !inMarker) {
                 ++result.stray;
             }
         }
+    }
+    if (marker) {
+        int r, g, b, dr, dg, db;
+        channels(raw[static_cast<size_t>(30) * desc.Width + 30], &r, &g, &b);
+        channels(raw[static_cast<size_t>(48) * desc.Width + 48], &dr, &dg, &db);
+        result.markerOk = r > 240 && g > 240 && b > 240 && dr < 30 && dg < 30 && db < 30;
     }
     result.changedInside = inside ? static_cast<double>(changed) / static_cast<double>(inside) : 0.0;
     const std::wstring path = g_screensFolder + L"\\" + std::wstring(name, name + strlen(name)) + L".png";
@@ -1379,6 +1393,106 @@ void ScriptInput(Host& host) {
     Pump(host, 10);
 }
 
+// End to end: the panel driving the real music engine, with the songs musictest.exe --fixtures
+// made (FLAC, MP3, tagged Opus and OGG Vorbis in the music folder; a WAV the picker hands over).
+// The loader's marker is on for the whole run, so the screenshot shows it next to the panel.
+void ScriptIntegrated(Host& host) {
+    bool ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("enabled") == 1; }, 10000);
+    Check("E0 the panel is ready and watching the window", ok);
+    if (!ok) return;
+    Check("E0 the music engine listed the four songs from the music folder (FLAC, MP3, Opus, OGG Vorbis)",
+          WaitLayout(host, SongsReady, 15000));
+
+    Key(host, VK_INSERT);
+    Check("E1 Insert opens the panel",
+          WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 1 && l.Int("drawn") == 1 && l.Has("list"); }));
+    Click(host, Item("list"));
+    Check("E1 Show list lists the songs", WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 1 && l.Has("row3"); }));
+
+    Click(host, Item("row1"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("index") == 1 && l.Int("state") == 1; });
+    const ULONGLONG clicked = GetTickCount64();
+    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Int("position") >= 2; }, 6000);
+    printf("  position reached 2 s after %llu ms of playing\n", GetTickCount64() - clicked);
+    Check("E2 a click on a song plays it (second song, playing) and the engine's position advances past 2 s", ok);
+
+    Key(host, VK_F7);
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("state") == 2; });
+    Pump(host, 30);
+    const int pausedAt = ReadLayout().Int("position");
+    const ULONGLONG waitUntil = GetTickCount64() + 1500;
+    while (GetTickCount64() < waitUntil) {
+        PanelFrame(host, 0);
+        Sleep(5);
+    }
+    Check("E3 F7 pauses: the engine reports paused and the position stays put for 1.5 s",
+          ok && ReadLayout().Int("state") == 2 && ReadLayout().Int("position") == pausedAt);
+
+    Key(host, VK_F8);
+    Check("E4 F8 plays the next song (third song, playing)",
+          WaitLayout(host, [](const LayoutFile& l) { return l.Int("index") == 2 && l.Int("state") == 1; }));
+
+    const int loop = ReadLayout().Int("loop");
+    Key(host, VK_F9);
+    Check("E5 F9 changes what repeats", WaitLayout(host, [&](const LayoutFile& l) { return l.Int("loop") == (loop + 1) % 3; }));
+
+    const int before = ReadLayout().Int("tracks");
+    Click(host, Item("add_files"));
+    ok = WaitLayout(host, [&](const LayoutFile& l) { return l.Int("tracks") == before + 1 && l.Int("scanning") == 0 && l.Has("row4"); },
+                    8000);
+    Check("E6 Add files hands the chosen file to the engine (no window shown) and the list shows it",
+          ok && ModLogContains("music: added 1 file(s)"));
+
+    Click(host, Item("settings"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("settings") == 1 && l.Has("pause"); });
+    Click(host, Item("pause"));
+    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Int("pause") == 1 && l.Int("state") == 1; });
+    PostMessageW(host.window, WM_ACTIVATEAPP, FALSE, 0);
+    Sync(host);
+    const bool pausedByFocus = WaitLayout(host, [](const LayoutFile& l) { return l.Int("state") == 2; });
+    PostMessageW(host.window, WM_ACTIVATEAPP, TRUE, 0);
+    Sync(host);
+    const bool resumed = WaitLayout(host, [](const LayoutFile& l) { return l.Int("state") == 1; });
+    Check("E7 with \"pause when the game is not in focus\" ticked, losing focus pauses the music and coming back plays on",
+          ok && pausedByFocus && resumed);
+    Click(host, Item("settings"));
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("settings") == 0 && l.Has("row4"); });
+
+    MoveAway(host);
+    const ShotResult shot = Shoot(host, "integrated-my-files", &kMarkerArea);
+    CheckShot("E8 the panel with the engine's songs", shot, true);
+    Check("E8 the loader's marker square is drawn in the same frame as the panel", shot.markerOk);
+}
+
+// End to end, "Other app": the real media remote controlling the host's silent fake player
+// (published by main() when RACING_MASTER_MOD_TEST_FAKE_PLAYER=1). The mod's test guard lets
+// commands reach that player only.
+void ScriptOtherReal(Host& host) {
+    bool ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("enabled") == 1; }, 10000);
+    Check("O0 the panel is ready and watching the window", ok);
+    if (!ok) return;
+    Key(host, VK_INSERT);
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 1 && l.Int("drawn") == 1 && l.Has("play_pause"); });
+    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Int("source") == 1 && l.Int("other_session") == 1; }, 15000);
+    Check("O1 \"Other app\" (the last choice) shows the silent test player through Windows' media sessions", ok);
+    if (!ok) return;
+
+    Click(host, Item("play_pause"));
+    Check("O2 a click on play makes the other app play",
+          WaitLayout(host, [](const LayoutFile& l) { return l.Int("other_playing") == 1; }, 6000));
+    Key(host, VK_F8);
+    Check("O3 F8 sends \"next track\" to the other app and it accepts",
+          WaitForModLog(host, "\"next track\" sent to RacingMasterMod.TestHost.FakePlayer: accepted", 6000));
+    Key(host, VK_F9);
+    Check("O4 F9 changes what the other app repeats",
+          WaitForModLog(host, "\"loop one\" sent to RacingMasterMod.TestHost.FakePlayer: accepted", 6000));
+    Key(host, VK_F7);
+    Check("O5 F7 pauses the other app", WaitLayout(host, [](const LayoutFile& l) { return l.Int("other_playing") == 0; }, 6000));
+
+    MoveAway(host);
+    CheckShot("O6 the panel showing the other app", Shoot(host, "integrated-other-app"), true);
+}
+
 void RunPanel(Host& host, const char* outputFolder, int seconds, const char* script, const char* name) {
     host.chain = CreateChain(host, host.window, kGameLayout);
     if (!host.chain || !AcquireBackBuffer(host) || !CreateGameState(host)) {
@@ -1401,6 +1515,8 @@ void RunPanel(Host& host, const char* outputFolder, int seconds, const char* scr
         else if (what == "fault") ScriptFault(host);
         else if (what == "display") ScriptDisplay(host);
         else if (what == "input") ScriptInput(host);
+        else if (what == "integrated") ScriptIntegrated(host);
+        else if (what == "other-real") ScriptOtherReal(host);
         else Check("known panel script", false);
     }
     printf("  game pipeline state checked after %d presents, %d differed\n", g_stateChecks, g_stateFailures);
@@ -1567,11 +1683,23 @@ int main(int argc, char** argv) {
     windowClass.lpszClassName = L"RacingMasterModTestHost";
     RegisterClassExW(&windowClass);
 
+    // Panel mode with the real "Other app": the silent fake player lives on this thread, which
+    // pumps the windows' messages anyway. Prepared before any window, as in media mode.
+    wchar_t fakeFlag[8] = L"";
+    const bool withFakePlayer = strcmp(mode, "panel") == 0 &&
+                                GetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_FAKE_PLAYER", fakeFlag, 8) == 1 &&
+                                fakeFlag[0] == L'1';
+    if (withFakePlayer && !fake_player::PrepareProcess()) return 1;
+
     Host host;
     const Layout& layout = strcmp(mode, "legacy") == 0 ? kLegacyLayout : kGameLayout;
     host.window = MakeHiddenWindow(windowClass.lpszClassName, static_cast<int>(layout.width),
                                    static_cast<int>(layout.height));
     host.secondWindow = MakeHiddenWindow(windowClass.lpszClassName, 800, 600);
+
+    if (withFakePlayer) {
+        printf("fake player published at start: %s\n", fake_player::Start(fake_player::Behaviour::ApplyAll) ? "yes" : "no");
+    }
 
     // Direct3D runs on a worker thread, as the engine's render thread does; this thread owns the
     // windows and pumps their messages.
@@ -1592,9 +1720,18 @@ int main(int argc, char** argv) {
         // The mod notices the closed "game" window within about a second and a half, then lets
         // the music fade out and saves. Waiting here keeps the process alive for that.
         const ULONGLONG end = GetTickCount64() + 10000;
-        while (!ModLogContains("music: stopped and saved") && GetTickCount64() < end) Sleep(50);
+        while (!ModLogContains("music: stopped and saved") && GetTickCount64() < end) {
+            PumpMessages();   // the fake player, when there is one, answers on this thread
+            Sleep(50);
+        }
         printf("music stopped and saved after the window closed: %s\n",
                ModLogContains("music: stopped and saved") ? "yes" : "no");
+    }
+    if (withFakePlayer) {
+        PumpMessages();
+        printf("fake player received: %s\n", fake_player::Received()[0] ? fake_player::Received() : "nothing");
+        fake_player::Stop();
+        fake_player::FinishProcess();
     }
 
     const bool ok = forwardingOk && standInOk && (strcmp(mode, "quick") == 0 || g_allPassed);

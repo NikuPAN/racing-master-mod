@@ -83,6 +83,17 @@ void Start() {
     }
     Log("other app: starting the control of other music apps (Windows media sessions)");
     remote::Remote::Get().Start();
+    if (ModIsTestHost()) {
+        // Developer test host with RACING_MASTER_MOD_TEST_REMOTE=real: follow only the host's
+        // silent test player, never whatever else Windows calls current on the developer's PC
+        // (commands could not reach another app anyway: the remote's test guard refuses them).
+        wchar_t id[128] = L"";
+        const DWORD n = GetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_MEDIA_APP", id, 128);
+        if (n > 0 && n < 128) {
+            remote::Remote::Get().SelectApp(id);
+            Log("other app: test host, so only the test player named in RACING_MASTER_MOD_TEST_MEDIA_APP is followed");
+        }
+    }
 }
 
 remote::Snapshot GetSnapshot() {

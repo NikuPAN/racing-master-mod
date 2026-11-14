@@ -52,6 +52,12 @@
 #                                  a gap, drop-down closing, text field, focus, "Other app", heartbeat
 # Integration of the panel, the music engine and the media remote:
 #  39. [panel] mode=off            the loader alone: no panel, no music player, no other-app control
+#  40. end to end, "My files"      songs from musictest.exe --fixtures (FLAC, MP3, tagged Opus and OGG
+#                                  Vorbis); Insert, a click plays and the position advances, F7, F8,
+#                                  F9, Add files through the picker (no window), focus pause, and a
+#                                  screenshot with the marker, kept in out\preview\integrated
+#  41. end to end, "Other app"     the real media remote and the silent fake player: play, F8, F9,
+#                                  F7 reach it and nothing else; screenshot in out\preview\integrated
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
@@ -164,11 +170,11 @@ foreach ($song in $songNames) { New-ToneWav (Join-Path $songs $song.Name) $song.
 
 # One music panel run (testhost.exe panel ...). marker_seconds=0 so nothing but the panel is on
 # screen; each run is also checked for a Dear ImGui assertion or reported mistake in its log.
-function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashtable]$Environment, [string[]]$Ini) {
+function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashtable]$Environment, [string[]]$Ini, [string]$Songs = $songs) {
     $logRoot = Join-Path $work ('lad-panel-' + ($Title -replace '[^A-Za-z0-9]+', '-'))
     Write-Ini (Join-Path $logRoot 'RacingMasterMod\settings.ini') (@('[mod]', 'marker_seconds=0') + $Ini) 'utf8'
     New-Item -ItemType Directory -Force (Join-Path $logRoot 'RacingMasterMod\music') | Out-Null
-    Copy-Item (Join-Path $songs '*.wav') (Join-Path $logRoot 'RacingMasterMod\music')
+    Copy-Item (Join-Path $Songs '*') (Join-Path $logRoot 'RacingMasterMod\music')
     $arguments = @('panel', $work, '10', $Script)
     if ($Name) { $arguments += $Name }
     $result = Invoke-Run $Title (Join-Path $work 'testhost.exe') $arguments ($flag + $Environment) $logRoot
@@ -450,6 +456,27 @@ try {
     Record 'mode=off: the marker still shows and the log says why nothing of the music started' (($run.Lines -match '^marker: found').Count -eq 1 -and $log.Contains('panel: off ([panel] mode=off)') -and $log.Contains('music: neither your own songs nor other music apps are started, because the panel is off ([panel] mode=off)'))
     Record 'mode=off: no music player, no other-app control, no window procedure, no music folder' (-not $log.Contains('the player for your own songs has started') -and -not $log.Contains('other app:') -and -not $log.Contains('music apps:') -and -not $log.Contains('watching the game window') -and -not (Test-Path (Join-Path $offRoot 'RacingMasterMod\music')))
 
+    # 40. End to end, "My files": the panel driving the real music engine inside version.dll, with
+    # songs made by the engine's own fixture writers, and the loader's marker on screen as well.
+    $fixtures = Join-Path $work 'integrated-songs'
+    $fx = Invoke-Run '40. musictest.exe --fixtures: songs for the end-to-end run' $musicTestExe @('--fixtures', $fixtures) @{} (Join-Path $work 'lad-fixtures')
+    Record 'end to end: the songs were written (FLAC, MP3, tagged Opus and OGG Vorbis, a WAV to add)' ($fx.Exit -eq 0)
+    $addFile = Join-Path $fixtures ('add\05 Epsilon ' + [string][char]0x6E2C + [string][char]0x8A66 + '.wav')
+    $panelRun = Invoke-PanelRun '40. end to end: the panel driving the music engine' 'integrated' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_PICKER_FILES = $addFile } @('[mod]', 'marker_seconds=600') (Join-Path $fixtures 'music')
+    Record 'end to end: the engine inside version.dll played the MP3 and then the Opus song' ($panelRun.Log.Contains('music: started 02 Beta') -and $panelRun.Log.Contains('music: started 03 gamma.opus'))
+    Record 'end to end: the picker handed over the chosen file from a window owned by the game window' ($panelRun.Log.Contains('music: file dialog suppressed (test mode); reporting 1 path(s) from RACING_MASTER_MOD_TEST_PICKER_FILES (owned by a top-level window)'))
+    Record 'end to end: only the null device was opened (nothing audible)' ($panelRun.Log.Contains('music: output opened (null device') -and -not $panelRun.Log.Contains('output opened (shared mode'))
+
+    # 41. End to end, "Other app": the real media remote, started by the worker because "Other app"
+    # was the last choice, controlling the host's silent fake player through Windows. For a few
+    # seconds the fake player is Windows' current media session (see media-remote-tests.md).
+    $panelRun = Invoke-PanelRun '41. end to end: Other app controlling the silent test player' 'other-real' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_REMOTE = 'real'; RACING_MASTER_MOD_TEST_FAKE_PLAYER = '1'; RACING_MASTER_MOD_TEST_MEDIA_APP = $fakeId } @('[panel]', 'source=other_app')
+    $received = ''
+    foreach ($line in $panelRun.Lines) { if ($line -match '^fake player received: (.*)$') { $received = $Matches[1] } }
+    Record 'end to end other app: the worker started the control of other apps (last choice) and followed only the test player' ($panelRun.Log.Contains('other app: starting the control of other music apps') -and $panelRun.Log.Contains('other app: test host, so only the test player'))
+    Record 'end to end other app: the fake player received play, next, loop one and pause, in that order' ($received -eq 'play, next, loop one, pause')
+    Test-MediaSafety @{ Text = $panelRun.Log } 'end to end other app'
+
     Write-Host ''
     Write-Host 'Summary'
     foreach ($r in $results) { Write-Host ("  " + $(if ($r.Ok) { 'PASS' } else { 'FAIL' }) + "  $($r.Name)") }
@@ -471,6 +498,13 @@ try {
         New-Item -ItemType Directory -Force $kept | Out-Null
         Copy-Item (Join-Path $shots '*.png') $kept -Force
         Write-Host "Panel screenshots: $kept"
+        $integrated = @(Get-ChildItem $shots -Filter 'integrated-*.png')
+        if ($integrated.Count) {
+            $preview = Join-Path $root 'out\preview\integrated'
+            New-Item -ItemType Directory -Force $preview | Out-Null
+            $integrated | Copy-Item -Destination $preview -Force
+            Write-Host "End-to-end screenshots: $preview"
+        }
     }
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }

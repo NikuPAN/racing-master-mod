@@ -1027,5 +1027,20 @@ int PanelAppendTestState(char* buffer, int size) {
                            static_cast<int>(snapshot.loop), static_cast<int>(snapshot.volume * 100.0f + 0.5f),
                            g_testText[0] ? g_testText : "-", GetTickCount64() < g_toastUntil ? 1 : 0,
                            Shared().wantTextInput.load() ? 1 : 0, snapshot.scanning ? 1 : 0);
-    return n > 0 && n < size ? n : 0;
+    if (n <= 0 || n >= size) {
+        return 0;
+    }
+    // Whole seconds only, so the file changes about once a second while a song plays. The other
+    // app's state only while "Other app" is the source.
+    int extra = snprintf(buffer + n, static_cast<size_t>(size - n), "position %d\n",
+                         static_cast<int>(snapshot.positionSeconds));
+    if (g_settings.source == SourceOtherApp && extra > 0 && n + extra < size) {
+        const remote::Snapshot other = other_app::GetSnapshot();
+        const RemoteView view = ViewOf(other);
+        const int more = snprintf(buffer + n + extra, static_cast<size_t>(size - n - extra),
+                                  "other_session %d\nother_playing %d\nother_repeat %d\n", view.session ? 1 : 0,
+                                  view.playing ? 1 : 0, static_cast<int>(other.repeat));
+        extra = more > 0 ? extra + more : extra;
+    }
+    return extra > 0 && n + extra < size ? n + extra : n;
 }
