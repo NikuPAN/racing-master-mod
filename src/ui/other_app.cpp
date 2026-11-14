@@ -73,9 +73,15 @@ std::atomic<bool> g_started{false};
 namespace other_app {
 
 void Start() {
-    if (!Real() || g_started.exchange(true)) {
+    if (g_started.exchange(true)) {
         return;
     }
+    if (!Real()) {
+        Log("other app: test host, so \"Other app\" is an example app inside the mod; nothing reads Windows' media "
+            "sessions");
+        return;
+    }
+    Log("other app: starting the control of other music apps (Windows media sessions)");
     remote::Remote::Get().Start();
 }
 

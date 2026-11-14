@@ -6,7 +6,10 @@
 
 #include "../music/player.h"
 #include "../remote/remote.h"
+#include "../ui/other_app.h"
 #include "../ui/overlay.h"
+
+#include <string>
 
 namespace {
 
@@ -101,6 +104,30 @@ void WatchFrames() {
     }
 }
 
+// After PanelStart and before the frame hook, so the panel's first frame and the first hotkey
+// find both parts running. The music player ("My files") is controlled only through the panel,
+// so it starts only with one; it reads the saved list and starts its two threads, and opens no
+// sound device and no Media Foundation until the first song plays. The control of other music
+// apps starts here only when "Other app" was the player's last choice; otherwise the panel starts
+// it when the player picks "Other app".
+void StartMusicParts(const UiSettings& ui) {
+    if (ui.mode == UiModeOff) {
+        Log("music: neither your own songs nor other music apps are started, because the panel is off "
+            "([panel] mode=off)");
+        return;
+    }
+    music::Player& player = music::Player::Get();
+    player.Start();
+    char folder8[MAX_PATH * 3] = "";
+    const std::wstring folder = player.MusicFolder();
+    LogUtf8(folder.c_str(), folder8, sizeof(folder8));
+    Log("music: the player for your own songs has started; songs copied into %s are added at every start",
+        folder8[0] ? folder8 : "(no folder: LOCALAPPDATA is not set)");
+    if (ui.source == 1) {
+        other_app::Start();   // "Other app" was the player's last choice
+    }
+}
+
 DWORD WINAPI ModThread(LPVOID) {
     LogOpen();
 
@@ -163,12 +190,7 @@ DWORD WINAPI ModThread(LPVOID) {
     // The music panel's start-up work that must not happen on the game's threads (settings,
     // hotkeys, loading the shader compiler). Before the hook, so the first frame finds it done.
     PanelStart(settings.ui, g_testHost);
-    // The panel's "My files" is the music engine: without a panel there is no way to control it,
-    // so it starts only with one. It reads the saved list and starts its two threads; no sound
-    // device and no Media Foundation until the first song plays.
-    if (settings.ui.mode != UiModeOff) {
-        music::Player::Get().Start();
-    }
+    StartMusicParts(settings.ui);
 
     PresentHookOptions options;
     options.markerSeconds = settings.markerSeconds;

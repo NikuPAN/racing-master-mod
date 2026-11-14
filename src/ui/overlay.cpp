@@ -647,9 +647,6 @@ void PanelStart(const UiSettings& settings, bool testHost) {
     Shared().hotkeys.store(table, std::memory_order_release);
 
     PanelConfigure(effective, *table, testHost);
-    if (effective.source == 1) {
-        other_app::Start();   // "Other app" was the player's last choice
-    }
 
     // Loaded here by full path so the System32 copy is the one used and a missing file becomes a
     // log line, not a delay-load fault on the frame thread.

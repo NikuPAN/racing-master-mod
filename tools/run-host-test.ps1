@@ -50,6 +50,8 @@
 #  37. [panel] mode=display        drawn, but nothing taken from the game
 #  38. panel input                 clicks, pass-through, hotkeys, Insert, wheel, ClearInputMouse after
 #                                  a gap, drop-down closing, text field, focus, "Other app", heartbeat
+# Integration of the panel, the music engine and the media remote:
+#  39. [panel] mode=off            the loader alone: no panel, no music player, no other-app control
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
@@ -431,6 +433,16 @@ try {
     $panelRun = Invoke-PanelRun 'panel input' 'input' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_TEXT_FIELD = '1' } @()
     Record 'panel input: the music engine and the other app were told what the keys and clicks asked for' ($panelRun.Log.Contains('test app: pause') -and -not $panelRun.Log.Contains('test app: next') -and -not $panelRun.Log.Contains('test app: stop') -and $panelRun.Log.Contains('music: started 02 Beta') -and $panelRun.Log.Contains('music: file dialog suppressed (test mode)') -and $panelRun.Log.Contains('panel: settings saved to'))
     Record 'panel input: the music engine played through the null device only (no sound card opened)' ($panelRun.Log.Contains('music: output opened (null') -and -not $panelRun.Log.Contains('output opened (shared mode'))
+    Record 'panel input: the worker logged the music player start with the full path of the music folder' ($panelRun.Log.Contains('music: the player for your own songs has started; songs copied into ' + (Join-Path $work 'lad-panel-panel-input\RacingMasterMod\music') + ' are added at every start'))
+
+    # --- integration ------------------------------------------------------------------------------
+    # 39. [panel] mode=off: the loader alone, as in 0.2.0. Nothing of the music parts starts.
+    $offRoot = Join-Path $work 'lad-ini-panel-off'
+    Write-Ini (Join-Path $offRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=3', '[panel]', 'mode=off', 'source=other_app') 'utf8'
+    $run = Invoke-Run '39. [panel] mode=off: no panel, no music player, no other-app control' (Join-Path $work 'testhost.exe') @('quick', $work, '2') $flag $offRoot
+    $log = Read-Log $run.Log
+    Record 'mode=off: the marker still shows and the log says why nothing of the music started' (($run.Lines -match '^marker: found').Count -eq 1 -and $log.Contains('panel: off ([panel] mode=off)') -and $log.Contains('music: neither your own songs nor other music apps are started, because the panel is off ([panel] mode=off)'))
+    Record 'mode=off: no music player, no other-app control, no window procedure, no music folder' (-not $log.Contains('the player for your own songs has started') -and -not $log.Contains('other app:') -and -not $log.Contains('music apps:') -and -not $log.Contains('watching the game window') -and -not (Test-Path (Join-Path $offRoot 'RacingMasterMod\music')))
 
     Write-Host ''
     Write-Host 'Summary'
