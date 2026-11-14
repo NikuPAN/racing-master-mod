@@ -527,11 +527,22 @@ void ControlsMyFiles(const music::Snapshot& snapshot, float width, bool displayO
         player.SetLoop(NextLoop(snapshot.loop));
     }
     ImGui::SameLine();
-    const float sliderWidth = width - (ImGui::GetCursorPosX() - ImGui::GetStyle().WindowPadding.x);
-    ImGui::SetNextItemWidth(ImMax(sliderWidth, U() * 60.0f));
+    // A fixed width (150 units, about 150 px at 1080p with medium text), at the right end of the
+    // row, so it reads as a slider rather than a label with a handle squeezed against the edge.
+    // The word stands in front; only the percentage is inside, so the handle never covers the word.
+    const float sliderWidth = ImFloor(U() * 150.0f);
+    const float labelWidth = ImGui::CalcTextSize(s.volumeWord).x + ImGui::GetStyle().ItemSpacing.x;
+    const float left = width - (ImGui::GetCursorPosX() - ImGui::GetStyle().WindowPadding.x);
+    if (left > sliderWidth + labelWidth) {
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + left - sliderWidth - labelWidth);
+    }
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(s.volumeWord);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(sliderWidth);
     int volume = static_cast<int>(snapshot.volume * 100.0f + 0.5f);
     ImGui::BeginDisabled(displayOnly);
-    if (ImGui::SliderInt("##volume", &volume, 0, 100, s.volumeFormat, ImGuiSliderFlags_NoInput | ImGuiSliderFlags_AlwaysClamp)) {
+    if (ImGui::SliderInt("##volume", &volume, 0, 100, "%d%%", ImGuiSliderFlags_NoInput | ImGuiSliderFlags_AlwaysClamp)) {
         player.SetVolume(static_cast<float>(volume) / 100.0f);
     }
     ImGui::EndDisabled();

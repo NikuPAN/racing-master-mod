@@ -39,8 +39,7 @@ struct Strings {
     const char* loopUnknown;             // another app that does not say
     const char* loopHint;
     const char* loopUnknownHint;
-    const char* volumeFormat;            // %d = percent; shown inside the slider
-    const char* volumeWord;              // the slider's label when it cannot be used
+    const char* volumeWord;              // in front of the volume slider (the slider shows the percentage)
     const char* volumeHint;
 
     // Row 3: time and list
@@ -121,7 +120,6 @@ inline const Strings kStringsEnglish = {
     "Repeat: unknown",
     "Click to change what repeats: nothing, this song, or the whole list.",
     "This app does not say what repeats. Click to change it.",
-    "Volume %d%%",
     "Volume",
     "Drag to make the music louder or quieter.",
 
@@ -200,7 +198,6 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "重複：不明",
     "按一下切換重複方式：不重複、這一首、整個清單。",
     "這個程式沒有提供重複方式。按一下可以切換。",
-    "音量 %d%%",
     "音量",
     "拖曳可以調整音量。",
 
