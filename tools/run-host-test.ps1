@@ -423,7 +423,15 @@ try {
     foreach ($language in 'en', 'zh-TW') {
         foreach ($size in 'small', 'medium', 'large') {
             $prefix = "panel-$language-$size"
-            Invoke-PanelRun "panel screenshots, $language, $size text" 'shots' $prefix @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = $language; RACING_MASTER_MOD_TEXT_SIZE = $size } @() | Out-Null
+            # One of them also has a settings.ini over the 16 KB the panel reads (a long comment):
+            # choosing "Other app" must leave that file alone rather than cut off its end.
+            $extra = @()
+            if ($language -eq 'en' -and $size -eq 'small') { $extra = @('; ' + ('x' * 17000), '[keys]', 'next=F8') }
+            $panelRun = Invoke-PanelRun "panel screenshots, $language, $size text" 'shots' $prefix @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = $language; RACING_MASTER_MOD_TEXT_SIZE = $size } $extra
+            if ($extra.Count) {
+                $bigIni = [IO.File]::ReadAllText((Join-Path $work 'lad-panel-panel-screenshots-en-small-text\RacingMasterMod\settings.ini'), [Text.Encoding]::UTF8)
+                Record 'a settings.ini over 16 KB: the panel leaves it as it is (its end is kept) and the log says why' ($panelRun.Log.Contains('is larger than 16 KB, more than the panel reads; the file was left as it is') -and $bigIni.Contains('[keys]') -and $bigIni.Contains('next=F8') -and -not $bigIni.Contains('source=other_app'))
+            }
         }
     }
 

@@ -151,13 +151,26 @@ void MergePanelKeys(const char* text, uint32_t packed, char* out, int outSize) {
     }
 }
 
-enum class SaveResult { Saved, Unreadable, NotCreated, NotWritten };
+enum class SaveResult { Saved, Unreadable, TooLarge, NotCreated, NotWritten };
+
+// LoadIniFileText reads at most this many bytes of a file. A larger file could only be merged by
+// cutting off its end, so it is left as it is.
+constexpr DWORD kMaxSettingsBytes = 16382;
 
 // Reads, merges and replaces the file. Runs under the settings file lock (the music engine
 // rewrites its [music] section in the same file), so it does not log; the caller does.
 SaveResult ReplaceSettingsFile(const wchar_t* path, uint32_t packed, DWORD* error) {
-    static char text[16384];
-    static char merged[16384 + 512];
+    // A UTF-16 file grows by up to half when it becomes UTF-8, so the text buffers hold three
+    // times what the reader takes; a smaller buffer would make the conversion fail and the merge
+    // start from nothing.
+    static char text[3 * 16384];
+    static char merged[3 * 16384 + 512];
+    WIN32_FILE_ATTRIBUTE_DATA data = {};
+    if (GetFileAttributesExW(path, GetFileExInfoStandard, &data) &&
+        (data.nFileSizeHigh != 0 || data.nFileSizeLow > kMaxSettingsBytes)) {
+        *error = ERROR_FILE_TOO_LARGE;
+        return SaveResult::TooLarge;
+    }
     bool bom = false;
     const IniFileState state = LoadIniFileText(path, text, sizeof(text), error, &bom);
     if (state == IniFileState::Unreadable) {
@@ -220,6 +233,11 @@ void WriteSettings(uint32_t packed) {
             break;
         case SaveResult::Unreadable:
             Log("panel: the panel's settings were not saved because %s could not be read (error %lu)", path8, error);
+            break;
+        case SaveResult::TooLarge:
+            Log("panel: the panel's settings were not saved because %s is larger than 16 KB, more than the panel "
+                "reads; the file was left as it is so nothing in it is cut off",
+                path8);
             break;
         case SaveResult::NotCreated:
             Log("panel: the panel's settings were not saved because a new copy of %s could not be created (error %lu)",
