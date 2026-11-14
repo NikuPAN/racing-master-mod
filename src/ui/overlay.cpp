@@ -120,6 +120,12 @@ void ApplyBaseStyle() {
     style.Colors[ImGuiCol_PopupBg] = ImVec4(0.09f, 0.10f, 0.12f, 0.97f);
     style.Colors[ImGuiCol_ChildBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.18f);
     style.Colors[ImGuiCol_Border] = ImVec4(1.0f, 1.0f, 1.0f, 0.12f);
+    // Slider tracks, the checkbox box and drop-down fields: an opaque grey-blue that stands out
+    // from the window background (ImGui's default is a faint translucent blue that all but
+    // disappears on it).
+    style.Colors[ImGuiCol_FrameBg] = ImVec4(0.20f, 0.24f, 0.31f, 1.0f);
+    style.Colors[ImGuiCol_FrameBgHovered] = ImVec4(0.26f, 0.31f, 0.40f, 1.0f);
+    style.Colors[ImGuiCol_FrameBgActive] = ImVec4(0.30f, 0.36f, 0.47f, 1.0f);
 }
 
 // ---- start-up on the frame thread ------------------------------------------------------------------
