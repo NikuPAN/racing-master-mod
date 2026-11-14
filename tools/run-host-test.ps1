@@ -27,8 +27,11 @@
 #  15. basic       every command reaches the fake player in order and is confirmed
 #  16. ignore-pause the player accepts pause and keeps playing: "no effect"
 #  17. no-repeat   the player offers no loop and no next: "not offered", nothing sent
+#  18. vanish      the player closes its session on pause: "session gone", then waiting for it
 #  19. late        the player appears 2 s after the mod: waiting, then ready without a restart
 #  20. guard       commands may only go to another id: refused, nothing reaches the fake player
+#  21. lifecycle   a media thread that stops answering, the freshness check, and rebuild mode
+#                  (the fallback when change notices stop)
 #  22. media, flag unset: the mod stays dormant, no log folder, nothing sent
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
@@ -253,6 +256,11 @@ try {
     Record 'media no-repeat: both "not offered" and nothing sent' ($run.Exit -eq 0 -and $run.Text.Contains('step 1 "repeat-all": not offered') -and $run.Text.Contains('step 2 "next": not offered') -and $run.Received -eq 'nothing')
     Record 'media no-repeat: the messages name the reason' ($run.Text.Contains("$fakeId does not let other programs change looping. Change it in $fakeId itself.") -and $run.Text.Contains($fakeId + ' does not offer "next track" right now.'))
 
+    # 18. The player closes its session while a command is in flight.
+    $run = Invoke-Media '18. media remote: player vanishes' 'vanish' 'play;pause;play' 'lad-media-vanish'
+    Record 'media vanish: "session gone", then waiting for the app, nothing re-sent' ($run.Exit -eq 0 -and $run.Text.Contains('step 2 "pause": session gone; state: waiting for the app') -and $run.Text.Contains('step 3 "play": no session; state: waiting for the app') -and $run.Received -eq 'play, pause')
+    Record 'media vanish: the message says the picked app closed and what to do' ($run.Text.Contains("$fakeId has closed. Start it again, or pick another app below."))
+
     # 19. The player appears after the mod started.
     $run = Invoke-Media '19. media remote: player appears late' 'late' 'play;read' 'lad-media-late'
     Record 'media late: the snapshot reads the player (playing, its controls, loop off, a title, no timeline)' ($run.Text.Contains('step 2 "read": state: ready; app: "' + $fakeId + '"; status: playing; offers: pause stop next previous loop; loop: off; timeline: no; title shared: yes'))
@@ -261,6 +269,13 @@ try {
     # 20. The guard: commands may only go to an id that is not the fake player.
     $run = Invoke-Media '20. media remote: test guard' 'guard' 'play;next' 'lad-media-guard' @{ RACING_MASTER_MOD_TEST_MEDIA_PICK = $fakeId; RACING_MASTER_MOD_TEST_MEDIA_APP = 'RacingMasterMod.TestHost.NotThisOne' }
     Record 'media guard: both commands refused, the fake player received nothing' ($run.Exit -eq 0 -and ([regex]::Matches($run.Text, 'refused to send')).Count -eq 2 -and $run.Received -eq 'nothing')
+
+    # 21. The game's Shutdown (sleep and wake) and a media thread that stops answering.
+    $run = Invoke-Media '21. media remote: not answering, rebuild mode' 'lifecycle' 'play;pause;hang;rebuild;play;repeat-all;pause;next' 'lad-media-lifecycle'
+    Record 'media lifecycle: a stuck media thread shows as "not answering" and recovers' ($run.Exit -eq 0 -and $run.Text -match 'step 3 "hang": the snapshot said Windows is not answering after \d+ ms; ready again afterwards')
+    Record 'media lifecycle: the freshness check ran and agreed' ($run.Text.Contains('music apps: a fresh check agrees with the held session'))
+    Record 'media lifecycle: rebuild mode sends and confirms through a fresh manager' (([regex]::Matches($run.Text, 'step (5|6|7|8) "[a-z-]+": done')).Count -eq 4 -and $run.Received -eq 'play, pause, play, loop all, pause, next')
+    Test-MediaSafety $run 'media lifecycle'
 
     # 22. Without the test flag the mod stays dormant: no media code runs, nothing is sent.
     $run = Invoke-Media '22. media mode, flag unset: mod must stay dormant' 'basic' 'play;pause' 'lad-media-dormant' @{} $false 4

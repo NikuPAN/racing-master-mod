@@ -8,7 +8,8 @@
 //   other programs that load it; the build script checks the import table.
 // - One thread owned by the mod does all the COM work, in the multithreaded apartment. The frame
 //   thread only copies a snapshot and queues commands; it never waits for the media thread.
-// - The media thread re-reads the sessions twice a second; a queued command wakes it at once.
+// - Change notices from Windows arrive on COM threads and do nothing but wake the media thread.
+//   The periodic refresh keeps the snapshot right even when a notice is lost.
 // - Titles and artists are never written to the log: players paste the log into bug reports.
 // - In the game the thread never leaves its apartment. If the game had no multithreaded
 //   apartment, the mod's RoInitialize creates it and every game thread that never initialised
@@ -67,8 +68,12 @@ constexpr DWORD kCommandTimeoutMs = 1500;   // Try...Async
 constexpr DWORD kConfirmTimeoutMs = 2500;   // the expected change after an accepted command
 constexpr DWORD kRefreshMs = 500;           // periodic refresh while running
 constexpr ULONGLONG kTitleRefreshMs = 5000;
+constexpr ULONGLONG kAuditEveryMs = 10000;
+constexpr ULONGLONG kAuditRecheckMs = 1000;
 constexpr ULONGLONG kResultShownMs = 5000;
+constexpr ULONGLONG kClosedShownMs = 4000;
 constexpr ULONGLONG kDoubleClickMs = 150;
+constexpr ULONGLONG kStaleMs = 5000;        // a snapshot older than this means the thread is stuck
 constexpr unsigned kQueueSize = 8;
 constexpr unsigned kMaxApps = 16;
 constexpr unsigned kAppIdChars = 132;       // an app id may be 128 characters, plus room
@@ -76,7 +81,9 @@ constexpr unsigned kAppIdChars = 132;       // an app id may be 128 characters, 
 // Returned by Send() when the test-host guard refused; never a code Windows returns.
 constexpr HRESULT kRefusedByTestGuard = MAKE_HRESULT(SEVERITY_ERROR, FACILITY_ITF, 0x0201);
 
-enum class Command { Play, Pause, Toggle, Stop, Next, Previous, RepeatOff, RepeatOne, RepeatAll, PickApp, FollowWindows };
+// TestHang and TestRebuild exist only for the test host's "hang" and "rebuild" steps.
+enum class Command { Play, Pause, Toggle, Stop, Next, Previous, RepeatOff, RepeatOne, RepeatAll, PickApp, FollowWindows,
+                     TestHang, TestRebuild };
 
 // ---- functions resolved at run time ----------------------------------------------------------------
 
@@ -194,9 +201,50 @@ HRESULT WaitAsync(Op* op, DWORD timeoutMs) {
     return hr;
 }
 
-// ---- waking the media thread ---------------------------------------------------------------------------
+// ---- change notices: immortal delegates that only wake the media thread -----------------------------
 
-HANDLE g_wake = nullptr;          // auto-reset: a command was queued
+HANDLE g_wake = nullptr;          // auto-reset: a notice arrived or a command was queued
+volatile LONG g_notices = 0;      // notices received so far (any kind)
+
+template <typename TDelegate, typename TSender, typename TArgs>
+class WakeHandler final : public TDelegate {
+public:
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** out) override {
+        if (iid == __uuidof(IUnknown) || iid == __uuidof(IAgileObject) || iid == __uuidof(TDelegate)) {
+            *out = static_cast<TDelegate*>(this);
+            return S_OK;
+        }
+        *out = nullptr;
+        return E_NOINTERFACE;
+    }
+    // Static lifetime: a notice that arrives after the handler was removed cannot touch freed
+    // memory, because nothing is ever freed. g_wake is never closed for the same reason.
+    ULONG STDMETHODCALLTYPE AddRef() override { return 2; }
+    ULONG STDMETHODCALLTYPE Release() override { return 1; }
+    HRESULT STDMETHODCALLTYPE Invoke(TSender*, TArgs*) override {
+        InterlockedIncrement(&g_notices);
+        if (g_wake) {
+            SetEvent(g_wake);
+        }
+        return S_OK;
+    }
+};
+
+WakeHandler<wf::ITypedEventHandler<wmc::GlobalSystemMediaTransportControlsSessionManager*, wmc::SessionsChangedEventArgs*>,
+            SessionManager, wmc::ISessionsChangedEventArgs>
+    g_onSessions;
+WakeHandler<wf::ITypedEventHandler<wmc::GlobalSystemMediaTransportControlsSessionManager*, wmc::CurrentSessionChangedEventArgs*>,
+            SessionManager, wmc::ICurrentSessionChangedEventArgs>
+    g_onCurrent;
+WakeHandler<wf::ITypedEventHandler<wmc::GlobalSystemMediaTransportControlsSession*, wmc::PlaybackInfoChangedEventArgs*>,
+            Session, wmc::IPlaybackInfoChangedEventArgs>
+    g_onPlayback;
+WakeHandler<wf::ITypedEventHandler<wmc::GlobalSystemMediaTransportControlsSession*, wmc::MediaPropertiesChangedEventArgs*>,
+            Session, wmc::IMediaPropertiesChangedEventArgs>
+    g_onMedia;
+WakeHandler<wf::ITypedEventHandler<wmc::GlobalSystemMediaTransportControlsSession*, wmc::TimelinePropertiesChangedEventArgs*>,
+            Session, wmc::ITimelinePropertiesChangedEventArgs>
+    g_onTimeline;
 
 // ---- state shared between threads ----------------------------------------------------------------------
 
@@ -208,6 +256,8 @@ struct Published {
     long long endTicks = 0;
     long long positionAsOf = 0;    // 100 ns since 1601 UTC, the clock of GetSystemTimeAsFileTime
     double rate = 1.0;
+    ULONGLONG publishedTick = 0;   // GetTickCount64 when the media thread wrote this
+    bool watched = false;          // the media thread is supposed to be refreshing it
 };
 SRWLOCK g_snapshotLock = SRWLOCK_INIT;
 
@@ -328,6 +378,8 @@ const char* CommandWord(Command command) {
         case Command::RepeatAll: return "loop all";
         case Command::PickApp: return "pick app";
         case Command::FollowWindows: return "follow Windows";
+        case Command::TestHang: return "test hang";
+        case Command::TestRebuild: return "test rebuild";
     }
     return "?";
 }
@@ -450,12 +502,14 @@ private:
     std::wstring CurrentSessionId(SessionManager* manager);
     bool ReadStatusOf(Session* session, Reading* reading);
     Reading ReadNow(const std::wstring& id);
+    Reading ReadThroughFreshManager(const std::wstring& id);
     void SwitchTarget(Session* session, const std::wstring& id);
     void ReleaseSession();
     void DropTarget();
     void ForgetTarget();
     void ReadTarget(ULONGLONG now);
     void ReadTitle();
+    void Audit(ULONGLONG now);
     void Refresh();
     void ScheduleRetry(HRESULT hr);
     void LogStartFacts();
@@ -475,9 +529,16 @@ private:
 
     SessionManagerStatics* statics_ = nullptr;
     SessionManager* manager_ = nullptr;
+    EventRegistrationToken sessionsToken_ = {};
+    EventRegistrationToken currentToken_ = {};
     Session* session_ = nullptr;   // the controlled session object
+    bool subscribed_ = false;      // the three session handlers are registered on session_
+    EventRegistrationToken playbackToken_ = {};
+    EventRegistrationToken mediaToken_ = {};
+    EventRegistrationToken timelineToken_ = {};
 
-    // What is known about the target app. Survives a change of session object for the same app.
+    // What is known about the target app. Survives a change of session object for the same app
+    // (rebuild mode fetches a new object on every refresh).
     std::wstring targetId_;
     std::wstring targetName_;
     PlaybackStatus status_ = kClosed;
@@ -502,7 +563,14 @@ private:
     unsigned failedRequests_ = 0;
     ULONGLONG retryTick_ = 0;
     bool announced_ = false;
+    bool noticesLogged_ = false;
     int elevated_ = -1;            // 1 yes, 0 no, -1 could not tell
+    ULONGLONG auditTick_ = 0;
+    int auditMisses_ = 0;
+    bool auditAgreedLogged_ = false;
+    bool rebuild_ = false;
+    std::wstring closedName_;
+    ULONGLONG closedTick_ = 0;
 
     Result result_ = Result::None;
     Message resultMessage_ = Message::None;
@@ -532,11 +600,18 @@ void Engine::Run() {
         Publish();
         return;
     }
+    auditTick_ = GetTickCount64() + kAuditEveryMs;
     Refresh();
 
     // The thread runs until the process ends.
     for (;;) {
-        WaitForSingleObject(g_wake, kRefreshMs);
+        if (WaitForSingleObject(g_wake, kRefreshMs) == WAIT_OBJECT_0) {
+            Sleep(30);   // notices come in bursts; one refresh covers them all
+            if (!noticesLogged_ && g_notices) {
+                noticesLogged_ = true;
+                Log("music apps: change notices are arriving");
+            }
+        }
         const LONG drops = InterlockedExchange(&g_queueDrops, 0);
         if (drops) {
             Log("music apps: %ld button press%s came faster than they could be sent and %s dropped", drops,
@@ -639,7 +714,9 @@ bool Engine::SetupManager() {
         ScheduleRetry(hr);
         return false;
     }
-    if (failedRequests_) {
+    manager_->add_SessionsChanged(&g_onSessions, &sessionsToken_);
+    manager_->add_CurrentSessionChanged(&g_onCurrent, &currentToken_);
+    if (failedRequests_ && !rebuild_) {
         Log("music apps: Windows answered again");
     }
     retryStage_ = 0;
@@ -668,6 +745,8 @@ bool Engine::SetupManager() {
 
 void Engine::TeardownManager() {
     if (manager_) {
+        manager_->remove_SessionsChanged(sessionsToken_);
+        manager_->remove_CurrentSessionChanged(currentToken_);
         ReleaseAndClear(manager_);
     }
 }
@@ -754,6 +833,31 @@ Reading Engine::ReadNow(const std::wstring& id) {
     return reading;
 }
 
+// The same through a second, independent manager (about 15 ms). Used by the freshness audit and,
+// in rebuild mode, to confirm commands.
+Reading Engine::ReadThroughFreshManager(const std::wstring& id) {
+    Reading reading;
+    HRESULT hr = S_OK;
+    SessionManager* fresh = RequestManager(&hr, nullptr);
+    if (!fresh) {
+        return reading;
+    }
+    std::vector<App> apps;
+    std::vector<Session*> objects;
+    if (ListSessions(&apps, &objects, fresh)) {
+        for (size_t i = 0; i < apps.size() && !reading.present; ++i) {
+            if (apps[i].id == id && ReadStatusOf(objects[i], &reading)) {
+                reading.present = reading.status != kClosed;
+            }
+        }
+    }
+    for (Session* object : objects) {
+        object->Release();
+    }
+    fresh->Release();
+    return reading;
+}
+
 // Start menu lookup of the friendly name ("Chrome" -> "Google Chrome"); for an id Windows does not
 // know (a player that uses its file name), a tidied version of the id. Cached per id.
 std::wstring Engine::AppName(const std::wstring& id) {
@@ -812,7 +916,7 @@ bool Engine::RepeatBlocked(const std::wstring& id) const {
 }
 
 // Holds a new session object. When it belongs to the app already targeted (a new object for the
-// same app), what is known about the app is kept.
+// same app, or rebuild mode), what is known about the app is kept.
 void Engine::SwitchTarget(Session* session, const std::wstring& id) {
     const bool sameApp = !targetId_.empty() && targetId_ == id;
     ReleaseSession();
@@ -827,12 +931,30 @@ void Engine::SwitchTarget(Session* session, const std::wstring& id) {
     }
     session->AddRef();
     session_ = session;
-    titleDirty_ = true;
+    if (!rebuild_) {
+        session_->add_PlaybackInfoChanged(&g_onPlayback, &playbackToken_);
+        session_->add_MediaPropertiesChanged(&g_onMedia, &mediaToken_);
+        session_->add_TimelinePropertiesChanged(&g_onTimeline, &timelineToken_);
+        subscribed_ = true;
+    }
+    // Rebuild mode fetches a new object for the same app on every refresh; its title is then
+    // re-read on the 5 s rule rather than every time.
+    if (!sameApp || !rebuild_) {
+        titleDirty_ = true;
+    }
 }
 
-// Releases the held session object; keeps what is known about the app.
+// Unsubscribes from and releases the held session object; keeps what is known about the app.
 void Engine::ReleaseSession() {
-    ReleaseAndClear(session_);
+    if (session_) {
+        if (subscribed_) {
+            session_->remove_PlaybackInfoChanged(playbackToken_);
+            session_->remove_MediaPropertiesChanged(mediaToken_);
+            session_->remove_TimelinePropertiesChanged(timelineToken_);
+            subscribed_ = false;
+        }
+        ReleaseAndClear(session_);
+    }
 }
 
 // Lets go of the session and forgets the app.
@@ -945,6 +1067,39 @@ void Engine::ReadTitle() {
     op->Release();
 }
 
+// Every 10 s (and 1 s after an accepted command) a second, independent manager reads the target's
+// status. The cheap getters serve a cache fed by notices from Windows' service; if two checks a
+// second apart disagree, the notices are not getting through (a possibility in an elevated game)
+// and the engine fetches a new manager on every refresh instead.
+void Engine::Audit(ULONGLONG now) {
+    auditTick_ = now + kAuditEveryMs;
+    if (rebuild_ || !session_ || targetId_.empty()) {
+        return;
+    }
+    const Reading fresh = ReadThroughFreshManager(targetId_);
+    Reading mine;
+    mine.present = ReadStatusOf(session_, &mine) && mine.status != kClosed;
+    const bool agree = fresh.present == mine.present && (!fresh.present || fresh.status == mine.status);
+    if (agree) {
+        auditMisses_ = 0;
+        if (!auditAgreedLogged_) {
+            auditAgreedLogged_ = true;
+            Log("music apps: a fresh check agrees with the held session (\"%s\")",
+                fresh.present ? StatusWord(fresh.status) : "closed");
+        }
+        return;
+    }
+    ++auditMisses_;
+    if (auditMisses_ >= 2) {
+        rebuild_ = true;
+        Log("music apps: change notices are not arriving (a fresh check reports \"%s\" while the held session reports "
+            "\"%s\"); re-reading twice a second instead",
+            fresh.present ? StatusWord(fresh.status) : "closed", mine.present ? StatusWord(mine.status) : "closed");
+    } else {
+        auditTick_ = now + kAuditRecheckMs;
+    }
+}
+
 void Engine::Refresh() {
     const ULONGLONG now = GetTickCount64();
     if (state_ == State::Unsupported) {
@@ -953,6 +1108,15 @@ void Engine::Refresh() {
     }
     if (!manager_) {
         if (now < retryTick_ || !SetupManager()) {
+            Publish();
+            return;
+        }
+    } else if (rebuild_) {
+        // Rebuild mode: the long-lived objects may be stale, so every refresh starts from a new
+        // manager. What is known about the target app is kept (ReleaseSession, not DropTarget).
+        ReleaseSession();
+        TeardownManager();
+        if (!SetupManager()) {
             Publish();
             return;
         }
@@ -982,8 +1146,16 @@ void Engine::Refresh() {
         }
     }
 
+    const bool hadTarget = !targetId_.empty();
     if (pick == apps.size()) {
-        DropTarget();
+        if (hadTarget) {
+            closedName_ = targetName_;
+            closedTick_ = now;
+            char id8[kAppIdChars * 3];
+            Log("music apps: %s closed; %u music app%s left", Utf8(targetId_, id8, sizeof(id8)),
+                static_cast<unsigned>(apps.size()), apps.size() == 1 ? "" : "s");
+            DropTarget();
+        }
         state_ = following_ ? State::NoSession : State::WaitingForApp;
     } else {
         if (!session_ || session_ != objects[pick] || targetId_ != apps[pick].id) {
@@ -991,9 +1163,14 @@ void Engine::Refresh() {
         }
         ReadTarget(now);
         if (status_ == kClosed) {
+            closedName_ = targetName_;
+            closedTick_ = now;
             DropTarget();
             state_ = following_ ? State::NoSession : State::WaitingForApp;
         } else {
+            if (closedName_ == targetName_) {
+                closedName_.clear();   // the app came back
+            }
             state_ = State::Ready;
         }
     }
@@ -1001,6 +1178,10 @@ void Engine::Refresh() {
         object->Release();
     }
     apps_ = std::move(apps);
+
+    if (now >= auditTick_) {
+        Audit(now);
+    }
     Publish();
 }
 
@@ -1019,26 +1200,29 @@ void Engine::SetResult(Result result, Message message, const std::wstring& app) 
     ++resultSequence_;
 }
 
-// Polls until the expected change shows or 2.5 s pass.
+// Polls until the expected change shows or 2.5 s pass. In rebuild mode the held objects may be
+// stale, so each poll goes through a fresh manager.
 Result Engine::Confirm(Expect expect, PlaybackStatus wantStatus, RepeatMode wantMode, ULONGLONG* tookMs) {
     const ULONGLONG start = GetTickCount64();
     const ULONGLONG deadline = start + kConfirmTimeoutMs;
     for (;;) {
-        const Reading now = ReadNow(targetId_);
+        const Reading now = rebuild_ ? ReadThroughFreshManager(targetId_) : ReadNow(targetId_);
         *tookMs = GetTickCount64() - start;
         if (expect == Expect::StoppedOrGone) {
             if (!now.present || now.status == kStopped) {
                 return Result::Done;
             }
-        } else if (expect == Expect::StatusIs && now.present && now.status == wantStatus) {
+        } else if (!now.present) {
+            return Result::SessionGone;
+        } else if (expect == Expect::StatusIs && now.status == wantStatus) {
             return Result::Done;
-        } else if (expect == Expect::RepeatIs && now.present && now.repeatReported && now.repeatMode == wantMode) {
+        } else if (expect == Expect::RepeatIs && now.repeatReported && now.repeatMode == wantMode) {
             return Result::Done;
         }
         if (GetTickCount64() >= deadline) {
             return Result::NoEffect;
         }
-        Sleep(50);
+        Sleep(rebuild_ ? 250 : 50);
     }
 }
 
@@ -1083,6 +1267,7 @@ void Engine::Execute(const Queued& queued) {
         following_ = false;
         pickedId_ = queued.appId;
         pickedName_ = AppName(pickedId_);
+        closedName_.clear();
         char id8[kAppIdChars * 3];
         Log("music apps: the panel picked %s", Utf8(pickedId_, id8, sizeof(id8)));
         Refresh();
@@ -1092,8 +1277,28 @@ void Engine::Execute(const Queued& queued) {
         following_ = true;
         pickedId_.clear();
         pickedName_.clear();
+        closedName_.clear();
         Log("music apps: the panel follows Windows' choice again");
         Refresh();
+        return;
+    }
+    if (queued.command == Command::TestHang) {
+        // Test host only: stands in for a Windows call that never returns, so the test can see
+        // GetSnapshot() report "not answering" and recover afterwards.
+        if (g_testHost) {
+            Log("music apps test: the media thread stops answering for 6 s on purpose");
+            Sleep(6000);
+        }
+        return;
+    }
+    if (queued.command == Command::TestRebuild) {
+        // Test host only: switches on the mode the freshness check falls back to when change
+        // notices do not arrive, so its refresh and confirmation paths run in the test.
+        if (g_testHost && !rebuild_) {
+            rebuild_ = true;
+            Log("music apps test: re-reading through a new manager on every refresh from now on");
+            Refresh();
+        }
         return;
     }
 
@@ -1102,7 +1307,8 @@ void Engine::Execute(const Queued& queued) {
     if (!session_ || state_ != State::Ready) {
         Log("music apps: \"%s\" requested but no music app is being controlled", word);
         if (!following_ && !pickedName_.empty()) {
-            SetResult(Result::NoSession, Message::PickedNotRunning, pickedName_);
+            SetResult(Result::NoSession, closedName_.empty() ? Message::PickedNotRunning : Message::PickedClosed,
+                      pickedName_);
         } else {
             SetResult(Result::NoSession, Message::NoApp, L"");
         }
@@ -1224,6 +1430,7 @@ void Engine::Execute(const Queued& queued) {
         return;
     }
 
+    auditTick_ = GetTickCount64() + kAuditRecheckMs;
     ULONGLONG tookMs = 0;
     const Result result = expect == Expect::Nothing ? Result::Done : Confirm(expect, wantStatus, wantMode, &tookMs);
     if (call == Call::Next || call == Call::Previous) {
@@ -1274,6 +1481,11 @@ void Engine::Execute(const Queued& queued) {
                 SetResult(Result::NoEffect, Message::NoEffect, app);
             }
             break;
+        case Result::SessionGone:
+            // Nothing is re-sent to another app.
+            Log("music apps: \"%s\" sent to %s: accepted, but the app closed before it took effect", word, id8);
+            SetResult(Result::SessionGone, following_ ? Message::AppClosed : Message::PickedClosed, app);
+            break;
         default:
             SetResult(result, Message::None, L"");
             break;
@@ -1300,8 +1512,13 @@ void Engine::ComposeMessage(ULONGLONG now, Message* id, std::wstring* app) {
         return;
     }
     if (!following_ && !session_) {
-        *id = Message::WaitingForApp;
-        *app = pickedName_;
+        *id = closedName_.empty() ? Message::WaitingForApp : Message::PickedClosed;
+        *app = closedName_.empty() ? pickedName_ : closedName_;
+        return;
+    }
+    if (following_ && !closedName_.empty() && now - closedTick_ < kClosedShownMs) {
+        *id = Message::AppClosed;
+        *app = closedName_;
         return;
     }
     if (!session_) {
@@ -1323,6 +1540,8 @@ void Engine::ComposeMessage(ULONGLONG now, Message* id, std::wstring* app) {
 void Engine::Publish() {
     const ULONGLONG now = GetTickCount64();
     Published fresh;
+    fresh.publishedTick = now;
+    fresh.watched = state_ != State::Off && state_ != State::Unsupported && state_ != State::Faulted;
     Snapshot& s = fresh.snapshot;
     s.state = state_;
     s.available = session_ != nullptr && state_ == State::Ready;
@@ -1394,6 +1613,7 @@ void ReportFault() {
         "controlled until the game is restarted",
         static_cast<unsigned long>(g_faultCode), path8, offset);
     Published fresh;
+    fresh.publishedTick = GetTickCount64();
     fresh.snapshot.state = State::Faulted;
     fresh.snapshot.messageId = Message::Faulted;
     fresh.snapshot.message = Text(Message::Faulted, L"");
@@ -1487,6 +1707,8 @@ Snapshot Remote::GetSnapshot() const {
     Snapshot snapshot;
     long long positionTicks = 0, endTicks = 0, positionAsOf = 0;
     double rate = 1.0;
+    ULONGLONG publishedTick = 0;
+    bool watched = false;
     {
         const Published& store = Store();
         AcquireSRWLockShared(&g_snapshotLock);
@@ -1495,7 +1717,19 @@ Snapshot Remote::GetSnapshot() const {
         endTicks = store.endTicks;
         positionAsOf = store.positionAsOf;
         rate = store.rate;
+        publishedTick = store.publishedTick;
+        watched = store.watched;
         ReleaseSRWLockShared(&g_snapshotLock);
+    }
+    // A synchronous call into Windows cannot be given a deadline. If one hangs, only the media
+    // thread hangs, and the snapshot stops being renewed: say so instead of showing old state.
+    if (watched && publishedTick && GetTickCount64() - publishedTick > kStaleMs) {
+        snapshot.state = State::NotAnswering;
+        snapshot.available = false;
+        snapshot.controls = {};
+        snapshot.messageId = Message::NotAnswering;
+        snapshot.messageApp.clear();
+        snapshot.message = Text(Message::NotAnswering, L"");
     }
     if (snapshot.available && snapshot.hasTimeline) {
         long long ticks = positionTicks;
@@ -1624,6 +1858,24 @@ DWORD WINAPI TestScriptThread(LPVOID) {
                 step, StateWord(s.state), LogUtf8(s.app.c_str(), app8, sizeof(app8)), PublicStatusWord(s.status),
                 controls.empty() ? "nothing" : controls.c_str(), PublicRepeatWord(s.repeat),
                 s.hasTimeline ? "yes" : "no", s.title.empty() ? "no" : "yes");
+            Sleep(400);
+            continue;
+        }
+        if (lstrcmpW(name, L"rebuild") == 0) {
+            Post(Command::TestRebuild, nullptr);
+            Sleep(600);
+            Log("music apps test: step %u \"rebuild\": state: %s", step, StateWord(remote.GetSnapshot().state));
+            continue;
+        }
+        if (lstrcmpW(name, L"hang") == 0) {
+            const ULONGLONG hangStart = GetTickCount64();
+            Post(Command::TestHang, nullptr);
+            const bool noticed = WaitFor(8000, [&] { return remote.GetSnapshot().state == State::NotAnswering; });
+            const ULONGLONG noticedMs = GetTickCount64() - hangStart;
+            const bool recovered = WaitFor(8000, [&] { return remote.GetSnapshot().available; });
+            Log("music apps test: step %u \"hang\": %s after %llu ms; %s", step,
+                noticed ? "the snapshot said Windows is not answering" : "the snapshot never said Windows is not answering",
+                noticedMs, recovered ? "ready again afterwards" : "did not recover");
             Sleep(400);
             continue;
         }
