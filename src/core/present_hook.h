@@ -29,6 +29,9 @@ bool InstallPresentHook(const PresentHookOptions& options);
 struct PresentHookCounters {
     unsigned long long hookCalls;    // every Present/Present1 that reached the hook (any swap chain)
     unsigned long long gameFrames;   // frames of the swap chain the mod is bound to
+    // Presents that arrived while another thread was inside the per-frame work and were passed
+    // straight on without it (two threads presenting at once, e.g. NVIDIA Smooth Motion).
+    unsigned long long concurrentSkips;
 };
 PresentHookCounters PresentHookGetCounters();
 

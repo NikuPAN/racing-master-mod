@@ -35,6 +35,14 @@ volatile LONG64 g_hookCalls = 0;
 volatile LONG64 g_frames = 0;
 volatile LONG g_frameWorkOff = 0;   // 1 after a fault: the mod no longer touches frames
 
+// 1 while a thread is inside the per-frame work. Everything below this hook (ImGui, the panel's
+// globals, the immediate context's state swap) assumes one thread at a time, but a game, or a
+// driver feature such as NVIDIA Smooth Motion, may present from two threads at once. A present
+// that finds the work taken passes straight on to the original Present, untouched, and is
+// counted; nothing ever waits here.
+volatile LONG g_frameBusy = 0;
+volatile LONG64 g_concurrentSkips = 0;
+
 // The game's swap chain. Compared against the caller's pointer, never dereferenced, no reference
 // held. Two swap chains can present from two threads, so both are volatile and written atomically.
 IDXGISwapChain* volatile g_boundSwapChain = nullptr;
@@ -159,10 +167,6 @@ bool IsGameSwapChain(IDXGISwapChain* swapChain, ULONGLONG now) {
 }
 
 void OnFrame(IDXGISwapChain* swapChain, UINT flags, FrameRefs& refs) {
-    if (flags & DXGI_PRESENT_TEST) {
-        return;
-    }
-    InterlockedIncrement64(&g_hookCalls);
     const ULONGLONG now = GetTickCount64();
     if (!IsGameSwapChain(swapChain, now)) {
         return;
@@ -240,6 +244,21 @@ void GuardedOnFrame(IDXGISwapChain* swapChain, UINT flags) {
     }
 }
 
+// Counts the present and runs the per-frame work, unless another thread is inside it right now
+// (see g_frameBusy): then this present is only counted and passed on.
+void FrameWork(IDXGISwapChain* swapChain, UINT flags) {
+    if (g_frameWorkOff || (flags & DXGI_PRESENT_TEST)) {
+        return;
+    }
+    InterlockedIncrement64(&g_hookCalls);
+    if (InterlockedCompareExchange(&g_frameBusy, 1, 0) != 0) {
+        InterlockedIncrement64(&g_concurrentSkips);
+        return;
+    }
+    GuardedOnFrame(swapChain, flags);   // returns normally after a fault too, so the flag is always given back
+    InterlockedExchange(&g_frameBusy, 0);
+}
+
 // One of the two functions may call the other internally; the depth counter makes sure such a
 // frame is handled once.
 thread_local int t_presentDepth = 0;
@@ -248,7 +267,7 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
     // Read once: the worker published this before the table entry pointed here.
     const auto original = reinterpret_cast<PresentFn>(g_originalPresent);
     if (t_presentDepth++ == 0) {
-        GuardedOnFrame(swapChain, flags);
+        FrameWork(swapChain, flags);
     }
     const HRESULT result = original(swapChain, syncInterval, flags);
     --t_presentDepth;
@@ -259,7 +278,7 @@ HRESULT STDMETHODCALLTYPE HookedPresent1(IDXGISwapChain1* swapChain, UINT syncIn
                                          const DXGI_PRESENT_PARAMETERS* parameters) {
     const auto original = reinterpret_cast<Present1Fn>(g_originalPresent1);
     if (t_presentDepth++ == 0) {
-        GuardedOnFrame(swapChain, flags);
+        FrameWork(swapChain, flags);
     }
     const HRESULT result = original(swapChain, syncInterval, flags, parameters);
     --t_presentDepth;
@@ -319,6 +338,7 @@ PresentHookCounters PresentHookGetCounters() {
     PresentHookCounters counters;
     counters.hookCalls = static_cast<unsigned long long>(g_hookCalls);
     counters.gameFrames = static_cast<unsigned long long>(g_frames);
+    counters.concurrentSkips = static_cast<unsigned long long>(g_concurrentSkips);
     return counters;
 }
 

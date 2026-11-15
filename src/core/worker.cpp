@@ -10,6 +10,7 @@
 #include "../ui/other_app.h"
 #include "../ui/overlay.h"
 
+#include <cstdio>
 #include <string>
 
 namespace {
@@ -267,6 +268,7 @@ void WatchFrames(bool musicStarted) {
     bool warned = false;
     bool resumedLogged = false;
     bool faultHandled = false;
+    bool concurrentLogged = false;
     GameWindowWatch window;
     WindowStateLog windowLog;
     CloseWatch close;
@@ -321,6 +323,13 @@ void WatchFrames(bool musicStarted) {
         }
         const PresentHookCounters counters = PresentHookGetCounters();
         const ULONGLONG now = GetTickCount64();
+        if (!concurrentLogged && counters.concurrentSkips != 0) {
+            concurrentLogged = true;
+            Log("frames are being shown from two threads at the same moment (%llu so far); each one that arrives while "
+                "another is being drawn is passed on without the panel and the marker, so the mod's drawing never runs "
+                "twice at once. NVIDIA Smooth Motion and similar driver features do this.",
+                counters.concurrentSkips);
+        }
         if (!warned && now - attachedAt >= 10000) {
             warned = true;
             if (counters.gameFrames == 0) {
@@ -344,9 +353,14 @@ void WatchFrames(bool musicStarted) {
         }
         if (now - lastReport >= 30000) {
             const double seconds = static_cast<double>(now - lastReport) / 1000.0;
-            Log("running: %llu hook calls, %llu game frames so far, %.0f frames per second over the last %.0f s",
+            char skips[96] = "";
+            if (counters.concurrentSkips != 0) {
+                snprintf(skips, sizeof(skips), ", %llu passed on while another thread was drawing",
+                         counters.concurrentSkips);
+            }
+            Log("running: %llu hook calls, %llu game frames so far, %.0f frames per second over the last %.0f s%s",
                 counters.hookCalls, counters.gameFrames,
-                static_cast<double>(counters.gameFrames - framesAtLastReport) / seconds, seconds);
+                static_cast<double>(counters.gameFrames - framesAtLastReport) / seconds, seconds, skips);
             lastReport = now;
             framesAtLastReport = counters.gameFrames;
         }

@@ -28,6 +28,7 @@
 
 #include "../core/frame.h"
 #include "../core/log.h"
+#include "../core/present_hook.h"
 #include "../core/settings.h"
 
 #include "imgui_impl_dx11.h"
@@ -413,9 +414,9 @@ void ClearRects() {
 // the messages the test posts). Test host only; never written in the game.
 void WriteTestLayout(bool drawn, float sx, float sy) {
     static char text[8192];
-    int used = snprintf(text, sizeof(text), "open %d\ndrawn %d\nenabled %d\nsaves %ld\n",
+    int used = snprintf(text, sizeof(text), "open %d\ndrawn %d\nenabled %d\nsaves %ld\nskips %llu\n",
                         Shared().panelOpen.load() ? 1 : 0, drawn ? 1 : 0, Shared().enabled.load() ? 1 : 0,
-                        UiSettingsSavesWritten());
+                        UiSettingsSavesWritten(), PresentHookGetCounters().concurrentSkips);
     used += PanelAppendTestState(text + used, static_cast<int>(sizeof(text)) - used);
     if (drawn) {
         ImGuiContext& g = *ImGui::GetCurrentContext();

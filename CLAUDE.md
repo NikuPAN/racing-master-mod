@@ -295,6 +295,13 @@ Details and the reasons: `docs/agent-notes/integration.md`.
 - `__try/__except` guards the per-frame code; keep C++ objects with destructors out of
   `GuardedOnFrame` (C2712). After a fault the mod releases `FrameRefs`, writes one log line
   (exception code, module, offset) and stays off until the game restarts. It does not retry.
+- **One thread at a time in the per-frame work** (0.3.1): `FrameWork` in `present_hook.cpp`
+  takes `g_frameBusy` with one interlocked compare-exchange; a present that finds it taken
+  (another thread is drawing) is counted in `concurrentSkips` and goes straight to the original
+  Present. Never a waiting lock there. Reason: with NVIDIA Smooth Motion on, the owner's game run
+  saw 120 presents/s and the driver may present from its own threads; ImGui, the panel's globals
+  and the context state swap assume one thread. The worker logs the first skip once and adds
+  the count to the 30 s "running" line; run 45 presents from two threads at once.
 - `PatchSlot` (`vtable_patch.cpp`) publishes the original pointer **before** switching the table
   entry. Every later hook goes through it; do not inline a table write elsewhere.
 - Any delay-loaded function the frame thread or the window thread calls must be resolved on the

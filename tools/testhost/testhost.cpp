@@ -31,6 +31,7 @@
 #include <windows.h>
 
 #include <d3d11.h>
+#include <d3d11_4.h>
 #include <d3dcompiler.h>
 #include <dxgi1_2.h>
 #include <wincodec.h>
@@ -1726,6 +1727,61 @@ void ScriptPanelOff(Host& host) {
               g_gotLDown.load() == lDown + 1);
 }
 
+// Two threads presenting the same swap chain at the same time, as NVIDIA Smooth Motion may do in
+// the game. The device is made multithread-protected (each context call is then atomic, as a
+// driver's own presents would need), and during the overlap neither thread touches the context
+// itself: only the mod draws. The mod must let one thread draw at a time and pass the other
+// straight on (counted as "skips" in the layout file), with no fault and no ImGui assertion.
+struct SecondPresenter {
+    Host* host;
+    volatile LONG stop;
+    volatile LONG presents;
+};
+
+DWORD WINAPI SecondPresenterThread(LPVOID param) {
+    auto* job = static_cast<SecondPresenter*>(param);
+    while (!job->stop) {
+        job->host->chain->Present(0, 0);
+        InterlockedIncrement(&job->presents);
+    }
+    return 0;
+}
+
+void ScriptConcurrent(Host& host) {
+    const bool ready = WaitLayout(host, [](const LayoutFile& l) { return l.Int("drawn") == 1 && l.Has("next"); });
+    Check("K0 the panel is drawn before the second thread starts", ready);
+    if (!ready) return;
+    ID3D11Multithread* protect = nullptr;
+    if (SUCCEEDED(host.context->QueryInterface(__uuidof(ID3D11Multithread), reinterpret_cast<void**>(&protect)))) {
+        protect->SetMultithreadProtected(TRUE);
+        protect->Release();
+    }
+    SecondPresenter job = {&host, 0, 0};
+    const HANDLE thread = CreateThread(nullptr, 0, SecondPresenterThread, &job, 0, nullptr);
+    LONG mine = 0;
+    const ULONGLONG start = GetTickCount64();
+    while (GetTickCount64() - start < 4000) {
+        host.chain->Present(0, 0);
+        ++mine;
+        if (GetTickCount64() - start >= 1500 && ReadLayout().Int("skips", 0) > 0) break;
+    }
+    InterlockedExchange(&job.stop, 1);
+    if (thread) {
+        WaitForSingleObject(thread, INFINITE);
+        CloseHandle(thread);
+    }
+    Pump(host, 10);
+    const LayoutFile after = ReadLayout();
+    printf("  presents: %ld from this thread, %ld from the second; %d passed on while the other was drawing\n", mine,
+           job.presents, after.Int("skips", 0));
+    Check("K1 both threads presented at the same time and the mod passed the overlapping ones straight on",
+          thread != nullptr && job.presents > 0 && after.Int("skips", 0) > 0);
+    Check("K1 the worker logged it once, in plain words",
+          WaitForModLog(host, "frames are being shown from two threads at the same moment", 3000));
+    MoveAway(host);
+    CheckShot("K2 the panel is still drawn afterwards", Shoot(host, "concurrent"), true);
+}
+
 void RunPanel(Host& host, const char* outputFolder, int seconds, const char* script, const char* name) {
     host.chain = CreateChain(host, host.window, kGameLayout);
     if (!host.chain || !AcquireBackBuffer(host) || !CreateGameState(host)) {
@@ -1751,6 +1807,7 @@ void RunPanel(Host& host, const char* outputFolder, int seconds, const char* scr
         else if (what == "integrated") ScriptIntegrated(host);
         else if (what == "other-real") ScriptOtherReal(host);
         else if (what == "panel-off") ScriptPanelOff(host);
+        else if (what == "concurrent") ScriptConcurrent(host);
         else Check("known panel script", false);
     }
     printf("  game pipeline state checked after %d presents, %d differed\n", g_stateChecks, g_stateFailures);

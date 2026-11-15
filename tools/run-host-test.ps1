@@ -68,6 +68,8 @@
 #  43-44. panel switched off       a fault in the window procedure, then a Dear ImGui assertion (both
 #                                  at the first F12): the panel closes, the game gets every key and
 #                                  click, and the worker pauses the song that was playing
+#  45. two threads presenting      the same swap chain from two threads at once (as NVIDIA Smooth
+#                                  Motion may): one draws, the other is passed on and counted
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
@@ -614,6 +616,11 @@ try {
     Record 'window procedure fault: the frame code did not switch off (no fault line)' (-not $panelRun.Log.Contains('frame code failed'))
     $panelRun = Invoke-PanelRun '44. panel off after a Dear ImGui assertion' 'panel-off' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_TEST_PANEL_OFF = 'assert' } @() $songs $true
     Record 'ImGui assertion: the worker paused the music, once' (([regex]::Matches($panelRun.Log, 'music: paused, because')).Count -eq 1 -and $panelRun.Log.Contains('music: paused, because the music panel has switched itself off after an error'))
+
+    # 45. Two threads presenting the same swap chain at once (NVIDIA Smooth Motion may do this in
+    # the game): one draws, the other passes straight on; no fault, no ImGui assertion.
+    $panelRun = Invoke-PanelRun '45. presents from two threads at once' 'concurrent' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'en' } @()
+    Record 'two threads at once: the log says frames came from two threads at the same moment, and nothing failed' ($panelRun.Log.Contains('frames are being shown from two threads at the same moment') -and -not $panelRun.Log.Contains('frame code failed'))
 
     Write-Host ''
     Write-Host 'Summary'
