@@ -1,201 +1,6 @@
 # Racing Master Mod
 
-[English](#english) · [繁體中文](#繁體中文)
-
----
-
-## English
-
-An unofficial, free mod for the PC version of **Racing Master** (巔峰極速, NetEase) that adds an in-game **music panel**: play your own songs while you race, or control Spotify, a browser or another music app, without leaving the game. It is a fan project and has no connection to NetEase, Codemasters or NVIDIA.
-
-### What this mod does to your game — and what it never does
-
-The whole mod is open source, so every line below can be checked in the code.
-
-**What it does**
-
-- Adds one file, `version.dll`, to the game folder. Removing it is just deleting that file.
-- Draws the music panel on top of the game, at the same point in Windows that the Steam, Discord and OBS overlays use.
-- In the clickable mode, it sits in front of the game window's messages so it can see your clicks and key presses on the panel, and passes every other message straight to the game untouched. (The lighter "minimal" mode skips this and uses global hotkeys instead.)
-- Plays your music from its own threads through Windows' normal sound output.
-- Reads and writes only its own files, in `%LOCALAPPDATA%\RacingMasterMod` (your song list, settings and log).
-
-**What it never does**
-
-- Change, move or delete any game file.
-- Read or write the game's memory.
-- Send anything over the internet — it never phones home and never auto-updates.
-- Change how your car drives, your lap times, or anything that affects a race.
-- Hide itself from, or interfere with, the anti-cheat.
-
-None of this makes the mod officially allowed — please read the next part — but it is the whole of what the mod touches.
-
-### Before you start: please read
-
-- **This is not allowed by the game, and your account could be banned.** Racing Master is an online game with anti-cheat. The mod puts an extra file into the game folder that the game loads. The mod does not change how the game plays, your car, the network or any game file, but the anti-cheat cannot tell that, and NetEase can treat any added file as breaking its terms of use.
-- **Try every new version on a spare account first,** never on the account you care about. A ban can arrive days or weeks after you used the mod, so "nothing happened" today does not mean it is safe.
-- **You use it at your own risk.** The mod comes without any guarantee (see the MIT licence). If something goes wrong with your game, your PC or your account, the authors are not responsible.
-- **A game update can stop it working.** If that happens, remove it (below) until a new version is out.
-- The mod will never try to hide from the anti-cheat. If the game blocks it, that is the end of it.
-
-### What you need
-
-- Windows 10 or 11 (64-bit)
-- Racing Master for PC (tested with the Hong Kong, Macau and Taiwan client)
-
-### Install, step by step
-
-1. **Download.** On this project's GitHub page, open **Releases** (on the right), pick the newest **Music panel** release and download the `.zip` file under **Assets**.
-2. **Unzip.** In your Downloads folder, right-click the `.zip` file and choose **Extract All…**, then **Extract**. A folder opens with `version.dll` in it.
-3. **Close the game** and its launcher completely.
-4. **Find the game folder.** Right-click your Racing Master shortcut, choose **Open file location**, then open `Binaries`, then `Win64`. You are in the right place when you see a file called `g112-Win64-Shipping`. With the normal install this is `C:\Program Files (x86)\g112\Binaries\Win64`.
-5. **Copy the file in.** Drag `version.dll` from the unzipped folder into the `Win64` folder. Windows asks for permission because it is a program folder: click **Continue**. If Windows says a file with that name already exists (an older version of this mod), choose **Replace the file**.
-6. **Start the game** the way you always do. After a few seconds a short note at the bottom of the screen says the music panel is ready. Press **Insert** to open it.
-
-To hear only your own music, use the panel's **Game music** button, or switch off the music in the game's own sound settings.
-
-### Remove
-
-Close the game, open the same `Win64` folder (step 4) and delete `version.dll`. That is all: nothing else in the game folder was changed. Your song list and settings are kept in `%LOCALAPPDATA%\RacingMasterMod\` (paste that into the File Explorer address bar); delete that folder too if you want them gone.
-
-### Something's not right?
-
-- **No note and Insert does nothing:** check the file is called exactly `version.dll` (not `version (1).dll`) and sits next to `g112-Win64-Shipping`. Windows may hide the `.dll` ending; that is fine as long as the name is `version`.
-- **The panel blinks:** NVIDIA Smooth Motion is on for the game. Turn it off for Racing Master in the NVIDIA app.
-- **Anything else:** open `%LOCALAPPDATA%\RacingMasterMod\` and send the file `mod.log` (and the one before it, `mod.<date>-<time>.log`) with your report. It lists your own songs' file names and folder paths (which include your Windows user name), and never what other apps are playing.
-
-### Status
-
-Version 0.3.2. The music panel has run in the game on a test account (0.3.0); 0.3.1 and 0.3.2 fix and add what those runs showed: the song and its place are saved when you close the game, six places for the panel along the screen edges, a compact one-row panel, times that are never cut off, other apps shown by plain names, a Clear list button, and a button for the game's own music. Each version is tried in the game on a spare account before it is released.
-
-A separate DLSS plugin is being investigated. It will be its own download; the music panel does not need it.
-
-### The music panel
-
-Press **Insert** to show or hide the panel. It sits at the bottom centre of the screen as a compact bar: where the music comes from and what is playing, the buttons, the volume and the time line. **Show list** opens the song list above the bar. In **Settings** you can move it to any of six places: the four corners, the top centre or the bottom centre. Wherever it sits, it touches the edge of the screen, so it covers as little of the game as it can. Clicks on the panel stay on the panel; clicks anywhere else go to the game as usual, so you can keep driving with the panel open.
-
-**Compact panel.** When even the bar is too big, the button with two arrows pointing inward (next to **Settings**) shrinks the panel to one row: previous, play or pause, next, the song, the time and a short time line. The button at the right end of that row (arrows pointing outward) brings the full panel back, and so does **Compact panel** in **Settings**. The panel remembers which one you used last. Volume, repeat, the song list and the settings are only in the full panel.
-
-Keys that work while racing, with the panel open or closed:
-
-| Key | Does |
-|---|---|
-| Insert | show or hide the panel |
-| F5 | stop |
-| F6 | previous song (restarts the song when more than 3 seconds have played) |
-| F7 | play or pause |
-| F8 | next song |
-| F9 | what repeats: off, this song, the whole list |
-
-The keyboard's own media keys also work for your own songs. Every key can be changed in the settings file (see below).
-
-Two sources, chosen with the two buttons at the left of the bar:
-
-- **My files**: your own songs, played inside the game. Use **Add files** or **Add folder** in the list, or copy songs into the music folder (below). Click a song to play it; the cross at the end of a row takes it off the list (the file stays on your computer). The list, the volume and what repeats are remembered for next time. Nothing starts playing by itself when the game starts.
-- **Other app**: controls whatever Windows reports as playing music, for example Spotify or a browser. The panel shows what that app allows; buttons it does not allow are greyed out, and resting the pointer on one says why. **Not yet tried in the game.** The game runs with administrator rights, and whether Windows lets it see and control other apps from there is still unknown.
-
-**Settings** in the bar opens a row with the language (follow Windows, English or Traditional Chinese), the text size, where the panel sits (six places along the top and bottom edges), and whether your own songs pause while the game is not the active window.
-
-When you use **Add files** or **Add folder**, a normal Windows file window opens over the game, and the game does not react to keys or the mouse until you close it. In exclusive full screen these two buttons are greyed out, because the file window would minimise the game; use the music folder instead, or switch the game to windowed or borderless.
-
-**Game music** in the bar switches the game's own music off or on for this session; engine sounds, effects and voices keep playing. You can also have the mod switch the game's music off every time the game starts (`mute_game_music=1` in the settings file, or **Turn the game's music off when the game starts** in **Settings**); this is off by default, so out of the box the mod calls nothing in the game until you press the button. The game's own music setting is never changed. If a game update removes what this needs, the button is greyed out and says so; use the music switch in the game's sound settings instead.
-
-### The music folder
-
-```
-%LOCALAPPDATA%\RacingMasterMod\music
-```
-
-Paste that path into the File Explorer address bar. Songs you copy into this folder (sub-folders included) are added to the list every time the game starts. The full path is also written in the log file.
-
-### Supported formats
-
-MP3, FLAC, WAV, OGG Vorbis (`.ogg`, `.oga`), Opus (`.opus`) and M4A (`.m4a` with AAC or Apple Lossless, and `.aac`). Songs play one after another without a gap. A file that cannot be played stays in the list, greyed out, with the reason.
-
-- M4A uses Windows' own Media Foundation. Windows "N" editions do not include it until the Media Feature Pack is installed; the other formats work without it.
-- `.webm` files (often what video sites give you) are not supported. Convert them to `.opus` first; the sound stays the same.
-
-### Log file
-
-The mod writes what it did to
-
-```
-%LOCALAPPDATA%\RacingMasterMod\mod.log
-```
-
-Paste that path into the File Explorer address bar to open it. Earlier runs are kept next to it as `mod.<date>-<time>.log` (the newest five). If two copies of the game run at once, the second writes `mod.<process id>.log`. Please attach the current log and the one before it when you report a problem. The log never contains song titles or artists from other apps.
-
-### Settings
-
-Optional. Create a text file named `settings.ini` in `%LOCALAPPDATA%\RacingMasterMod\` (the folder that holds the log; no administrator permission needed). Do not put it in the game folder: a `settings.ini` next to `version.dll` is ignored, and the log says so.
-
-```ini
-[mod]
-; 0 = switched off, 1 = load and write the log only, 2 = full mod (default)
-stage=2
-; a white test square in the top-left corner for this many seconds (0 to 600; 0, the default, shows none)
-marker_seconds=0
-
-[panel]
-; on = the full panel (default); display = shown but cannot be clicked, no keys; off = no panel and no music
-mode=on
-; auto (follow Windows), en or zh-TW
-language=auto
-; small, medium or large
-text_size=medium
-; 1 = your own songs pause while the game is not the active window
-pause_when_unfocused=0
-; my_files or other_app
-source=my_files
-; top-left, top-centre, top-right, bottom-left, bottom-centre (default) or bottom-right
-corner=bottom-centre
-; 1 = the compact panel (one row); 0 = the full panel
-compact=0
-; 1 = turn the game's own music off when the game starts; 0 (default) = leave it
-; (the game's own music setting is never changed; the panel's Game music button works either way)
-mute_game_music=0
-
-[keys]
-; a key name such as Insert, F7 or Home, with Ctrl+, Shift+ or Alt+ in front if you like; none = no key
-panel=Insert
-stop=F5
-previous=F6
-play_pause=F7
-next=F8
-loop=F9
-; 1 = the keyboard's media keys control your own songs
-media_keys=1
-```
-
-`mode=display` is meant for a first careful try: the panel is drawn but takes no clicks or keys, and the game window is left alone. The panel writes its own changes (language, text size, pausing, source, position, compact or full) back into this file, and the music player keeps its own `[music]` section there; leave both as they are.
-
-A file named `racing-master-mod.ini` next to `version.dll` is read as well and overrides it. Save either file as UTF-8 (with or without a byte order mark) or as the UTF-16 that Notepad calls "Unicode". If a `[mod]` value cannot be read, the mod switches itself off and the log says which line and what to write; a `[panel]` or `[keys]` value that cannot be read keeps its default, and the log says why.
-
-### How it works
-
-- Windows looks for `version.dll` in the game's own folder before the system folder. The mod's file takes that name, passes every one of the 17 real `version.dll` functions straight through to Windows, and additionally starts the mod.
-- The mod only wakes up inside `g112-Win64-Shipping.exe`. In any other program that happens to load it, it does nothing but forward.
-- To draw, it attaches to the function Direct3D uses to show a finished frame. Steam, Discord and OBS overlays attach in the same place. To see the panel's clicks and keys, it watches the game window's messages and passes everything not meant for the panel on to the game.
-- The music plays from the mod's own threads through Windows' default sound output, and follows it when you switch the default device.
-- For the **Game music** button it calls the game's own sound engine (Wwise) through a function the game itself makes public by name.
-- No game file is edited and no game memory is patched.
-
-### Build from source
-
-Needs Visual Studio 2022 or newer with the C++ compiler. The Windows SDK and the libraries the mod uses are downloaded automatically into `.deps\`, each checked against a fixed checksum.
-
-```powershell
-powershell -ExecutionPolicy Bypass -File build\build.ps1      # builds out\version.dll
-powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1   # checks it without the game
-```
-
-The second command runs the DLL inside small test programs with windows that are never shown and a sound output that plays nothing, so nothing appears on screen and nothing is heard.
-
-### Licence
-
-MIT. See [LICENSE](LICENSE).
-
-The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vorbis, libogg, opus and opusfile. Their licences, and the notices that ship with every release, are in [THIRD_PARTY.md](THIRD_PARTY.md).
+[繁體中文](#繁體中文) · [English](#english)
 
 ---
 
@@ -393,3 +198,198 @@ powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1   # 不開遊�
 MIT，見 [LICENSE](LICENSE)。
 
 面板用 Dear ImGui 繪製，音樂播放器用到 miniaudio、stb_vorbis、libogg、opus 和 opusfile。這些函式庫的授權，以及每次發行都要附上的聲明，都在 [THIRD_PARTY.md](THIRD_PARTY.md)。
+
+---
+
+## English
+
+An unofficial, free mod for the PC version of **Racing Master** (巔峰極速, NetEase) that adds an in-game **music panel**: play your own songs while you race, or control Spotify, a browser or another music app, without leaving the game. It is a fan project and has no connection to NetEase, Codemasters or NVIDIA.
+
+### What this mod does to your game — and what it never does
+
+The whole mod is open source, so every line below can be checked in the code.
+
+**What it does**
+
+- Adds one file, `version.dll`, to the game folder. Removing it is just deleting that file.
+- Draws the music panel on top of the game, at the same point in Windows that the Steam, Discord and OBS overlays use.
+- In the clickable mode, it sits in front of the game window's messages so it can see your clicks and key presses on the panel, and passes every other message straight to the game untouched. (The lighter "minimal" mode skips this and uses global hotkeys instead.)
+- Plays your music from its own threads through Windows' normal sound output.
+- Reads and writes only its own files, in `%LOCALAPPDATA%\RacingMasterMod` (your song list, settings and log).
+
+**What it never does**
+
+- Change, move or delete any game file.
+- Read or write the game's memory.
+- Send anything over the internet — it never phones home and never auto-updates.
+- Change how your car drives, your lap times, or anything that affects a race.
+- Hide itself from, or interfere with, the anti-cheat.
+
+None of this makes the mod officially allowed — please read the next part — but it is the whole of what the mod touches.
+
+### Before you start: please read
+
+- **This is not allowed by the game, and your account could be banned.** Racing Master is an online game with anti-cheat. The mod puts an extra file into the game folder that the game loads. The mod does not change how the game plays, your car, the network or any game file, but the anti-cheat cannot tell that, and NetEase can treat any added file as breaking its terms of use.
+- **Try every new version on a spare account first,** never on the account you care about. A ban can arrive days or weeks after you used the mod, so "nothing happened" today does not mean it is safe.
+- **You use it at your own risk.** The mod comes without any guarantee (see the MIT licence). If something goes wrong with your game, your PC or your account, the authors are not responsible.
+- **A game update can stop it working.** If that happens, remove it (below) until a new version is out.
+- The mod will never try to hide from the anti-cheat. If the game blocks it, that is the end of it.
+
+### What you need
+
+- Windows 10 or 11 (64-bit)
+- Racing Master for PC (tested with the Hong Kong, Macau and Taiwan client)
+
+### Install, step by step
+
+1. **Download.** On this project's GitHub page, open **Releases** (on the right), pick the newest **Music panel** release and download the `.zip` file under **Assets**.
+2. **Unzip.** In your Downloads folder, right-click the `.zip` file and choose **Extract All…**, then **Extract**. A folder opens with `version.dll` in it.
+3. **Close the game** and its launcher completely.
+4. **Find the game folder.** Right-click your Racing Master shortcut, choose **Open file location**, then open `Binaries`, then `Win64`. You are in the right place when you see a file called `g112-Win64-Shipping`. With the normal install this is `C:\Program Files (x86)\g112\Binaries\Win64`.
+5. **Copy the file in.** Drag `version.dll` from the unzipped folder into the `Win64` folder. Windows asks for permission because it is a program folder: click **Continue**. If Windows says a file with that name already exists (an older version of this mod), choose **Replace the file**.
+6. **Start the game** the way you always do. After a few seconds a short note at the bottom of the screen says the music panel is ready. Press **Insert** to open it.
+
+To hear only your own music, use the panel's **Game music** button, or switch off the music in the game's own sound settings.
+
+### Remove
+
+Close the game, open the same `Win64` folder (step 4) and delete `version.dll`. That is all: nothing else in the game folder was changed. Your song list and settings are kept in `%LOCALAPPDATA%\RacingMasterMod\` (paste that into the File Explorer address bar); delete that folder too if you want them gone.
+
+### Something's not right?
+
+- **No note and Insert does nothing:** check the file is called exactly `version.dll` (not `version (1).dll`) and sits next to `g112-Win64-Shipping`. Windows may hide the `.dll` ending; that is fine as long as the name is `version`.
+- **The panel blinks:** NVIDIA Smooth Motion is on for the game. Turn it off for Racing Master in the NVIDIA app.
+- **Anything else:** open `%LOCALAPPDATA%\RacingMasterMod\` and send the file `mod.log` (and the one before it, `mod.<date>-<time>.log`) with your report. It lists your own songs' file names and folder paths (which include your Windows user name), and never what other apps are playing.
+
+### Status
+
+Version 0.3.2. The music panel has run in the game on a test account (0.3.0); 0.3.1 and 0.3.2 fix and add what those runs showed: the song and its place are saved when you close the game, six places for the panel along the screen edges, a compact one-row panel, times that are never cut off, other apps shown by plain names, a Clear list button, and a button for the game's own music. Each version is tried in the game on a spare account before it is released.
+
+A separate DLSS plugin is being investigated. It will be its own download; the music panel does not need it.
+
+### The music panel
+
+Press **Insert** to show or hide the panel. It sits at the bottom centre of the screen as a compact bar: where the music comes from and what is playing, the buttons, the volume and the time line. **Show list** opens the song list above the bar. In **Settings** you can move it to any of six places: the four corners, the top centre or the bottom centre. Wherever it sits, it touches the edge of the screen, so it covers as little of the game as it can. Clicks on the panel stay on the panel; clicks anywhere else go to the game as usual, so you can keep driving with the panel open.
+
+**Compact panel.** When even the bar is too big, the button with two arrows pointing inward (next to **Settings**) shrinks the panel to one row: previous, play or pause, next, the song, the time and a short time line. The button at the right end of that row (arrows pointing outward) brings the full panel back, and so does **Compact panel** in **Settings**. The panel remembers which one you used last. Volume, repeat, the song list and the settings are only in the full panel.
+
+Keys that work while racing, with the panel open or closed:
+
+| Key | Does |
+|---|---|
+| Insert | show or hide the panel |
+| F5 | stop |
+| F6 | previous song (restarts the song when more than 3 seconds have played) |
+| F7 | play or pause |
+| F8 | next song |
+| F9 | what repeats: off, this song, the whole list |
+
+The keyboard's own media keys also work for your own songs. Every key can be changed in the settings file (see below).
+
+Two sources, chosen with the two buttons at the left of the bar:
+
+- **My files**: your own songs, played inside the game. Use **Add files** or **Add folder** in the list, or copy songs into the music folder (below). Click a song to play it; the cross at the end of a row takes it off the list (the file stays on your computer). The list, the volume and what repeats are remembered for next time. Nothing starts playing by itself when the game starts.
+- **Other app**: controls whatever Windows reports as playing music, for example Spotify or a browser. The panel shows what that app allows; buttons it does not allow are greyed out, and resting the pointer on one says why. **Not yet tried in the game.** The game runs with administrator rights, and whether Windows lets it see and control other apps from there is still unknown.
+
+**Settings** in the bar opens a row with the language (follow Windows, English or Traditional Chinese), the text size, where the panel sits (six places along the top and bottom edges), and whether your own songs pause while the game is not the active window.
+
+When you use **Add files** or **Add folder**, a normal Windows file window opens over the game, and the game does not react to keys or the mouse until you close it. In exclusive full screen these two buttons are greyed out, because the file window would minimise the game; use the music folder instead, or switch the game to windowed or borderless.
+
+**Game music** in the bar switches the game's own music off or on for this session; engine sounds, effects and voices keep playing. You can also have the mod switch the game's music off every time the game starts (`mute_game_music=1` in the settings file, or **Turn the game's music off when the game starts** in **Settings**); this is off by default, so out of the box the mod calls nothing in the game until you press the button. The game's own music setting is never changed. If a game update removes what this needs, the button is greyed out and says so; use the music switch in the game's sound settings instead.
+
+### The music folder
+
+```
+%LOCALAPPDATA%\RacingMasterMod\music
+```
+
+Paste that path into the File Explorer address bar. Songs you copy into this folder (sub-folders included) are added to the list every time the game starts. The full path is also written in the log file.
+
+### Supported formats
+
+MP3, FLAC, WAV, OGG Vorbis (`.ogg`, `.oga`), Opus (`.opus`) and M4A (`.m4a` with AAC or Apple Lossless, and `.aac`). Songs play one after another without a gap. A file that cannot be played stays in the list, greyed out, with the reason.
+
+- M4A uses Windows' own Media Foundation. Windows "N" editions do not include it until the Media Feature Pack is installed; the other formats work without it.
+- `.webm` files (often what video sites give you) are not supported. Convert them to `.opus` first; the sound stays the same.
+
+### Log file
+
+The mod writes what it did to
+
+```
+%LOCALAPPDATA%\RacingMasterMod\mod.log
+```
+
+Paste that path into the File Explorer address bar to open it. Earlier runs are kept next to it as `mod.<date>-<time>.log` (the newest five). If two copies of the game run at once, the second writes `mod.<process id>.log`. Please attach the current log and the one before it when you report a problem. The log never contains song titles or artists from other apps.
+
+### Settings
+
+Optional. Create a text file named `settings.ini` in `%LOCALAPPDATA%\RacingMasterMod\` (the folder that holds the log; no administrator permission needed). Do not put it in the game folder: a `settings.ini` next to `version.dll` is ignored, and the log says so.
+
+```ini
+[mod]
+; 0 = switched off, 1 = load and write the log only, 2 = full mod (default)
+stage=2
+; a white test square in the top-left corner for this many seconds (0 to 600; 0, the default, shows none)
+marker_seconds=0
+
+[panel]
+; on = the full panel (default); display = shown but cannot be clicked, no keys; off = no panel and no music
+mode=on
+; auto (follow Windows), en or zh-TW
+language=auto
+; small, medium or large
+text_size=medium
+; 1 = your own songs pause while the game is not the active window
+pause_when_unfocused=0
+; my_files or other_app
+source=my_files
+; top-left, top-centre, top-right, bottom-left, bottom-centre (default) or bottom-right
+corner=bottom-centre
+; 1 = the compact panel (one row); 0 = the full panel
+compact=0
+; 1 = turn the game's own music off when the game starts; 0 (default) = leave it
+; (the game's own music setting is never changed; the panel's Game music button works either way)
+mute_game_music=0
+
+[keys]
+; a key name such as Insert, F7 or Home, with Ctrl+, Shift+ or Alt+ in front if you like; none = no key
+panel=Insert
+stop=F5
+previous=F6
+play_pause=F7
+next=F8
+loop=F9
+; 1 = the keyboard's media keys control your own songs
+media_keys=1
+```
+
+`mode=display` is meant for a first careful try: the panel is drawn but takes no clicks or keys, and the game window is left alone. The panel writes its own changes (language, text size, pausing, source, position, compact or full) back into this file, and the music player keeps its own `[music]` section there; leave both as they are.
+
+A file named `racing-master-mod.ini` next to `version.dll` is read as well and overrides it. Save either file as UTF-8 (with or without a byte order mark) or as the UTF-16 that Notepad calls "Unicode". If a `[mod]` value cannot be read, the mod switches itself off and the log says which line and what to write; a `[panel]` or `[keys]` value that cannot be read keeps its default, and the log says why.
+
+### How it works
+
+- Windows looks for `version.dll` in the game's own folder before the system folder. The mod's file takes that name, passes every one of the 17 real `version.dll` functions straight through to Windows, and additionally starts the mod.
+- The mod only wakes up inside `g112-Win64-Shipping.exe`. In any other program that happens to load it, it does nothing but forward.
+- To draw, it attaches to the function Direct3D uses to show a finished frame. Steam, Discord and OBS overlays attach in the same place. To see the panel's clicks and keys, it watches the game window's messages and passes everything not meant for the panel on to the game.
+- The music plays from the mod's own threads through Windows' default sound output, and follows it when you switch the default device.
+- For the **Game music** button it calls the game's own sound engine (Wwise) through a function the game itself makes public by name.
+- No game file is edited and no game memory is patched.
+
+### Build from source
+
+Needs Visual Studio 2022 or newer with the C++ compiler. The Windows SDK and the libraries the mod uses are downloaded automatically into `.deps\`, each checked against a fixed checksum.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File build\build.ps1      # builds out\version.dll
+powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1   # checks it without the game
+```
+
+The second command runs the DLL inside small test programs with windows that are never shown and a sound output that plays nothing, so nothing appears on screen and nothing is heard.
+
+### Licence
+
+MIT. See [LICENSE](LICENSE).
+
+The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vorbis, libogg, opus and opusfile. Their licences, and the notices that ship with every release, are in [THIRD_PARTY.md](THIRD_PARTY.md).
