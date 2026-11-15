@@ -41,6 +41,15 @@ The owner's choices, made with the trade-offs in front of them:
     centre, top right, bottom left, bottom centre (default), bottom right. The bar's outer edge
     touches the window's edge (no 16-50 px margin); at the centre places only the top or bottom
     edge is flush and the bar is centred. No dragging.
+15. **A compact panel** (2026-11-15, for 0.3.2): one row for tight spaces (the strip under the
+    game's bottom tabs at bottom centre, about 970 x 70 px at 2558x1360, small and medium text):
+    previous, play/pause, next, the song (cut off with "...", never wrapped), elapsed, a short time
+    line (seekable when the source allows), length, and a button back to the full panel. Volume,
+    repeat, source, list and settings live only in the full panel, which gets a matching button.
+    The choice is remembered (`[panel] compact=`) and is also in Settings. Insert shows and hides
+    whichever is chosen; F5-F9 unchanged. One window.
+16. **The bar never moves** (2026-11-15, for 0.3.2): the panel is two windows, the bar alone and
+    the list/settings/status lines beside it, so nothing appearing next to the bar moves it.
 
 Conditions I attached and the owner accepted by choosing option 2:
 

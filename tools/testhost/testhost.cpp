@@ -1248,6 +1248,17 @@ bool PanelReady(Host& host, int seconds) {
 
 bool ChoosePosition(Host& host, int listIndex);
 
+// The owner's target for the compact panel: the strip under the game's bottom tabs, about 970 x 70
+// px at 2558x1360, with small and medium text. Large text is reported, not required.
+void CheckCompactFits(const LayoutFile& l) {
+    const LONG w = l.bar.right - l.bar.left, h = l.bar.bottom - l.bar.top;
+    const int size = l.Int("textsize");
+    printf("  compact panel: %ldx%ld px at %dx%d, text size %d\n", w, h, l.displayWidth, l.displayHeight, size);
+    if (l.displayWidth == 2558 && l.displayHeight == 1360 && size <= 1) {
+        Check("K6 the compact panel fits 970 x 70 px at 2558x1360 (small or medium text)", l.hasBar && w <= 970 && h <= 70);
+    }
+}
+
 void ScriptShots(Host& host, const std::string& prefix) {
     const bool ready = WaitLayout(
         host, [](const LayoutFile& l) { return l.Int("drawn") == 1 && l.Has("list") && SongsReady(l); }, 10000);
@@ -1355,9 +1366,46 @@ void ScriptShots(Host& host, const std::string& prefix) {
         l = ReadLayout();
         Check(("P4 " + std::string(kPositionNames[i]) + ": the bar alone is flush there too, and its times fit").c_str(),
               BarPlaced(l, corner) && PanelOnScreen(l) && TimeRowOk(l, "seek"));
+
+        // The compact panel at the same place, through the full panel's button and back.
+        Click(host, Item("compact"));
+        const bool compact = WaitLayout(host, [](const LayoutFile& c) { return c.Int("compact") == 1 && c.Has("expand") && c.Has("title"); });
+        Pump(host, 4);
+        MoveAway(host);
+        CheckShot(("K1 " + std::string(kPositionNames[i]) + " compact").c_str(),
+                  Shoot(host, (prefix + "-" + kPositionNames[i] + "-compact").c_str()), true);
+        l = ReadLayout();
+        PrintBar("compact");
+        Check(("K2 " + std::string(kPositionNames[i]) + ": the compact panel is one window, flush at the same place, its "
+               "times fit and share the seek line's centre")
+                  .c_str(),
+              compact && l.windows.size() == 1 && BarPlaced(l, corner) && PanelOnScreen(l) && TimeRowOk(l, "seek") &&
+                  !l.Has("volume") && !l.Has("loop") && !l.Has("list") && !l.Has("settings"));
+        if (i == 0) CheckCompactFits(l);
+        Click(host, Item("expand"));
+        Check(("K3 " + std::string(kPositionNames[i]) + ": the expand button brings the full panel back").c_str(),
+              WaitLayout(host, [](const LayoutFile& c) { return c.Int("compact") == 0 && c.Has("list"); }));
     }
     ChoosePosition(host, 4);   // back to bottom centre
     Click(host, Item("settings"));
+
+    // The compact panel with the other app (the example plays 24:25 of a 1:12:30 video).
+    Click(host, Item("source_other_app"));
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("source") == 1; });
+    Click(host, Item("compact"));
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("compact") == 1 && l.Has("progress"); });
+    Pump(host, 4);
+    MoveAway(host);
+    CheckShot("K4 compact, Other app", Shoot(host, (prefix + "-compact-other-app").c_str()), true);
+    const LayoutFile other = ReadLayout();
+    Check("K5 compact, Other app at 24:25 of 1:12:30: neither time is cut off, both on the progress line's centre, flush "
+          "at the bottom centre",
+          TimeRowOk(other, "progress") && BarPlaced(other, kCornerBottomCentre));
+    CheckCompactFits(other);
+    Click(host, Item("expand"));
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("compact") == 0; });
+    Click(host, Item("source_my_files"));
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("source") == 0; });
 }
 
 // Opens the settings row (if it is not open) and picks the place at `listIndex` of the Position
@@ -1728,6 +1776,42 @@ void ScriptInput(Host& host) {
     Check("I17 with My files chosen the media key Next is the panel's",
           WaitLayout(host, [&](const LayoutFile& l) { return l.Int("index") == (index + 1) % tracksNow; }) &&
               g_gotKeyDown[VK_MEDIA_NEXT_TRACK].load() == mediaDown + 1);
+
+    // The compact panel: its button, remembered in settings.ini, Insert shows and hides it (it
+    // stays compact), its buttons work, and the full panel comes back with the expand button or
+    // with "Compact panel" in the settings row.
+    long compactSaves = ReadLayout().Int("saves");
+    Click(host, Item("compact"));
+    ok = WaitLayout(host, [&](const LayoutFile& l) { return l.Int("compact") == 1 && l.Int("saves") > compactSaves && l.Has("expand"); });
+    std::string compactIni = ReadWholeFile(ModFolder() + L"\\settings.ini");
+    Check("I24 the compact button makes the panel one row and saves compact=1",
+          ok && compactIni.find("compact=1") != std::string::npos);
+    index = ReadLayout().Int("index");
+    const int compactTracks = ReadLayout().Int("tracks");
+    Click(host, Item("next"));
+    Check("I24 the compact panel's Next plays the next song",
+          WaitLayout(host, [&](const LayoutFile& l) { return l.Int("index") == (index + 1) % compactTracks; }));
+    Key(host, VK_INSERT);
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 0; });
+    Key(host, VK_INSERT);
+    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 1 && l.Int("compact") == 1 && l.Has("expand"); });
+    Check("I24 Insert hides and shows the compact panel, which stays compact", ok);
+    compactSaves = ReadLayout().Int("saves");
+    Click(host, Item("expand"));
+    ok = WaitLayout(host, [&](const LayoutFile& l) { return l.Int("compact") == 0 && l.Int("saves") > compactSaves && l.Has("list"); });
+    compactIni = ReadWholeFile(ModFolder() + L"\\settings.ini");
+    Check("I24 the expand button brings the full panel back and saves compact=0",
+          ok && compactIni.find("compact=0") != std::string::npos);
+    Click(host, Item("settings"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("settings") == 1 && l.Has("compact_setting"); });
+    Pump(host, 4);
+    Click(host, Item("compact_setting"));
+    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Int("compact") == 1 && l.Has("expand"); });
+    Click(host, Item("expand"));
+    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Int("compact") == 0 && l.Has("list"); });
+    Check("I24 \"Compact panel\" in the settings row switches to the compact panel too", ok);
+    Click(host, Item("settings"));
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("settings") == 0; });
 
     // A drag on the volume slider let go after the cursor left the game window (windowed mode,
     // two monitors): the release goes to another window, so the next message the game window

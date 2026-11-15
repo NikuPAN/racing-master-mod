@@ -34,6 +34,7 @@ struct UiSettings {
     bool pauseWhenUnfocused = false;  // pause the music while the game is not the active app
     unsigned source = 0;              // 0 = the player's own files, 1 = another app's media session
     unsigned corner = UiCornerBottomCentre;   // a UiCorner
+    bool compact = false;             // the one-row panel instead of the full one (0.3.2)
     bool mediaKeys = true;            // react to the keyboard's own media keys (local files only)
     // The key names as typed; the panel parses them and logs a refused one with the accepted names.
     char keys[UiKeyCount][32] = {"Insert", "F5", "F6", "F7", "F8", "F9"};

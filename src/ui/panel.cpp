@@ -279,7 +279,9 @@ void FolderChosen(const std::wstring& folder) {
 
 // ---- icons -------------------------------------------------------------------------------------------
 
-enum class Icon { Previous, Play, Pause, Stop, Next };
+// Expand: arrows pointing out to two corners (the compact panel's way back to the full one).
+// Compact: arrows pointing in from them (the full panel's way to one row).
+enum class Icon { Previous, Play, Pause, Stop, Next, Expand, Compact };
 
 void DrawIcon(Icon icon, ImVec2 min, ImVec2 max, ImU32 colour) {
     ImDrawList* draw = ImGui::GetWindowDrawList();
@@ -307,14 +309,37 @@ void DrawIcon(Icon icon, ImVec2 min, ImVec2 max, ImU32 colour) {
             draw->AddRectFilled(ImVec2(cx + s - bar, cy - s), ImVec2(cx + s, cy + s), colour);
             draw->AddTriangleFilled(ImVec2(cx - s, cy - s), ImVec2(cx - s, cy + s), ImVec2(cx + s - bar, cy), colour);
             break;
+        case Icon::Expand:
+        case Icon::Compact: {
+            const float t = ImMax(1.5f, s * 0.28f);
+            const bool out = icon == Icon::Expand;
+            const float g = out ? s : ImFloor(s * 0.2f);   // where the arrow heads sit, from the centre
+            const float a = ImFloor(s * (out ? 0.8f : 0.65f));
+            if (out) {
+                draw->AddLine(ImVec2(cx - s, cy + s), ImVec2(cx + s, cy - s), colour, t);   // corner to corner
+            } else {
+                draw->AddLine(ImVec2(cx - s, cy + s), ImVec2(cx - g, cy + g), colour, t);
+                draw->AddLine(ImVec2(cx + s, cy - s), ImVec2(cx + g, cy - g), colour, t);
+            }
+            const float d = out ? -a : a;   // heads open towards the centre (out) or away from it (in)
+            const ImVec2 upper[3] = {ImVec2(cx + g + (out ? -a : a), cy - g), ImVec2(cx + g, cy - g), ImVec2(cx + g, cy - g + (out ? a : -a))};
+            const ImVec2 lower[3] = {ImVec2(cx - g - d, cy + g), ImVec2(cx - g, cy + g), ImVec2(cx - g, cy + g + d)};
+            for (const ImVec2* head : {upper, lower}) {
+                draw->AddLine(head[0], head[1], colour, t);
+                draw->AddLine(head[1], head[2], colour, t);
+            }
+            break;
+        }
     }
 }
+
+float IconButtonWidth();
 
 // A square-ish button with a drawn icon. Returns true when clicked.
 bool IconButton(const char* id, Icon icon, bool enabled, const char* name, const char* reason) {
     const float h = ImGui::GetFrameHeight();
     ImGui::BeginDisabled(!enabled);
-    const bool pressed = ImGui::Button(id, ImVec2(ImFloor(h * 1.3f), h));
+    const bool pressed = ImGui::Button(id, ImVec2(IconButtonWidth(), h));
     DrawIcon(icon, ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), ImGui::GetColorU32(ImGuiCol_Text));
     ImGui::EndDisabled();
     Tip(name, enabled ? nullptr : reason);
@@ -323,6 +348,20 @@ bool IconButton(const char* id, Icon icon, bool enabled, const char* name, const
 
 float ButtonWidth(const char* label) {
     return ImGui::CalcTextSize(label, nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+}
+
+float IconButtonWidth() {
+    return ImFloor(ImGui::GetFrameHeight() * 1.3f);
+}
+
+// The compact panel (one row) or the full one; remembered in settings.ini.
+void SetCompact(bool compact) {
+    if (g_settings.compact == compact) {
+        return;
+    }
+    g_settings.compact = compact;
+    g_seekActive = false;
+    SaveSettings();
 }
 
 // ---- what each source can do ------------------------------------------------------------------------
@@ -509,7 +548,7 @@ void SourceRow(const char* nowPlaying, float width, bool displayOnly) {
     snprintf(hideLabel, sizeof(hideLabel), "%s##hide", s.hide);
     char settingsLabel[64];
     snprintf(settingsLabel, sizeof(settingsLabel), "%s##settings", s.settings);
-    const float right = ButtonWidth(settingsLabel) + spacing + ButtonWidth(hideLabel);
+    const float right = ButtonWidth(settingsLabel) + spacing + IconButtonWidth() + spacing + ButtonWidth(hideLabel);
     ImGui::SameLine();
     const float titleWidth = ImMax(width - (ImGui::GetCursorPosX() - ImGui::GetStyle().WindowPadding.x) - right - spacing,
                                    U() * 20.0f);
@@ -523,6 +562,11 @@ void SourceRow(const char* nowPlaying, float width, bool displayOnly) {
     ImGui::EndDisabled();
     Tip(s.settingsHint, displayOnly ? s.reasonDisplayOnly : nullptr);
     Mark("settings");
+    ImGui::SameLine();
+    if (IconButton("##compact", Icon::Compact, !displayOnly, s.makeCompact, s.reasonDisplayOnly)) {
+        SetCompact(true);
+    }
+    Mark("compact");
     ImGui::SameLine();
     ImGui::BeginDisabled(displayOnly);
     if (ImGui::Button(hideLabel)) {
@@ -553,34 +597,44 @@ bool LoopButton(const char* label, bool enabled, const char* hint, const char* r
     return pressed && enabled;
 }
 
-void TimeRowMyFiles(const music::Snapshot& snapshot, float width, bool displayOnly) {
+// The two times of "My files" and how wide each is drawn (TimeWidth).
+struct MyFilesTimes {
+    bool loaded;
+    double duration;
+    bool canSeek;
+    float value;   // the place shown: the engine's, or where a drag on the seek line is
+    char elapsed[16];
+    char total[16];
+    float width;
+};
+
+MyFilesTimes TimesOf(const music::Snapshot& snapshot, bool displayOnly) {
+    MyFilesTimes t = {};
+    t.loaded = snapshot.currentIndex >= 0 && snapshot.currentIndex < static_cast<int>(snapshot.tracks.size());
+    t.duration = t.loaded ? snapshot.durationSeconds : 0.0;
+    t.canSeek = t.loaded && t.duration > 0.0 && !displayOnly;
+    t.value = g_seekActive ? g_seekValue : static_cast<float>(t.loaded ? snapshot.positionSeconds : 0.0);
+    FormatTime(t.loaded ? t.value : -1.0, t.elapsed, sizeof(t.elapsed));
+    FormatTime(t.loaded && t.duration > 0.0 ? t.duration : -1.0, t.total, sizeof(t.total));
+    t.width = TimeWidth(t.elapsed, t.total);
+    return t;
+}
+
+// Elapsed, the seek line (`lineWidth` wide) and the length, on one line. Full and compact panel.
+void SeekLine(const music::Snapshot& snapshot, MyFilesTimes t, float lineWidth, bool displayOnly) {
     const Strings& s = S();
-    const bool loaded = snapshot.currentIndex >= 0 && snapshot.currentIndex < static_cast<int>(snapshot.tracks.size());
-    const double duration = loaded ? snapshot.durationSeconds : 0.0;
-    const bool canSeek = loaded && duration > 0.0 && !displayOnly;
-    float value = g_seekActive ? g_seekValue : static_cast<float>(loaded ? snapshot.positionSeconds : 0.0);
-    char elapsed[16], total[16];
-    FormatTime(loaded ? value : -1.0, elapsed, sizeof(elapsed));
-    FormatTime(loaded && duration > 0.0 ? duration : -1.0, total, sizeof(total));
-
-    const float timeWidth = TimeWidth(elapsed, total);
-    char listLabel[64];
-    snprintf(listLabel, sizeof(listLabel), "%s##list", g_listOpen ? s.hideList : s.showList);
-    const float listWidth = ImMax(ButtonWidth(s.showList), ButtonWidth(s.hideList));
-    const float spacing = ImGui::GetStyle().ItemSpacing.x;
-
     ImGui::AlignTextToFramePadding();
-    TimeText("elapsed", elapsed, timeWidth);
+    TimeText("elapsed", t.elapsed, t.width);
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(ImMax(width - timeWidth * 2.0f - listWidth - spacing * 3.0f, U() * 40.0f));
-    ImGui::BeginDisabled(!canSeek);
-    const float maximum = duration > 0.0 ? static_cast<float>(duration) : 1.0f;
-    ImGui::SliderFloat("##seek", &value, 0.0f, maximum, "", ImGuiSliderFlags_NoInput);
+    ImGui::SetNextItemWidth(lineWidth);
+    ImGui::BeginDisabled(!t.canSeek);
+    const float maximum = t.duration > 0.0 ? static_cast<float>(t.duration) : 1.0f;
+    ImGui::SliderFloat("##seek", &t.value, 0.0f, maximum, "", ImGuiSliderFlags_NoInput);
     if (ImGui::IsItemActive()) {
         g_seekActive = true;
-        g_seekValue = value;
+        g_seekValue = t.value;
     }
-    if (ImGui::IsItemDeactivatedAfterEdit() && canSeek) {
+    if (ImGui::IsItemDeactivatedAfterEdit() && t.canSeek) {
         music::Player::Get().Seek(static_cast<double>(g_seekValue));
     }
     if (!ImGui::IsItemActive()) {
@@ -589,12 +643,22 @@ void TimeRowMyFiles(const music::Snapshot& snapshot, float width, bool displayOn
     ImGui::EndDisabled();
     const char* reason = displayOnly ? s.reasonDisplayOnly
                          : snapshot.tracks.empty() ? s.reasonNoSongs
-                         : !loaded ? s.reasonNothingLoaded
-                                   : s.reasonNoLength;
-    Tip(s.seekHint, canSeek ? nullptr : reason);
+                         : !t.loaded ? s.reasonNothingLoaded
+                                     : s.reasonNoLength;
+    Tip(s.seekHint, t.canSeek ? nullptr : reason);
     Mark("seek");
     ImGui::SameLine();
-    TimeText("total", total, timeWidth);
+    TimeText("total", t.total, t.width);
+}
+
+void TimeRowMyFiles(const music::Snapshot& snapshot, float width, bool displayOnly) {
+    const Strings& s = S();
+    const MyFilesTimes times = TimesOf(snapshot, displayOnly);
+    char listLabel[64];
+    snprintf(listLabel, sizeof(listLabel), "%s##list", g_listOpen ? s.hideList : s.showList);
+    const float listWidth = ImMax(ButtonWidth(s.showList), ButtonWidth(s.hideList));
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    SeekLine(snapshot, times, ImMax(width - times.width * 2.0f - listWidth - spacing * 3.0f, U() * 40.0f), displayOnly);
     ImGui::SameLine();
     ImGui::BeginDisabled(displayOnly);
     if (ImGui::Button(listLabel, ImVec2(listWidth, 0.0f))) {
@@ -603,6 +667,27 @@ void TimeRowMyFiles(const music::Snapshot& snapshot, float width, bool displayOn
     ImGui::EndDisabled();
     Tip(s.listHint, displayOnly ? s.reasonDisplayOnly : nullptr);
     Mark("list");
+}
+
+// Another app's elapsed time, timeline and length on one line ("--:--" and an empty line when it
+// reports none). `lineWidth(timeWidth)` gives the line's width once the times' width is known.
+template <typename Width>
+void ProgressLine(const remote::Snapshot& snapshot, Width lineWidth) {
+    const bool timeline = snapshot.durationSeconds > 0.0;
+    char elapsed[16], total[16];
+    FormatTime(timeline ? snapshot.positionSeconds : -1.0, elapsed, sizeof(elapsed));
+    FormatTime(timeline ? snapshot.durationSeconds : -1.0, total, sizeof(total));
+    const float timeWidth = TimeWidth(elapsed, total);
+    ImGui::AlignTextToFramePadding();
+    TimeText("elapsed", elapsed, timeWidth);
+    ImGui::SameLine();
+    TimeLine(timeline ? static_cast<float>(snapshot.positionSeconds / snapshot.durationSeconds) : 0.0f, lineWidth(timeWidth));
+    Mark("progress");
+    if (!timeline) {
+        Tip(S().noTimeline);
+    }
+    ImGui::SameLine();
+    TimeText("total", total, timeWidth);
 }
 
 // Another app has no list here (the list holds the player's own songs) and no seek: only its
@@ -617,19 +702,8 @@ void TimeRowOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, f
     }
     if (snapshot.durationSeconds > 0.0) {
         // The app reports a timeline: shown, but another app cannot be moved through from here.
-        char elapsed[16], total[16];
-        FormatTime(snapshot.positionSeconds, elapsed, sizeof(elapsed));
-        FormatTime(snapshot.durationSeconds, total, sizeof(total));
-        const float timeWidth = TimeWidth(elapsed, total);
-        ImGui::AlignTextToFramePadding();
-        TimeText("elapsed", elapsed, timeWidth);
-        ImGui::SameLine();
         const float spacing = ImGui::GetStyle().ItemSpacing.x;
-        TimeLine(static_cast<float>(snapshot.positionSeconds / snapshot.durationSeconds),
-                 ImMax(width - timeWidth * 2.0f - spacing * 2.0f, U() * 40.0f));
-        Mark("progress");
-        ImGui::SameLine();
-        TimeText("total", total, timeWidth);
+        ProgressLine(snapshot, [&](float timeWidth) { return ImMax(width - timeWidth * 2.0f - spacing * 2.0f, U() * 40.0f); });
     } else {
         ImGui::AlignTextToFramePadding();
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
@@ -638,7 +712,8 @@ void TimeRowOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, f
     }
 }
 
-void ControlsMyFiles(const music::Snapshot& snapshot, float width, bool displayOnly) {
+// Previous, play or pause, (stop,) next for "My files". The compact panel leaves out stop.
+void TransportMyFiles(const music::Snapshot& snapshot, bool displayOnly, bool withStop) {
     const Strings& s = S();
     music::Player& player = music::Player::Get();
     const bool any = !snapshot.tracks.empty() && !displayOnly;
@@ -652,12 +727,20 @@ void ControlsMyFiles(const music::Snapshot& snapshot, float width, bool displayO
     }
     Mark("play_pause");
     ImGui::SameLine();
-    const bool canStop = any && snapshot.state != music::State::Stopped;
-    if (IconButton("##stop", Icon::Stop, canStop, s.stop, any ? s.reasonAlreadyStopped : reason)) player.Stop();
-    Mark("stop");
-    ImGui::SameLine();
+    if (withStop) {
+        const bool canStop = any && snapshot.state != music::State::Stopped;
+        if (IconButton("##stop", Icon::Stop, canStop, s.stop, any ? s.reasonAlreadyStopped : reason)) player.Stop();
+        Mark("stop");
+        ImGui::SameLine();
+    }
     if (IconButton("##next", Icon::Next, any, s.next, reason)) player.Next();
     Mark("next");
+}
+
+void ControlsMyFiles(const music::Snapshot& snapshot, float width, bool displayOnly) {
+    const Strings& s = S();
+    music::Player& player = music::Player::Get();
+    TransportMyFiles(snapshot, displayOnly, true);
     ImGui::SameLine();
     if (LoopButton(LoopLabel(EffectiveLoop(snapshot)), !displayOnly, s.loopHint, s.reasonDisplayOnly)) {
         StepLoop(snapshot);
@@ -686,7 +769,8 @@ void ControlsMyFiles(const music::Snapshot& snapshot, float width, bool displayO
     Mark("volume");
 }
 
-void ControlsOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, float width, bool displayOnly) {
+// Previous, play or pause, (stop,) next for "Other app". The compact panel leaves out stop.
+void TransportOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, bool displayOnly, bool withStop) {
     const Strings& s = S();
     OtherAppCalls app;
     const char* reason = displayOnly ? s.reasonDisplayOnly : view.reason;
@@ -702,11 +786,22 @@ void ControlsOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, 
     }
     Mark("play_pause");
     ImGui::SameLine();
-    if (IconButton("##stop", Icon::Stop, live && c.stop, s.stop, reason)) app.Stop();
-    Mark("stop");
-    ImGui::SameLine();
+    if (withStop) {
+        if (IconButton("##stop", Icon::Stop, live && c.stop, s.stop, reason)) app.Stop();
+        Mark("stop");
+        ImGui::SameLine();
+    }
     if (IconButton("##next", Icon::Next, live && c.next, s.next, reason)) app.Next();
     Mark("next");
+}
+
+void ControlsOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, float width, bool displayOnly) {
+    const Strings& s = S();
+    OtherAppCalls app;
+    const char* reason = displayOnly ? s.reasonDisplayOnly : view.reason;
+    const bool live = view.session && !displayOnly;
+    const remote::Controls& c = snapshot.controls;
+    TransportOtherApp(snapshot, view, displayOnly, true);
     ImGui::SameLine();
     const remote::Repeat repeat = EffectiveRepeat(snapshot);
     const bool unknown = repeat == remote::Repeat::Unknown;
@@ -965,6 +1060,14 @@ void SettingsRow() {
     }
     Tip(s.pauseWhenUnfocusedHint);
     Mark("pause");
+    char compactLabel[96];
+    snprintf(compactLabel, sizeof(compactLabel), "%s##compact_setting", s.compactPanel);
+    bool compact = g_settings.compact;
+    if (ImGui::Checkbox(compactLabel, &compact)) {
+        SetCompact(compact);
+    }
+    Tip(s.compactPanelHint);
+    Mark("compact_setting");
 
     char keys[kCommandCount][32];
     for (int i = 0; i < kCommandCount; ++i) {
@@ -1148,6 +1251,73 @@ void DrawBar(const PanelFrameInfo& info) {
     }
 }
 
+// The compact panel (0.3.2, the owner's decision 2): one row for tight spaces, such as the strip
+// under the game's bottom tabs (about 970 x 70 px at 2558x1360). Left to right: previous, play or
+// pause, next, the song (cut off with "..." when long; the whole of it on hover), the elapsed time,
+// a short time line (draggable for "My files"; another app cannot be moved through from here), the
+// length, and the button back to the full panel. Volume, repeat, the source, the list and the
+// settings are in the full panel only. One window, at the same six places as the full panel.
+void DrawCompact(const PanelFrameInfo& info) {
+    const Strings& s = S();
+    ImVec2 pos, pivot;
+    PlaceInCorner(info, &pos, &pivot);
+    float width = ImFloor(U() * 640.0f);
+    if (width > info.displayWidth) width = info.displayWidth;
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
+    ImGui::SetNextWindowSize(ImVec2(width, 0.0f), ImGuiCond_Always);
+    g_listDrawnThisFrame = false;
+    if (!ImGui::Begin("Music panel###rmm_panel", nullptr, kPanelWindowFlags)) {
+        ImGui::End();
+        return;
+    }
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float spacing = style.ItemSpacing.x;
+    const float inner = width - style.WindowPadding.x * 2.0f;
+    const float lineWidth = ImFloor(U() * 110.0f);
+    char nowPlaying[768];
+    // The song gets what is left once the buttons, the two times (`timeWidth` each), the line, the
+    // expand button and the four gaps between them have their room.
+    auto title = [&](float timeWidth) {
+        ImGui::SameLine();
+        const float used = ImGui::GetCursorPosX() - style.WindowPadding.x;
+        const float w = ImMax(ImFloor(inner - used - timeWidth * 2.0f - lineWidth - IconButtonWidth() - spacing * 4.0f) - 1.0f,
+                              U() * 40.0f);
+        ImGui::AlignTextToFramePadding();
+        TextFit(nowPlaying, w);
+        if (ImGui::CalcTextSize(nowPlaying).x > w) {
+            Tip(nowPlaying);
+        }
+        Mark("title");
+        ImGui::SameLine();
+    };
+    if (g_settings.source == SourceMyFiles) {
+        const music::Snapshot& snapshot = CurrentSnapshot();
+        NowPlayingMyFiles(snapshot, nowPlaying, sizeof(nowPlaying));
+        TransportMyFiles(snapshot, info.displayOnly, false);
+        const MyFilesTimes times = TimesOf(snapshot, info.displayOnly);
+        title(times.width);
+        SeekLine(snapshot, times, lineWidth, info.displayOnly);
+    } else {
+        const remote::Snapshot other = other_app::GetSnapshot();
+        const RemoteView view = ViewOf(other);
+        NowPlayingOtherApp(other, view, nowPlaying, sizeof(nowPlaying));
+        TransportOtherApp(other, view, info.displayOnly, false);
+        char elapsed[16], total[16];
+        const bool timeline = other.durationSeconds > 0.0;
+        FormatTime(timeline ? other.positionSeconds : -1.0, elapsed, sizeof(elapsed));
+        FormatTime(timeline ? other.durationSeconds : -1.0, total, sizeof(total));
+        title(TimeWidth(elapsed, total));
+        ProgressLine(other, [&](float) { return lineWidth; });
+    }
+    ImGui::SameLine();
+    if (IconButton("##expand", Icon::Expand, !info.displayOnly, s.showFullPanel, s.reasonDisplayOnly)) {
+        SetCompact(false);
+    }
+    Mark("expand");
+    ImGui::End();
+    g_lastListHeight = 0.0f;
+}
+
 void DrawNotice(const PanelFrameInfo& info, const char* text) {
     ImVec2 pos, pivot;
     PlaceInCorner(info, &pos, &pivot);
@@ -1207,7 +1377,11 @@ bool PanelWantsFrame(bool panelOpen, ULONGLONG now) {
 void BuildPanel(const PanelFrameInfo& info, bool panelOpen) {
     g_itemCount = 0;
     if (panelOpen) {
-        DrawBar(info);
+        if (g_settings.compact) {
+            DrawCompact(info);
+        } else {
+            DrawBar(info);
+        }
         return;
     }
     const ULONGLONG now = GetTickCount64();
@@ -1311,9 +1485,10 @@ int PanelAppendTestState(char* buffer, int size) {
         unplayable += track.supported ? 0 : 1;
     }
     // "message": whether the engine's status line is showing.
-    int extra = snprintf(buffer + n, static_cast<size_t>(size - n), "position %d\nunplayable %d\ncorner %u\nmessage %d\n",
+    int extra = snprintf(buffer + n, static_cast<size_t>(size - n),
+                         "position %d\nunplayable %d\ncorner %u\nmessage %d\ncompact %d\n",
                          static_cast<int>(snapshot.positionSeconds), unplayable, g_settings.corner,
-                         snapshot.message.empty() ? 0 : 1);
+                         snapshot.message.empty() ? 0 : 1, g_settings.compact ? 1 : 0);
     if (g_settings.source == SourceOtherApp && extra > 0 && n + extra < size) {
         const remote::Snapshot other = other_app::GetSnapshot();
         const RemoteView view = ViewOf(other);

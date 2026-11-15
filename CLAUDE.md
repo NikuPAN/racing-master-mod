@@ -190,6 +190,8 @@ corner=bottom-centre ; top-left | top-centre | top-right | bottom-left | bottom-
                      ; the corners 0-3 as in 0.3.0, bottom centre 4, top centre 5 (0.3.2). Every place is flush
                      ; with the screen edges it touches (0.3.2). At the bottom the list and settings row open
                      ; above the bar.
+compact=0            ; 1 = the compact panel: one row (previous, play/pause, next, song, times, a short
+                     ; time line, the button back to the full panel). 0.3.2; the panel writes it back.
 [keys]
 panel=Insert         ; the owner's choices; [Ctrl+][Shift+][Alt+]Name, or none
 stop=F5
@@ -203,8 +205,8 @@ present_probe=0      ; 1 = the present probe (0.3.1, docs/agent-notes/present-pr
                      ; "present probe" lines in mod.log every 30 s. Diagnostic for the owner's runs only.
 ```
 
-The panel writes `language`, `text_size`, `pause_when_unfocused`, `source` and (since 0.3.1)
-`corner` back to the per-user `settings.ini` when the player changes them (`src/ui/ui_settings.cpp`: own thread, every
+The panel writes `language`, `text_size`, `pause_when_unfocused`, `source`, (since 0.3.1)
+`corner` and (since 0.3.2) `compact` back to the per-user `settings.ini` when the player changes them (`src/ui/ui_settings.cpp`: own thread, every
 other line kept, written to `settings.ini.new` and swapped in). It never writes the ini beside the DLL.
 The engine's I/O thread rewrites `[music]` in the same file, so **both writers hold
 `SettingsFileLock`** (`src/core/settings_file_lock.h`) from reading the file until the new copy is

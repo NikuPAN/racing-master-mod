@@ -48,7 +48,10 @@
 #  27-32. screenshots              English and draft Chinese, small/medium/large text: bar, list,
 #                                  settings row, "Other app" (24:25 of a 1:12:30 video); PNG files
 #                                  with pixel checks; the bar at the bottom centre with the list and
-#                                  settings row above it; no time cut off, times on the bar's line
+#                                  settings row above it; no time cut off, times on the bar's line;
+#                                  the bar holding still frame by frame as the list and settings
+#                                  open; then each of the six places with the list and settings open,
+#                                  the bar alone and the compact panel (flush, centred, sizes)
 #  33-34. "Other app" variants     an app that allows only play and pause, and no app at all
 #  34b. top centre from the ini    corner=top-center is read, the bar flush at the top centre
 #                                  (each screenshot run also visits all six places, P1-P4)
@@ -58,7 +61,8 @@
 #  37. [panel] mode=display        drawn, but nothing taken from the game
 #  38. panel input                 clicks, pass-through, hotkeys, Insert, wheel, ClearInputMouse after
 #                                  a gap, drop-down closing, text field, focus, "Other app", a drag
-#                                  let go outside the game window, heartbeat
+#                                  let go outside the game window, the compact panel (its buttons,
+#                                  saved, Insert, the setting), heartbeat
 # Integration of the panel, the music engine and the media remote:
 #  39. [panel] mode=off            the loader alone: no panel, no music player, no other-app control
 #  40. end to end, "My files"      songs from musictest.exe --fixtures (FLAC, MP3, tagged Opus and OGG
@@ -530,10 +534,10 @@ try {
     # --- music panel ------------------------------------------------------------------------------
     # 25. [panel] and [keys]: good values are taken, bad ones refused with a reason; the mod runs on.
     $panelIniRoot = Join-Path $work 'lad-ini-panel'
-    Write-Ini (Join-Path $panelIniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=3', '[panel]', 'language=zh-TW', 'text_size=huge', 'mode=sometimes', 'source=other_app', 'colour=red', 'corner=middle', '[keys]', 'next=F2', 'jump=F3') 'utf8'
+    Write-Ini (Join-Path $panelIniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=3', '[panel]', 'language=zh-TW', 'text_size=huge', 'mode=sometimes', 'source=other_app', 'colour=red', 'corner=middle', 'compact=2', '[keys]', 'next=F2', 'jump=F3') 'utf8'
     $run = Invoke-Run '25. settings.ini with [panel] and [keys] values' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $panelIniRoot
     $log = Read-Log $run.Log
-    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, display or on') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('"corner=middle" is not top-left, top-centre, top-right, bottom-left, bottom-centre or bottom-right') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2, marker for 3 s') -and ($run.Lines -match '^marker: found').Count -eq 1)
+    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, display or on') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('"corner=middle" is not top-left, top-centre, top-right, bottom-left, bottom-centre or bottom-right') -and $log.Contains('"compact=2" is not 0 or 1') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2, marker for 3 s') -and ($run.Lines -match '^marker: found').Count -eq 1)
 
     # 27-32. Screenshots: English and the draft Chinese at each text size.
     foreach ($language in 'en', 'zh-TW') {
@@ -598,7 +602,7 @@ try {
     $inputIni = [IO.File]::ReadAllText((Join-Path $work 'lad-panel-panel-input\RacingMasterMod\settings.ini'), [Text.Encoding]::UTF8)
     Record 'panel input: settings.ini keeps the panel''s and the music engine''s values side by side' ($inputIni.Contains('marker_seconds=0') -and $inputIni.Contains('[panel]') -and $inputIni.Contains('language=en') -and $inputIni.Contains('source=my_files') -and $inputIni.Contains('[music]') -and $inputIni -match 'volume=\d+')
     $inputBytes = [IO.File]::ReadAllBytes((Join-Path $work 'lad-panel-panel-input\RacingMasterMod\settings.ini'))
-    $joins = '^\[mod\]\r\nmarker_seconds=0\r\n\r\n\[panel\]\r\nmode=on\r\nlanguage=en\r\ntext_size=\w+\r\npause_when_unfocused=\d\r\nsource=my_files\r\ncorner=bottom-centre\r\n\r\n\[keys\]\r\npanel=Insert\r\n\r\n\[music\]\r\n(\w+=[^\r\n]*\r\n)+$'
+    $joins = '^\[mod\]\r\nmarker_seconds=0\r\n\r\n\[panel\]\r\nmode=on\r\nlanguage=en\r\ntext_size=\w+\r\npause_when_unfocused=\d\r\nsource=my_files\r\ncorner=bottom-centre\r\ncompact=0\r\n\r\n\[keys\]\r\npanel=Insert\r\n\r\n\[music\]\r\n(\w+=[^\r\n]*\r\n)+$'
     Record 'panel input: after both writers, one blank line between sections, the panel''s new keys right after its last line, CR LF only, no BOM' ($inputIni -match $joins -and -not ($inputIni -match '[^\r]\n|\r[^\n]') -and -not ($inputBytes.Length -ge 3 -and $inputBytes[0] -eq 0xEF -and $inputBytes[1] -eq 0xBB -and $inputBytes[2] -eq 0xBF))
     if (-not ($inputIni -match $joins)) { Write-Host "    settings.ini of the input run:"; Write-Host ($inputIni -replace "`r", '\r' -replace "`n", "\n`n") }
     Record 'panel input: the worker logged the music player start with the full path of the music folder' ($panelRun.Log.Contains('music: the player for your own songs has started; songs copied into ' + (Join-Path $work 'lad-panel-panel-input\RacingMasterMod\music') + ' are added at every start'))

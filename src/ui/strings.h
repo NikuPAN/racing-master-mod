@@ -96,6 +96,10 @@ struct Strings {
     const char* positionBottomLeft;
     const char* positionBottomRight;
     const char* positionTopCentre;       // 0.3.2
+    const char* compactPanel;            // 0.3.2: the setting, and the compact panel's name
+    const char* compactPanelHint;
+    const char* makeCompact;             // hover text of the full panel's button that makes it one row
+    const char* showFullPanel;           // hover text of the compact panel's button that brings the full one back
     const char* keysLine;                // six %s: panel, stop, previous, play or pause, next, repeat
     const char* keyNone;                 // an action without a key
 
@@ -184,6 +188,11 @@ inline const Strings kStringsEnglish = {
     "Bottom left",
     "Bottom right",
     "Top centre",
+    "Compact panel",
+    "One row with the main buttons, the song and the time, for tight spaces. The button at its right end brings "
+    "back the full panel.",
+    "Make the panel one row (compact panel).",
+    "Show the full panel.",
     "Keys while racing: %s shows or hides this panel, %s stops, %s plays the previous song, %s plays or pauses, "
     "%s plays the next song, %s changes what repeats.",
     "no key",
@@ -269,6 +278,10 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "左下",          // DRAFT (0.3.1)
     "右下",          // DRAFT (0.3.1)
     "上方中間",      // DRAFT (0.3.2)
+    "精簡面板",      // DRAFT (0.3.2)
+    "只留一列：上一首、播放、下一首、歌名和時間，適合畫面空間不多的時候。按最右邊的按鈕就能回到完整面板。",   // DRAFT (0.3.2)
+    "把面板縮成一列（精簡面板）。",   // DRAFT (0.3.2)
+    "顯示完整面板。",                 // DRAFT (0.3.2)
     "比賽中的按鍵：%s 顯示或隱藏面板，%s 停止，%s 上一首，%s 播放或暫停，%s 下一首，%s 切換重複方式。",
     "沒有按鍵",
 

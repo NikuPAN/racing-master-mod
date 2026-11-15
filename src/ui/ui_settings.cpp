@@ -13,18 +13,18 @@ namespace {
 
 // The latest values to save, packed into one word so the frame thread hands them over with a
 // single atomic store. Bit 31 = "something to save".
-//   bits 0-1 language, 2-3 text size, 4 pause when unfocused, 5 source, 6-8 corner
+//   bits 0-1 language, 2-3 text size, 4 pause when unfocused, 5 source, 6-8 corner, 9 compact
 std::atomic<uint32_t> g_pending{0};
 constexpr uint32_t kPendingFlag = 0x80000000u;
 HANDLE g_wake = nullptr;
 volatile LONG g_written = 0;
 
-constexpr int kKeyCount = 5;
-const char* const kKeys[kKeyCount] = {"language", "text_size", "pause_when_unfocused", "source", "corner"};
+constexpr int kKeyCount = 6;
+const char* const kKeys[kKeyCount] = {"language", "text_size", "pause_when_unfocused", "source", "corner", "compact"};
 
 uint32_t Pack(const UiSettings& s) {
     return kPendingFlag | (s.language & 3u) | ((s.textSize & 3u) << 2) | (s.pauseWhenUnfocused ? 0x10u : 0u) |
-           ((s.source & 1u) << 5) | ((s.corner & 7u) << 6);
+           ((s.source & 1u) << 5) | ((s.corner & 7u) << 6) | (s.compact ? 0x200u : 0u);
 }
 
 void ValueWords(uint32_t packed, char values[kKeyCount][16]) {
@@ -38,6 +38,7 @@ void ValueWords(uint32_t packed, char values[kKeyCount][16]) {
     strcpy_s(values[2], 16, (packed & 0x10u) ? "1" : "0");
     strcpy_s(values[3], 16, (packed & 0x20u) ? "other_app" : "my_files");
     strcpy_s(values[4], 16, kCorners[(packed >> 6) & 7u]);
+    strcpy_s(values[5], 16, (packed & 0x200u) ? "1" : "0");
 }
 
 struct Line {
@@ -128,7 +129,7 @@ void EndWithOneBlankLine(char* out, int outSize, int* used) {
     Append(out, outSize, used, "\r\n", 2);
 }
 
-// Rewrites `text` (the file as UTF-8) into `out` with the five [panel] keys set. Every other line
+// Rewrites `text` (the file as UTF-8) into `out` with the six [panel] keys set. Every other line
 // is copied as it was, with its own line ending; added lines use CR LF. Keys missing from [panel]
 // go right after its last line, and [panel] is separated from the sections around it by exactly
 // one blank line (0.3.0 put missing keys after the blank line that ended the section, and

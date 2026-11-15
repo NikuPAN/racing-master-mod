@@ -50,6 +50,8 @@ Close the game and delete `version.dll` from that folder. Nothing else in the ga
 
 Press **Insert** to show or hide the panel. It sits at the bottom centre of the screen as a compact bar: where the music comes from and what is playing, the buttons, the volume and the time line. **Show list** opens the song list above the bar. In **Settings** you can move it to any of six places: the four corners, the top centre or the bottom centre. Wherever it sits, it touches the edge of the screen, so it covers as little of the game as it can. Clicks on the panel stay on the panel; clicks anywhere else go to the game as usual, so you can keep driving with the panel open.
 
+**Compact panel.** When even the bar is too big, the button with two arrows pointing inward (next to **Settings**) shrinks the panel to one row: previous, play or pause, next, the song, the time and a short time line. The button at the right end of that row (arrows pointing outward) brings the full panel back, and so does **Compact panel** in **Settings**. The panel remembers which one you used last. Volume, repeat, the song list and the settings are only in the full panel.
+
 Keys that work while racing, with the panel open or closed:
 
 | Key | Does |
@@ -123,6 +125,8 @@ pause_when_unfocused=0
 source=my_files
 ; top-left, top-centre, top-right, bottom-left, bottom-centre (default) or bottom-right
 corner=bottom-centre
+; 1 = the compact panel (one row); 0 = the full panel
+compact=0
 
 [keys]
 ; a key name such as Insert, F7 or Home, with Ctrl+, Shift+ or Alt+ in front if you like; none = no key
@@ -136,7 +140,7 @@ loop=F9
 media_keys=1
 ```
 
-`mode=display` is meant for a first careful try: the panel is drawn but takes no clicks or keys, and the game window is left alone. The panel writes its own changes (language, text size, pausing, source, position) back into this file, and the music player keeps its own `[music]` section there; leave both as they are.
+`mode=display` is meant for a first careful try: the panel is drawn but takes no clicks or keys, and the game window is left alone. The panel writes its own changes (language, text size, pausing, source, position, compact or full) back into this file, and the music player keeps its own `[music]` section there; leave both as they are.
 
 A file named `racing-master-mod.ini` next to `version.dll` is read as well and overrides it. Save either file as UTF-8 (with or without a byte order mark) or as the UTF-16 that Notepad calls "Unicode". If a `[mod]` value cannot be read, the mod switches itself off and the log says which line and what to write; a `[panel]` or `[keys]` value that cannot be read keeps its default, and the log says why.
 
@@ -213,6 +217,8 @@ The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vor
 
 按 **Insert** 打開或收起面板。面板是畫面下方中間的一條小工具列，上面有音樂來源、正在播的歌、各個按鈕、音量和進度條；按「顯示清單」，歌單會在工具列上方展開。在「設定」裡可以把面板移到六個位置：四個角落、上方中間或下方中間。不管放在哪裡，面板都會貼齊畫面邊緣，盡量少擋到遊戲。<!-- DRAFT 0.3.2：這兩句待作者審閱 -->點在面板上的滑鼠只會操作面板，點在其他地方就照常交給遊戲，所以面板開著也能繼續開車。
 
+**精簡面板**：連工具列都嫌太大的話，按「設定」旁邊那個箭頭朝內的按鈕，面板就會縮成一列，只留上一首、播放或暫停、下一首、歌名、時間和一小段進度條。按這一列最右邊、箭頭朝外的按鈕就能回到完整面板，「設定」裡的「精簡面板」也一樣。面板會記住你上次用的是哪一種。音量、重複方式、歌單和設定只有完整面板才有。<!-- DRAFT 0.3.2：整段待作者審閱 -->
+
 比賽中可以用的按鍵，面板開著或收起來都有效：
 
 | 按鍵 | 功能 |
@@ -286,6 +292,8 @@ pause_when_unfocused=0
 source=my_files
 ; top-left、top-centre（上方中間）、top-right、bottom-left、bottom-centre（下方中間，預設）或 bottom-right
 corner=bottom-centre
+; 1 = 精簡面板（一列）；0 = 完整面板
+compact=0
 
 [keys]
 ; 按鍵名稱，例如 Insert、F7、Home，前面可以加 Ctrl+、Shift+ 或 Alt+；none = 不設按鍵
@@ -299,7 +307,7 @@ loop=F9
 media_keys=1
 ```
 
-`mode=display` 適合第一次小心試用：面板會畫出來，但不接受滑鼠和按鍵，也完全不碰遊戲視窗。面板會把你在面板裡改的設定（語言、文字大小、暫停、音樂來源、面板位置）寫回這個檔案，音樂播放器也會在裡面保留自己的 `[music]` 段落；這兩部分請不要手動改。
+`mode=display` 適合第一次小心試用：面板會畫出來，但不接受滑鼠和按鍵，也完全不碰遊戲視窗。面板會把你在面板裡改的設定（語言、文字大小、暫停、音樂來源、面板位置、精簡或完整面板）寫回這個檔案，音樂播放器也會在裡面保留自己的 `[music]` 段落；這兩部分請不要手動改。
 
 放在 `version.dll` 旁邊、檔名 `racing-master-mod.ini` 的檔案也會讀，而且以它的設定為準。兩個檔案都可以存成 UTF-8（有沒有 BOM 都行）或記事本裡叫「Unicode」的 UTF-16。`[mod]` 裡的設定值如果看不懂，模組會自己關掉，紀錄檔會寫出是哪一行、該怎麼改；`[panel]` 或 `[keys]` 裡看不懂的值則會用預設值，紀錄檔同樣會說明原因。
 
