@@ -644,7 +644,11 @@ try {
     $recorded = 0
     foreach ($line in $panelRun.Lines) { if ($line -match '^probe calls recorded: (\d+)$') { $recorded = [long]$Matches[1] } }
     Record 'present probe on: the log says so, and presents were recorded' ($probe.Contains('present probe: on ([debug] present_probe=1)') -and $recorded -gt 0)
-    Record 'present probe: two threads, both inside the hook at once at some point' ($probe -match 'at most [2-9] threads inside the hook at once; threads: \d+ x\d+ \d+ x\d+.*\(2 in all\)')
+    Record 'present probe: two threads, both inside the hook at once at some point' ($probe -match 'at most [2-9] threads inside the hook at once; threads: \d+ x\d+ (\([^)]*\) )?\d+ x\d+.*\(2 in all\)')
+    $mainThread = ''; $secondThread = ''
+    foreach ($line in $panelRun.Lines) { if ($line -match '^thread ids: this (\d+), second (\d+)$') { $mainThread = $Matches[1]; $secondThread = $Matches[2] } }
+    Record 'present probe: each thread''s line says what the frame work did with its presents (drawn on the first, passed on for the second)' ($mainThread -and $probe -match ('threads:.* ' + $mainThread + ' x\d+ \([^)]*panel drawn \d+') -and $probe -match ('threads:.* ' + $secondThread + ' x\d+ \([^)]*game frame from a thread the mod does not draw on \d+'))
+    Record 'present probe: presents called from code in no module (the second thread''s) get their own line with outcomes' ($probe -match 'present probe: called from code in no module: Present \d+, Present1 \d+; .*game frame from a thread the mod does not draw on \d+')
     Record 'present probe: the caller is the host program, with the frame work''s outcomes' ($probe -match 'present probe: called from testhost\.exe: Present \d+, Present1 \d+; .*panel drawn \d+.*game frame from a thread the mod does not draw on \d+')
     Record 'present probe: the original Present is in dxgi.dll and the patched table entry points into the mod' ($probe -match '(?i)the Present the mod passes frames on to is in dxgi\.dll .*the patched table''s Present entry now points into version\.dll')
     Record 'present probe: the swap chain uses the patched table, whose Present entry is the mod''s' ($probe -match '(?i)present probe: swap chain [0-9a-f]+, \d+ presents: its function table is in dxgi\.dll \(the table the mod patched\), and its Present entry points into version\.dll')

@@ -28,11 +28,16 @@ those threads); the worker writes the block every 30 s.
 **The block** (worker, every 30 s):
 
 1. `present probe, last 30 s: N presents reached the hook (since start: Present a, Present1 b);
-   at most K threads inside the hook at once; threads: <id> x<count> ... (T in all)`
+   at most K threads inside the hook at once; threads: <id> x<count> (<outcome> n, ...) ... (T in
+   all)`: per thread, what the frame work did with its presents, so the line shows which thread
+   the mod draws on ("panel drawn") and which it passes on.
 2. One `present probe: called from <module>: Present a, Present1 b; <outcome> n ...` line per
    module the call came from (the return address of the hook, resolved to a module by address
    range). Outcomes: panel drawn, game frame without the panel, another swap chain, passed on
    while another thread drew, frame work off, game frame from a thread the mod does not draw on.
+   Calls whose return address is in no module (a trampoline or other generated code, a likely way
+   for a driver or an overlay to call Present) get their own `called from code in no module` line
+   with outcomes; such addresses are remembered by page, so they are not looked up every present.
 3. One `present probe: swap chain <pointer>, n presents: its function table is in <module> (the
    table the mod patched | not ...), and its Present entry points into <module>` line per swap
    chain (up to 4).
@@ -80,7 +85,10 @@ those threads); the worker writes the block every 30 s.
    interval 0 while the game uses 1); useful to pick which presents to draw on.
 
 **Test host:** run 46 turns the probe on with a 2 s block (`RACING_MASTER_MOD_TEST_PROBE_SECONDS`,
-test host only) during two-thread presents and checks every line above for sane values;
+test host only) during two-thread presents (the second thread calls Present through a few bytes
+of generated code, so its caller is "code in no module") and checks every line above for sane
+values, including that the per-thread outcomes show the panel drawn on the first thread and the second
+thread's presents passed on;
 `RACING_MASTER_MOD_TEST_SMOOTH_MOTION_DLL` points the Smooth Motion check at a DLL the host does
 load. The real `NvPresent64.dll` is never copied or loaded here.
 

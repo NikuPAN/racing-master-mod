@@ -1759,16 +1759,41 @@ void ScriptPanelOff(Host& host) {
 // thread's presents straight on (counted, "otherthread" in the layout file), never need its
 // one-at-a-time guard ("skips" stays 0), and follow the frames to the other thread only after the
 // first has shown none for a second (a game that moves its rendering to a new thread).
+//
+// The second thread calls Present through a few bytes of generated code (no module), the way a
+// driver or an overlay may, so the present probe's "called from code in no module" line gets its
+// outcomes (run 46).
 struct SecondPresenter {
     Host* host;
     volatile LONG stop;
     volatile LONG presents;
 };
 
+using ThunkPresentFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT);
+
+// sub rsp,28h; mov rax,<target>; call rax; add rsp,28h; ret - calls `target` with the same
+// arguments, from memory that belongs to no module. Never freed (the host process ends soon).
+ThunkPresentFn MakePresentThunk(void* target) {
+    unsigned char code[] = {0x48, 0x83, 0xEC, 0x28, 0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xD0, 0x48, 0x83, 0xC4, 0x28, 0xC3};
+    memcpy(code + 6, &target, sizeof(target));
+    void* memory = VirtualAlloc(nullptr, sizeof(code), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!memory) return nullptr;
+    memcpy(memory, code, sizeof(code));
+    FlushInstructionCache(GetCurrentProcess(), memory, sizeof(code));
+    return reinterpret_cast<ThunkPresentFn>(memory);
+}
+
 DWORD WINAPI SecondPresenterThread(LPVOID param) {
     auto* job = static_cast<SecondPresenter*>(param);
+    // The swap chain's Present entry as it is now: the mod's hook.
+    void* present = (*reinterpret_cast<void***>(job->host->chain))[8];
+    const ThunkPresentFn thunk = MakePresentThunk(present);
     while (!job->stop) {
-        job->host->chain->Present(0, 0);
+        if (thunk) {
+            thunk(job->host->chain, 0, 0);
+        } else {
+            job->host->chain->Present(0, 0);
+        }
         InterlockedIncrement(&job->presents);
     }
     return 0;

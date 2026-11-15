@@ -30,10 +30,15 @@ enum class ProbeOutcome : int {
     Count = 6,
 };
 
-// Frame threads, only while g_probeOn. ProbeEnter returns the caller's slot (or -1), which
+// Frame threads, only while g_probeOn. ProbeEnter returns the caller's and the thread's slots (-1
+// when a table is full; calls from code in no module have a slot of their own), which
 // ProbeRecordOutcome takes; ProbeLeave ends the "in flight" count.
-int ProbeEnter(int entry, void* returnAddress, IDXGISwapChain* swapChain, UINT syncInterval, UINT flags);
-void ProbeRecordOutcome(int callerSlot, ProbeOutcome outcome);
+struct ProbeSlots {
+    int caller = -1;
+    int thread = -1;
+};
+ProbeSlots ProbeEnter(int entry, void* returnAddress, IDXGISwapChain* swapChain, UINT syncInterval, UINT flags);
+void ProbeRecordOutcome(ProbeSlots slots, ProbeOutcome outcome);
 void ProbeLeave();
 // Frame thread, inside the frame work, for the game's swap chain: IDXGISwapChain::GetLastPresentCount.
 void ProbeRecordPresentCount(UINT count);

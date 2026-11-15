@@ -335,8 +335,8 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
     const auto original = reinterpret_cast<PresentFn>(g_originalPresent);
     if (t_presentDepth++ == 0) {
         if (g_probeOn) {
-            const int caller = ProbeEnter(0, _ReturnAddress(), swapChain, syncInterval, flags);
-            ProbeRecordOutcome(caller, FrameWork(swapChain, flags));
+            const ProbeSlots slots = ProbeEnter(0, _ReturnAddress(), swapChain, syncInterval, flags);
+            ProbeRecordOutcome(slots, FrameWork(swapChain, flags));
             const HRESULT result = original(swapChain, syncInterval, flags);
             ProbeLeave();
             --t_presentDepth;
@@ -354,8 +354,8 @@ HRESULT STDMETHODCALLTYPE HookedPresent1(IDXGISwapChain1* swapChain, UINT syncIn
     const auto original = reinterpret_cast<Present1Fn>(g_originalPresent1);
     if (t_presentDepth++ == 0) {
         if (g_probeOn) {
-            const int caller = ProbeEnter(1, _ReturnAddress(), swapChain, syncInterval, flags);
-            ProbeRecordOutcome(caller, FrameWork(swapChain, flags));
+            const ProbeSlots slots = ProbeEnter(1, _ReturnAddress(), swapChain, syncInterval, flags);
+            ProbeRecordOutcome(slots, FrameWork(swapChain, flags));
             const HRESULT result = original(swapChain, syncInterval, flags, parameters);
             ProbeLeave();
             --t_presentDepth;

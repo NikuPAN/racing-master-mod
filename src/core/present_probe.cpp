@@ -29,6 +29,7 @@ struct Caller {
 struct ThreadSlot {
     volatile LONG id;
     volatile LONG64 calls;
+    volatile LONG64 outcomes[kOutcomes];   // which thread the mod draws on, and which it passes on
 };
 struct ChainSlot {
     volatile LONG64 chain;
@@ -36,11 +37,18 @@ struct ChainSlot {
     volatile LONG64 calls;
 };
 
-Caller g_callers[kCallers];
+// The last slot is never claimed: it holds every call from code in no module (a trampoline or
+// other generated code, a likely way for a driver or an overlay to call Present).
+constexpr int kNoModuleSlot = kCallers;
+Caller g_callers[kCallers + 1];
+// Pages (address >> 12, plus 1) recently found in no module, so such a caller is not looked up
+// again on every present.
+constexpr int kUnresolvedPages = 4;
+volatile LONG64 g_unresolvedPages[kUnresolvedPages];
+volatile LONG g_unresolvedNext;
 ThreadSlot g_threads[kThreads];
 ChainSlot g_chains[kChains];
 volatile LONG64 g_entryCalls[2];
-volatile LONG64 g_unknownCaller;      // return address in no module (generated code)
 volatile LONG64 g_moreCallers, g_moreThreads, g_moreChains;
 volatile LONG64 g_flagBits[kFlagBits];
 volatile LONG64 g_noFlags;
@@ -76,13 +84,18 @@ int CallerSlot(void* address) {
         const LONG64 end = g_callers[i].end;
         if (end != 0 && at >= g_callers[i].base && at < end) return i;
     }
+    const LONG64 page = (at >> 12) + 1;
+    for (int i = 0; i < kUnresolvedPages; ++i) {
+        if (g_unresolvedPages[i] == page) return kNoModuleSlot;
+    }
     // Not seen yet: which module holds it (GetModuleHandleExW does not change any reference count).
     HMODULE module = nullptr;
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                             static_cast<LPCWSTR>(address), &module) ||
         !module) {
-        InterlockedIncrement64(&g_unknownCaller);
-        return -1;
+        const LONG next = InterlockedIncrement(&g_unresolvedNext);
+        InterlockedExchange64(&g_unresolvedPages[next % kUnresolvedPages], page);
+        return kNoModuleSlot;
     }
     const LONG64 base = reinterpret_cast<LONG64>(module);
     for (int i = 0; i < kCallers; ++i) {
@@ -98,16 +111,17 @@ int CallerSlot(void* address) {
     return -1;
 }
 
-void CountThread() {
+int CountThread() {
     const LONG id = static_cast<LONG>(GetCurrentThreadId());
     for (int i = 0; i < kThreads; ++i) {
         const LONG previous = InterlockedCompareExchange(&g_threads[i].id, id, 0);
         if (previous == 0 || previous == id) {
             InterlockedIncrement64(&g_threads[i].calls);
-            return;
+            return i;
         }
     }
     InterlockedIncrement64(&g_moreThreads);
+    return -1;
 }
 
 void CountChain(IDXGISwapChain* swapChain) {
@@ -174,7 +188,7 @@ int Append(char* buffer, int used, int size, const char* format, ...) {
 
 }  // namespace
 
-int ProbeEnter(int entry, void* returnAddress, IDXGISwapChain* swapChain, UINT syncInterval, UINT flags) {
+ProbeSlots ProbeEnter(int entry, void* returnAddress, IDXGISwapChain* swapChain, UINT syncInterval, UINT flags) {
     InterlockedIncrement64(&g_recorded);
     InterlockedIncrement64(&g_entryCalls[entry ? 1 : 0]);
     const LONG inFlight = InterlockedIncrement(&g_inFlight);
@@ -183,7 +197,8 @@ int ProbeEnter(int entry, void* returnAddress, IDXGISwapChain* swapChain, UINT s
         if (previous == seen) break;
         seen = previous;
     }
-    CountThread();
+    ProbeSlots slots;
+    slots.thread = CountThread();
     CountChain(swapChain);
     if (flags == 0) {
         InterlockedIncrement64(&g_noFlags);
@@ -192,14 +207,19 @@ int ProbeEnter(int entry, void* returnAddress, IDXGISwapChain* swapChain, UINT s
         if (flags & (1u << bit)) InterlockedIncrement64(&g_flagBits[bit]);
     }
     InterlockedIncrement64(&g_sync[syncInterval < kSyncSlots - 1 ? syncInterval : kSyncSlots - 1]);
-    const int slot = CallerSlot(returnAddress);
-    if (slot >= 0) InterlockedIncrement64(&g_callers[slot].calls[entry ? 1 : 0]);
-    return slot;
+    slots.caller = CallerSlot(returnAddress);
+    if (slots.caller >= 0) InterlockedIncrement64(&g_callers[slots.caller].calls[entry ? 1 : 0]);
+    return slots;
 }
 
-void ProbeRecordOutcome(int callerSlot, ProbeOutcome outcome) {
-    if (callerSlot >= 0 && callerSlot < kCallers) {
-        InterlockedIncrement64(&g_callers[callerSlot].outcomes[static_cast<int>(outcome)]);
+void ProbeRecordOutcome(ProbeSlots slots, ProbeOutcome outcome) {
+    const int o = static_cast<int>(outcome);
+    if (o < 0 || o >= kOutcomes) return;
+    if (slots.caller >= 0 && slots.caller <= kNoModuleSlot) {
+        InterlockedIncrement64(&g_callers[slots.caller].outcomes[o]);
+    }
+    if (slots.thread >= 0 && slots.thread < kThreads) {
+        InterlockedIncrement64(&g_threads[slots.thread].outcomes[o]);
     }
 }
 
@@ -228,24 +248,38 @@ void ProbeReport(void* originalPresent, void* originalPresent1, void** table, un
                         "%lld); at most %ld threads inside the hook at once; threads:",
                         seconds, recorded - g_lastRecorded, static_cast<LONG64>(g_entryCalls[0]),
                         static_cast<LONG64>(g_entryCalls[1]), static_cast<long>(g_inFlightMax));
+    static const char* const kOutcomeNames[kOutcomes] = {"panel drawn", "game frame without the panel",
+                                                         "another swap chain", "passed on while another thread drew",
+                                                         "frame work off",
+                                                         "game frame from a thread the mod does not draw on"};
     int threads = 0;
     for (const ThreadSlot& t : g_threads) {
         if (t.id == 0) continue;
         ++threads;
         used = Append(line, used, sizeof(line), " %ld x%lld", static_cast<long>(t.id), static_cast<LONG64>(t.calls));
+        // What the frame work did with this thread's presents: which thread the mod draws on.
+        const char* separator = " (";
+        for (int o = 0; o < kOutcomes; ++o) {
+            if (!t.outcomes[o]) continue;
+            used = Append(line, used, sizeof(line), "%s%s %lld", separator, kOutcomeNames[o], static_cast<LONG64>(t.outcomes[o]));
+            separator = ", ";
+        }
+        if (separator[0] == ',') used = Append(line, used, sizeof(line), ")");
     }
     if (g_moreThreads) used = Append(line, used, sizeof(line), " and %lld from more threads", static_cast<LONG64>(g_moreThreads));
     Append(line, used, sizeof(line), " (%d in all)", threads);
     Log("%s", line);
 
     // 2. Who called Present, and what the frame work did for each: one line per calling module.
-    static const char* const kOutcomeNames[kOutcomes] = {"panel drawn", "game frame without the panel",
-                                                         "another swap chain", "passed on while another thread drew",
-                                                         "frame work off",
-                                                         "game frame from a thread the mod does not draw on"};
-    for (const Caller& c : g_callers) {
-        if (c.base == 0) continue;
-        ModuleName(reinterpret_cast<const void*>(c.base), name, sizeof(name));
+    for (int i = 0; i <= kNoModuleSlot; ++i) {
+        const Caller& c = g_callers[i];
+        if (i < kNoModuleSlot && c.base == 0) continue;
+        if (i == kNoModuleSlot && c.calls[0] == 0 && c.calls[1] == 0) continue;
+        if (i == kNoModuleSlot) {
+            snprintf(name, sizeof(name), "code in no module");
+        } else {
+            ModuleName(reinterpret_cast<const void*>(c.base), name, sizeof(name));
+        }
         used = snprintf(line, sizeof(line), "present probe: called from %s: Present %lld, Present1 %lld;", name,
                         static_cast<LONG64>(c.calls[0]), static_cast<LONG64>(c.calls[1]));
         for (int o = 0; o < kOutcomes; ++o) {
@@ -253,9 +287,9 @@ void ProbeReport(void* originalPresent, void* originalPresent1, void** table, un
         }
         Log("%s", line);
     }
-    if (g_unknownCaller || g_moreCallers) {
-        Log("present probe: called from code in no module %lld times, from modules past the first %d %lld times",
-            static_cast<LONG64>(g_unknownCaller), kCallers, static_cast<LONG64>(g_moreCallers));
+    if (g_moreCallers) {
+        Log("present probe: called from modules past the first %d %lld times", kCallers,
+            static_cast<LONG64>(g_moreCallers));
     }
 
     // 3. Swap chains and whose Present their function tables point to: one line each.
