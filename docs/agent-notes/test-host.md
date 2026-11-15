@@ -145,3 +145,11 @@ Checked after the fix: the full suite with a fixed-id fake player and a player u
 id (standing in for a browser) alive throughout passed 343 of 343, and neither received anything.
 Still true: only one suite should run on this PC at a time (both runs would make their own fake
 player Windows' current session, and the media keys would point at whichever came last).
+
+15. **Never beside the game.** On 2026-11-15 a suite ran while the owner played, and the owner's
+    in-game panel ("Other app", following Windows' choice) kept switching to the suite's fake
+    players: Windows shares media sessions with every program on the PC. Since 0.3.2 the script
+    refuses to start (exit code 3, one plain line) while `g112-Win64-Shipping.exe` or `g112.exe` is
+    running; it only looks at process names. `RACING_MASTER_MOD_TEST_GAME_NAMES` (comma-separated)
+    replaces the names so the refusal can be checked without the game. Agents also wait for no
+    game, no other suite and no build before starting one.

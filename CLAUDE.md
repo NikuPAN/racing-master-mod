@@ -127,6 +127,10 @@ powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.
 powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 46 hidden runs, 387 checks, exit 0 = pass (about 2-3 min)
 ```
 
+The test script refuses to start while the game runs (exit code 3): its fake media players are
+visible to every program on the PC, the game's panel included (`test-host.md`, item 15). Never
+run a build or a suite while the owner plays, and only one at a time.
+
 The test script copies the panel screenshots to `out\screens\*.png` (bar, list, settings row,
 "Other app", each text size, English and draft Chinese, four resolutions, display mode, after a
 fault). Look at them with the Read tool after any panel change; the owner reviews the Chinese there.

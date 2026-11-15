@@ -78,9 +78,25 @@
 #                                  the Smooth Motion line pointed at a DLL the host loads
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
-# Exit code 0 = every check passed.
+# Exit code 0 = every check passed; 3 = not started because the game is running.
 
 $ErrorActionPreference = 'Stop'
+
+# Never while the game runs. The media runs publish silent fake players, and Windows shares media
+# sessions with every program on the PC: on 2026-11-15 the owner's in-game panel ("Other app")
+# switched to the test's fake players while a suite ran. The mod now ignores them outside the test
+# host as well, but the test is not run beside a game session at all. Only the process names are
+# looked at; nothing is opened or read. RACING_MASTER_MOD_TEST_GAME_NAMES (comma-separated) replaces
+# the names, so this refusal itself can be checked without the game.
+$gameNames = @('g112-Win64-Shipping', 'g112')
+if ($env:RACING_MASTER_MOD_TEST_GAME_NAMES) { $gameNames = @($env:RACING_MASTER_MOD_TEST_GAME_NAMES -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+$runningGame = @(Get-Process -Name $gameNames -ErrorAction SilentlyContinue)
+if ($runningGame.Count) {
+    $unique = @($runningGame | ForEach-Object { "$($_.Name).exe" } | Sort-Object -Unique)
+    $verb = if ($unique.Count -gt 1) { 'are' } else { 'is' }
+    Write-Host "The test was not started: $($unique -join ' and ') $verb running. The test publishes fake media players that every program on this PC can see, including the mod's panel inside the game. Close the game and run the test again."
+    exit 3
+}
 
 $root = Split-Path -Parent $PSScriptRoot
 $dll = Join-Path $root 'out\version.dll'
@@ -469,6 +485,7 @@ try {
     # 22. Without the test flag the mod stays dormant: no media code runs, nothing is sent.
     $run = Invoke-Media '22. media mode, flag unset: mod must stay dormant' 'basic' 'play;pause;quit' 'lad-media-dormant' @{} $false 4
     Record 'media dormant: the fake player was published, no log folder, nothing received' ((@($run.Lines -match '^fake player published at start: yes').Count -eq 1) -and -not (Test-Path (Join-Path $run.LogRoot 'RacingMasterMod')) -and $run.Received -eq 'nothing')
+
 
     # --- music engine ---------------------------------------------------------------------------------
     # 23. The engine's own test program: no sound device (manual and null output only), no window,
