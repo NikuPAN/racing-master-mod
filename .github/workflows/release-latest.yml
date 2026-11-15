@@ -1,0 +1,64 @@
+# Builds the music panel on every push to main and publishes it as a single rolling "latest"
+# prerelease, so there is always one downloadable DLL from the newest main without a manual tag.
+# It is marked a prerelease and clearly labelled a development build: for normal use, people
+# download a versioned "Music panel" release (release-music.yml, made from a music-vX.Y.Z tag).
+#
+# The stable, versioned release is the deliberate one; this one is automatic. The host test is not
+# run here (it needs Direct3D output and Windows media sessions that GitHub's runners do not offer
+# dependably); it is the gate on the developer's PC before each commit.
+
+name: latest build (main)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write   # to publish the release
+
+concurrency:
+  group: latest-build
+  cancel-in-progress: true
+
+jobs:
+  latest:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: .deps
+          key: deps-${{ hashFiles('build/fetch-deps.ps1') }}
+
+      - name: Build
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File build\build.ps1
+
+      - name: Pack
+        id: pack
+        shell: pwsh
+        run: |
+          $v = [Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path 'out\version.dll')).FileVersion
+          $dir = 'racing-master-music-panel-main'
+          New-Item -ItemType Directory $dir | Out-Null
+          Copy-Item out\version.dll, LICENSE, THIRD_PARTY.md $dir
+          Copy-Item docs\release\INSTALL-music-panel.txt (Join-Path $dir 'INSTALL.txt')
+          Compress-Archive -Path "$dir\*" -DestinationPath "$dir.zip"
+          (Get-FileHash "$dir.zip" -Algorithm SHA256).Hash.ToLower() + "  $dir.zip" | Out-File "$dir.zip.sha256" -Encoding ascii
+          "ver=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Publish the rolling latest prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Continue'   # a missing previous release must not fail the step
+          gh release delete latest --yes --cleanup-tag
+          $v = '${{ steps.pack.outputs.ver }}'
+          $notes = "Automatic build of the latest ``main`` ($v, commit ``${{ github.sha }}``).`n`n" +
+                   "This is a development build, not a stable release. For normal use, download a versioned " +
+                   "**Music panel** release instead. Use a spare account; the game does not allow mods and an " +
+                   "account can be banned."
+          gh release create latest 'racing-master-music-panel-main.zip' 'racing-master-music-panel-main.zip.sha256' `
+            --prerelease --title "Latest build (main)" --notes $notes --target ${{ github.sha }}

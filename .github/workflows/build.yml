@@ -10,7 +10,7 @@ name: build
 
 on:
   push:
-    branches: ['**']
+    branches-ignore: ['main']   # main is built and published by release-latest.yml
   pull_request:
 
 permissions:

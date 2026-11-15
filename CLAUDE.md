@@ -164,12 +164,18 @@ offset from the log into a source line. **Never ship the PDB next to the DLL.**
 plugin as separate downloads). `.github/workflows/build.yml` builds with every gate on each push
 and keeps `version.dll` as a 7-day artifact; it does not run the host test (Direct3D output and
 media sessions are not dependable on GitHub's server runners), so the local suite stays the gate
-before every commit. `.github/workflows/release-music.yml` runs on a `music-vX.Y.Z` tag: build,
+before every commit. `.github/workflows/release-latest.yml` runs on every push to **main**: build, then replace a single
+rolling **prerelease** tagged `latest` ("Latest build (main)") with the zip + SHA-256, so there is
+always one downloadable DLL of the newest main without a manual tag (this is the owner's request,
+2026-11-15: "build automatically when main is pushed"). It is a prerelease and labelled a
+development build; `build.yml` therefore ignores main to avoid building it twice.
+`.github/workflows/release-music.yml` runs on a `music-vX.Y.Z` tag: build,
 refuse if the DLL's FileVersion is not X.Y.Z, zip `version.dll` + `docs/release/INSTALL-music-panel.txt`
 (as INSTALL.txt, both languages) + LICENSE + THIRD_PARTY.md, attach the zip and its SHA-256 to a
-release titled "Music panel X.Y.Z". The DLSS plugin gets its own workflow and `dlss-v` tags when it
-exists. Creating a tag publishes a release: only on the owner's say-so. While the repo is private,
-only collaborators can download releases.
+release titled "Music panel X.Y.Z" (the deliberate, stable release). The DLSS plugin gets its own
+workflow and `dlss-v` tags when it exists. A `music-v` tag publishes a stable release: only on the
+owner's say-so. The `latest` prerelease updates on its own with every main push, so merging to main
+makes an unreviewed build publicly downloadable — keep that in mind before pushing.
 
 Both scripts run from the repo root. To inspect the DLL's imports by hand use the MSVC linker as
 dumpbin: `link.exe /DUMP /NOLOGO /IMPORTS out\version.dll` (the fetched SDK has no `dumpbin.exe`).
