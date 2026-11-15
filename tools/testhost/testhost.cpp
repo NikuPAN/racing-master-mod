@@ -44,6 +44,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cwchar>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -1670,17 +1671,32 @@ void ScriptInput(Host& host) {
     printf("  settings.ini after the change:\n%s\n", ini.c_str());
     Check("I13 choosing Traditional Chinese in the settings row switches the panel and saves language=zh-TW",
           ok && ini.find("language=zh-TW") != std::string::npos);
-    Click(host, Item("language"));
-    WaitLayout(host, [](const LayoutFile& l) { return l.Has("language_item1"); });
-    Click(host, Item("language_item1"));
-    WaitLayout(host, [](const LayoutFile& l) { return l.Int("language") == 1; });
+    // The harness posts move, press and release in one go. Sent within a frame or two of a
+    // drop-down opening or closing, such a click is sometimes not taken (I23 failed about 1 run in
+    // 5 to 8, 2026-11-15; a person cannot click that fast, and the cause inside the frame timing is
+    // not pinned down). A missed choice also left the language list open over the Position row, so
+    // the next click chose "Same as Windows". Choosing from a drop-down therefore opens it if
+    // needed, clicks the entry, and tries again (at most three times) until the choice is taken.
+    auto choose = [&](const char* combo, const char* entry, const std::function<bool(const LayoutFile&)>& taken) {
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            if (!ReadLayout().Has(entry)) {
+                Pump(host, 4);
+                Click(host, Item(combo));
+                if (!WaitLayout(host, [&](const LayoutFile& l) { return l.Has(entry); }, 1500)) continue;
+            }
+            Click(host, Item(entry));
+            if (WaitLayout(host, [&](const LayoutFile& l) { return taken(l) && !l.Has(entry); }, 3000)) return true;
+            printf("  choosing %s did not take on attempt %d; again\n", entry, attempt + 1);
+        }
+        return false;
+    };
+    choose("language", "language_item1", [](const LayoutFile& l) { return l.Int("language") == 1; });
+    Pump(host, 4);
 
     // Where the panel sits: bottom centre by default, six places to choose from, saved.
     long savesBefore = ReadLayout().Int("saves");
-    Click(host, Item("position"));
-    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Has("position_item2"); });
-    Click(host, Item("position_item2"));   // listed: top left, top centre, top right, bottom left, bottom centre, bottom right
-    ok = ok && WaitLayout(host, [&](const LayoutFile& l) {
+    // listed: top left, top centre, top right, bottom left, bottom centre, bottom right
+    ok = choose("position", "position_item2", [&](const LayoutFile& l) {
         return l.Int("corner") == 1 && l.Int("saves") > savesBefore && BarAtTopRight(l) && PanelOnScreen(l);
     });
     PrintBar("at the top right");
@@ -1688,10 +1704,7 @@ void ScriptInput(Host& host) {
     Check("I23 choosing Top right in the settings row moves the panel there and saves corner=top-right",
           ok && placeIni.find("corner=top-right") != std::string::npos);
     savesBefore = ReadLayout().Int("saves");
-    Click(host, Item("position"));
-    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Has("position_item4"); });
-    Click(host, Item("position_item4"));
-    ok = ok && WaitLayout(host, [&](const LayoutFile& l) {
+    ok = choose("position", "position_item4", [&](const LayoutFile& l) {
         return l.Int("corner") == 4 && l.Int("saves") > savesBefore && BarAtBottomCentre(l) && PanelOnScreen(l);
     });
     placeIni = ReadWholeFile(ModFolder() + L"\\settings.ini");

@@ -102,7 +102,8 @@ code 1 for both "no marker" and "forwarding failed"; the review showed what it d
     `g_refuseClose` is set the host's procedure swallows `WM_CLOSE` and `SC_CLOSE`, standing in for
     a game that asks first (run 40, C1-C3).
 11. **End to end (runs 40-41).** `integrated` uses the songs from `musictest.exe --fixtures`, with
-    `marker_seconds=600` so the screenshot also checks the loader's marker (`Shoot` with
+    the test-only marker on (`RACING_MASTER_MOD_TEST_MARKER=1`; the product has no marker since
+    0.3.2) so the screenshot also checks the loader's marker (`Shoot` with
     `kMarkerArea` leaves the marker out of the stray count and checks its white frame and dark
     centre). `other-real` needs `RACING_MASTER_MOD_TEST_FAKE_PLAYER=1` (the host publishes the fake
     player on its main thread, after `PrepareProcess`, before any window),
@@ -110,6 +111,14 @@ code 1 for both "no marker" and "forwarding failed"; the review showed what it d
     are copied to `out\preview\integrated`. The layout file carries `position` in whole seconds
     (written about once a second while a song plays) and, in "Other app", `other_session`,
     `other_playing`, `other_repeat`.
+12. **A click right after a drop-down opens or closes is sometimes not taken.** `Click` posts
+    move, press and release together; sent within a frame or two of a drop-down opening or
+    closing, the panel sometimes does not act on it (I23 failed about 1 run in 5 to 8 on
+    2026-11-15, once the settings row had grown by the "Same volume" row; the exact cause in the
+    frame timing is not pinned down, and a person cannot click that fast). A missed choice also
+    left the language list open over the Position row, so the next click chose "Same as Windows".
+    I23 therefore chooses through `choose()`: open the drop-down if needed, click the entry, wait
+    for the effect, at most three tries, and it prints each retry. New drop-down steps use it.
 
 **How to apply:** a new panel feature gets a step in `ScriptInput` (behaviour) or a shot (look);
 keep every message in-process and every window hidden. Nothing here may use `SendInput`.
