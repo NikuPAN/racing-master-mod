@@ -549,13 +549,19 @@ try {
     Record 'keys: the chosen keys are used, an unknown name keeps the default with a reason' ($log.Contains('panel: keys none panel, F5 stop, F6 previous, F7 play or pause, Ctrl+F2 next, F9 repeat; media keys off') -and $log.Contains('"stop=Banana" under [keys] is not a key name the mod knows; the default stays'))
 
     # 38. Input through the window procedure: clicks, pass-through, hotkeys, Insert and the rest.
-    $panelRun = Invoke-PanelRun 'panel input' 'input' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_TEXT_FIELD = '1' } @()
+    # Its settings.ini has a [panel] that ends in blank lines and a [keys] after it, so both writers'
+    # section joins are checked at the end (one blank line between sections, CR LF, no BOM).
+    $panelRun = Invoke-PanelRun 'panel input' 'input' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_TEXT_FIELD = '1' } @('', '[panel]', 'mode=on', '', '', '[keys]', 'panel=Insert')
     Record 'panel input: the music engine and the other app were told what the keys and clicks asked for' ($panelRun.Log.Contains('test app: pause') -and -not $panelRun.Log.Contains('test app: next') -and -not $panelRun.Log.Contains('test app: stop') -and $panelRun.Log.Contains('music: started 02 Beta') -and $panelRun.Log.Contains('music: file dialog suppressed (test mode)') -and $panelRun.Log.Contains('panel: settings saved to'))
     Record 'panel input: the music engine played through the null device only (no sound card opened)' ($panelRun.Log.Contains('music: output opened (null') -and -not $panelRun.Log.Contains('output opened (shared mode'))
     # The panel ([panel] values) and the music engine ([music] section) both rewrite settings.ini
     # during this run; neither may undo the other's lines.
     $inputIni = [IO.File]::ReadAllText((Join-Path $work 'lad-panel-panel-input\RacingMasterMod\settings.ini'), [Text.Encoding]::UTF8)
     Record 'panel input: settings.ini keeps the panel''s and the music engine''s values side by side' ($inputIni.Contains('marker_seconds=0') -and $inputIni.Contains('[panel]') -and $inputIni.Contains('language=en') -and $inputIni.Contains('source=my_files') -and $inputIni.Contains('[music]') -and $inputIni -match 'volume=\d+')
+    $inputBytes = [IO.File]::ReadAllBytes((Join-Path $work 'lad-panel-panel-input\RacingMasterMod\settings.ini'))
+    $joins = '^\[mod\]\r\nmarker_seconds=0\r\n\r\n\[panel\]\r\nmode=on\r\nlanguage=en\r\ntext_size=\w+\r\npause_when_unfocused=\d\r\nsource=my_files\r\ncorner=bottom-centre\r\n\r\n\[keys\]\r\npanel=Insert\r\n\r\n\[music\]\r\n(\w+=[^\r\n]*\r\n)+$'
+    Record 'panel input: after both writers, one blank line between sections, the panel''s new keys right after its last line, CR LF only, no BOM' ($inputIni -match $joins -and -not ($inputIni -match '[^\r]\n|\r[^\n]') -and -not ($inputBytes.Length -ge 3 -and $inputBytes[0] -eq 0xEF -and $inputBytes[1] -eq 0xBB -and $inputBytes[2] -eq 0xBF))
+    if (-not ($inputIni -match $joins)) { Write-Host "    settings.ini of the input run:"; Write-Host ($inputIni -replace "`r", '\r' -replace "`n", "\n`n") }
     Record 'panel input: the worker logged the music player start with the full path of the music folder' ($panelRun.Log.Contains('music: the player for your own songs has started; songs copied into ' + (Join-Path $work 'lad-panel-panel-input\RacingMasterMod\music') + ' are added at every start'))
 
     # --- integration ------------------------------------------------------------------------------

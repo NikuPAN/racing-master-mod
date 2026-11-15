@@ -184,17 +184,24 @@ std::string WriteMusicSection(const std::string& existingIni, const MusicSetting
     // Blank lines at the very end (SplitLines yields one for a final line break) are not kept.
     while (!kept.empty() && Trim(kept.back()).empty()) kept.pop_back();
     if (!replaced || sectionAt > kept.size()) sectionAt = kept.size();
+    // Exactly one blank line between [music] and the text on either side, for whoever reads the
+    // file: the blank lines that stood next to the old section are dropped and one is put back.
+    // (0.3.0 lost it when the old section was last: its blank line became a trailing one above.)
+    size_t beforeEnd = sectionAt;
+    while (beforeEnd > 0 && Trim(kept[beforeEnd - 1]).empty()) --beforeEnd;
+    size_t afterStart = sectionAt;
+    while (afterStart < kept.size() && Trim(kept[afterStart]).empty()) ++afterStart;
     std::string out;
-    for (size_t i = 0; i <= kept.size(); ++i) {
-        if (i == sectionAt) {
-            // A blank line before a section appended to existing text, for whoever reads the file.
-            if (!replaced && !out.empty()) out += "\r\n";
-            out += section;
-        }
-        if (i < kept.size()) {
-            out += kept[i];
-            out += "\r\n";
-        }
+    for (size_t i = 0; i < beforeEnd; ++i) {
+        out += kept[i];
+        out += "\r\n";
+    }
+    if (!out.empty()) out += "\r\n";
+    out += section;
+    if (afterStart < kept.size()) out += "\r\n";
+    for (size_t i = afterStart; i < kept.size(); ++i) {
+        out += kept[i];
+        out += "\r\n";
     }
     return out;
 }

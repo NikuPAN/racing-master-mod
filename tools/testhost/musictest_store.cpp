@@ -89,3 +89,47 @@ MT_TEST(410, SettingsSection, "settings.ini: the [music] section is merged, the 
     ReadMusicSection("[music]\r\nvolume=250\r\nloop=sometimes\r\nposition_ms=-5\r\n", &bad);
     mt::Check(bad.volumePercent == 60 && bad.loop == 2 && bad.positionMs == 0, "values out of range keep their defaults");
 }
+
+// Exactly one blank line between [music] and the sections around it, however the file looked
+// (0.3.0 wrote "mode=on\r\n[music]" when the old [music] was the last section), CR LF only, UTF-8
+// without a byte order mark, and the same file again when saved twice.
+MT_TEST(420, SettingsSectionJoins, "settings.ini: one blank line between [music] and the other sections") {
+    MusicSettings settings;
+    settings.volumePercent = 40;
+    const std::string section = WriteMusicSection("", settings);   // "[music]\r\n...position_ms=0\r\n"
+    auto crlfOnly = [](const std::string& text) {
+        for (size_t i = 0; i < text.size(); ++i) {
+            if (text[i] == '\n' && (i == 0 || text[i - 1] != '\r')) return false;
+            if (text[i] == '\r' && (i + 1 >= text.size() || text[i + 1] != '\n')) return false;
+        }
+        return text.compare(0, 3, "\xEF\xBB\xBF") != 0;
+    };
+    struct Case {
+        const char* name;
+        const char* before;
+        std::string expected;
+    };
+    const Case cases[] = {
+        {"[music] last, after a blank line (the owner's file)", "[mod]\r\nstage=2\r\n\r\n[panel]\r\nmode=on\r\n\r\n[music]\r\nvolume=10\r\n",
+         std::string("[mod]\r\nstage=2\r\n\r\n[panel]\r\nmode=on\r\n\r\n") + section},
+        {"[music] last, with no blank line before it", "[panel]\r\nmode=on\r\n[music]\r\nvolume=10\r\n\r\n\r\n",
+         std::string("[panel]\r\nmode=on\r\n\r\n") + section},
+        {"no [music] yet: appended after one blank line", "[panel]\r\nmode=on\r\n", std::string("[panel]\r\nmode=on\r\n\r\n") + section},
+        {"no [music] yet, file without a final line break, LF line endings", "[panel]\nmode=on",
+         std::string("[panel]\r\nmode=on\r\n\r\n") + section},
+        {"[music] in the middle, no blank lines at all", "[mod]\r\nstage=2\r\n[music]\r\nvolume=10\r\n[panel]\r\nmode=on\r\n",
+         std::string("[mod]\r\nstage=2\r\n\r\n") + section + "\r\n[panel]\r\nmode=on\r\n"},
+        {"[music] in the middle, several blank lines on both sides",
+         "[mod]\r\nstage=2\r\n\r\n\r\n[music]\r\nvolume=10\r\n\r\n\r\n[panel]\r\nmode=on\r\n",
+         std::string("[mod]\r\nstage=2\r\n\r\n") + section + "\r\n[panel]\r\nmode=on\r\n"},
+        {"[music] first", "[music]\r\nvolume=10\r\n[mod]\r\nstage=2\r\n", section + "\r\n[mod]\r\nstage=2\r\n"},
+    };
+    for (const Case& c : cases) {
+        const std::string once = WriteMusicSection(c.before, settings);
+        const std::string twice = WriteMusicSection(once, settings);
+        char name[160];
+        snprintf(name, sizeof(name), "%s: one blank line on each side, CR LF, no byte order mark, same when saved again",
+                 c.name);
+        mt::Check(once == c.expected && twice == once && crlfOnly(once), name, "got: %s", once.c_str());
+    }
+}

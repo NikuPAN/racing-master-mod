@@ -92,8 +92,38 @@ void AppendKey(char* out, int outSize, int* used, int key, const char values[kKe
     Append(out, outSize, used, text, n);
 }
 
+bool IsBlank(const Line& line) {
+    return SkipBlanks(line, 0) >= line.length;
+}
+
+// `out` ends with its last line (with its line ending) followed by exactly one blank line, or is
+// left empty when there is nothing in it yet. Blank lines at its end are dropped first.
+void EndWithOneBlankLine(char* out, int outSize, int* used) {
+    int content = *used;
+    while (content > 0 && (out[content - 1] == '\r' || out[content - 1] == '\n')) --content;
+    if (content == 0) {
+        *used = 0;
+        out[0] = '\0';
+        return;
+    }
+    // Keep the last line's own ending (CR LF, LF or CR), then add one blank line.
+    int keep = content;
+    if (keep < *used) {
+        keep += (out[keep] == '\r' && keep + 1 < *used && out[keep + 1] == '\n') ? 2 : 1;
+    }
+    *used = keep;
+    out[*used] = '\0';
+    if (keep == content) {
+        Append(out, outSize, used, "\r\n", 2);
+    }
+    Append(out, outSize, used, "\r\n", 2);
+}
+
 // Rewrites `text` (the file as UTF-8) into `out` with the five [panel] keys set. Every other line
-// is copied as it was, with its own line ending; added lines use CR LF.
+// is copied as it was, with its own line ending; added lines use CR LF. Keys missing from [panel]
+// go right after its last line, and [panel] is separated from the sections around it by exactly
+// one blank line (0.3.0 put missing keys after the blank line that ended the section, and
+// appended [panel] with no blank line before it).
 void MergePanelKeys(const char* text, uint32_t packed, char* out, int outSize) {
     char values[kKeyCount][16];
     ValueWords(packed, values);
@@ -102,6 +132,19 @@ void MergePanelKeys(const char* text, uint32_t packed, char* out, int outSize) {
     out[0] = '\0';
     bool inPanel = false;
     bool sawPanel = false;
+    const char* heldBlanks = nullptr;   // blank lines inside [panel] not copied yet
+    int heldLength = 0;
+    auto addMissingKeys = [&]() {
+        for (int k = 0; k < kKeyCount; ++k) {
+            if (!written[k]) {
+                if (used > 0 && out[used - 1] != '\n' && out[used - 1] != '\r') {
+                    Append(out, outSize, &used, "\r\n", 2);
+                }
+                AppendKey(out, outSize, &used, k, values, true);
+                written[k] = true;
+            }
+        }
+    };
     const char* p = text;
     while (*p) {
         const char* end = strpbrk(p, "\r\n");
@@ -113,18 +156,27 @@ void MergePanelKeys(const char* text, uint32_t packed, char* out, int outSize) {
         bool isPanel = false;
         if (IsHeading(line, &isPanel)) {
             if (inPanel) {
-                // Leaving [panel]: add the keys it did not have.
-                for (int k = 0; k < kKeyCount; ++k) {
-                    if (!written[k]) {
-                        AppendKey(out, outSize, &used, k, values, true);
-                        written[k] = true;
-                    }
-                }
+                addMissingKeys();   // leaving [panel]: the keys it did not have, after its last line
             }
+            if (inPanel || isPanel) {
+                EndWithOneBlankLine(out, outSize, &used);   // the join next to [panel]
+            }
+            heldBlanks = nullptr;
+            heldLength = 0;
             inPanel = isPanel;
             sawPanel = sawPanel || isPanel;
             Append(out, outSize, &used, line.text, line.length);
+        } else if (inPanel && IsBlank(line)) {
+            if (!heldBlanks) heldBlanks = line.text;
+            heldLength = static_cast<int>(line.text + line.length + endingLength - heldBlanks);
+            p = line.text + line.length + endingLength;
+            continue;
         } else {
+            if (heldBlanks) {
+                Append(out, outSize, &used, heldBlanks, heldLength);   // blank lines inside [panel] stay
+                heldBlanks = nullptr;
+                heldLength = 0;
+            }
             bool replaced = false;
             for (int k = 0; inPanel && k < kKeyCount && !replaced; ++k) {
                 if (StartsWithKey(line, kKeys[k])) {
@@ -146,13 +198,10 @@ void MergePanelKeys(const char* text, uint32_t packed, char* out, int outSize) {
         Append(out, outSize, &used, "\r\n", 2);
     }
     if (!sawPanel) {
+        EndWithOneBlankLine(out, outSize, &used);
         Append(out, outSize, &used, "[panel]\r\n", 9);
     }
-    for (int k = 0; k < kKeyCount; ++k) {
-        if (!written[k]) {
-            AppendKey(out, outSize, &used, k, values, true);
-        }
-    }
+    addMissingKeys();   // [panel] last in the file (its trailing blank lines are dropped), or just added
 }
 
 enum class SaveResult { Saved, Unreadable, TooLarge, NotCreated, NotWritten };
