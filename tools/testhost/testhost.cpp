@@ -1377,10 +1377,10 @@ void ScriptShots(Host& host, const std::string& prefix) {
         l = ReadLayout();
         PrintBar("compact");
         Check(("K2 " + std::string(kPositionNames[i]) + ": the compact panel is one window, flush at the same place, its "
-               "times fit and share the seek line's centre")
+               "times fit and share the seek line's centre, with its own small volume slider")
                   .c_str(),
               compact && l.windows.size() == 1 && BarPlaced(l, corner) && PanelOnScreen(l) && TimeRowOk(l, "seek") &&
-                  !l.Has("volume") && !l.Has("loop") && !l.Has("list") && !l.Has("settings"));
+                  l.Has("compact_volume") && !l.Has("volume") && !l.Has("loop") && !l.Has("list") && !l.Has("settings"));
         if (i == 0) CheckCompactFits(l);
         Click(host, Item("expand"));
         Check(("K3 " + std::string(kPositionNames[i]) + ": the expand button brings the full panel back").c_str(),
@@ -1399,8 +1399,8 @@ void ScriptShots(Host& host, const std::string& prefix) {
     CheckShot("K4 compact, Other app", Shoot(host, (prefix + "-compact-other-app").c_str()), true);
     const LayoutFile other = ReadLayout();
     Check("K5 compact, Other app at 24:25 of 1:12:30: neither time is cut off, both on the progress line's centre, flush "
-          "at the bottom centre",
-          TimeRowOk(other, "progress") && BarPlaced(other, kCornerBottomCentre));
+          "at the bottom centre, no volume slider (another app's volume is not the mod's)",
+          TimeRowOk(other, "progress") && BarPlaced(other, kCornerBottomCentre) && !other.Has("compact_volume"));
     CheckCompactFits(other);
     Click(host, Item("expand"));
     WaitLayout(host, [](const LayoutFile& l) { return l.Int("compact") == 0; });
@@ -1789,6 +1789,13 @@ void ScriptInput(Host& host) {
     Click(host, Item("next"));
     Check("I24 the compact panel's Next plays the next song",
           WaitLayout(host, [&](const LayoutFile& l) { return l.Int("index") == (index + 1) % compactTracks; }));
+    // The owner (2026-11-15): the volume without going back to the full panel. A click in the
+    // middle of the compact slider sets about half.
+    const int volumeBefore = ReadLayout().Int("volume");
+    Click(host, Item("compact_volume"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("volume") >= 40 && l.Int("volume") <= 60; });
+    printf("  volume %d before, %d after a click in the middle of the compact slider\n", volumeBefore, ReadLayout().Int("volume"));
+    Check("I24 the compact panel's volume slider sets the volume", ok);
     Key(host, VK_INSERT);
     ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 0; });
     Key(host, VK_INSERT);

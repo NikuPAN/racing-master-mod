@@ -745,9 +745,23 @@ void TransportMyFiles(const music::Snapshot& snapshot, bool displayOnly, bool wi
     Mark("next");
 }
 
+// The volume of "My files" as a slider with the percentage inside. The full panel puts the word
+// "Volume" in front of it; the compact panel has no room for the word, and its hover text says it.
+void VolumeSlider(const music::Snapshot& snapshot, float width, bool displayOnly, const char* id, const char* mark) {
+    const Strings& s = S();
+    ImGui::SetNextItemWidth(width);
+    int volume = static_cast<int>(snapshot.volume * 100.0f + 0.5f);
+    ImGui::BeginDisabled(displayOnly);
+    if (ImGui::SliderInt(id, &volume, 0, 100, "%d%%", ImGuiSliderFlags_NoInput | ImGuiSliderFlags_AlwaysClamp)) {
+        music::Player::Get().SetVolume(static_cast<float>(volume) / 100.0f);
+    }
+    ImGui::EndDisabled();
+    Tip(s.volumeHint, displayOnly ? s.reasonDisplayOnly : nullptr);
+    Mark(mark);
+}
+
 void ControlsMyFiles(const music::Snapshot& snapshot, float width, bool displayOnly) {
     const Strings& s = S();
-    music::Player& player = music::Player::Get();
     TransportMyFiles(snapshot, displayOnly, true);
     ImGui::SameLine();
     if (LoopButton(LoopLabel(EffectiveLoop(snapshot)), !displayOnly, s.loopHint, s.reasonDisplayOnly)) {
@@ -770,15 +784,7 @@ void ControlsMyFiles(const music::Snapshot& snapshot, float width, bool displayO
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(s.volumeWord);
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(sliderWidth);
-    int volume = static_cast<int>(snapshot.volume * 100.0f + 0.5f);
-    ImGui::BeginDisabled(displayOnly);
-    if (ImGui::SliderInt("##volume", &volume, 0, 100, "%d%%", ImGuiSliderFlags_NoInput | ImGuiSliderFlags_AlwaysClamp)) {
-        player.SetVolume(static_cast<float>(volume) / 100.0f);
-    }
-    ImGui::EndDisabled();
-    Tip(s.volumeHint, displayOnly ? s.reasonDisplayOnly : nullptr);
-    Mark("volume");
+    VolumeSlider(snapshot, sliderWidth, displayOnly, "##volume", "volume");
 }
 
 // Previous, play or pause, (stop,) next for "Other app". The compact panel leaves out stop.
@@ -1315,13 +1321,16 @@ void DrawBar(const PanelFrameInfo& info) {
 // under the game's bottom tabs (about 970 x 70 px at 2558x1360). Left to right: previous, play or
 // pause, next, the song (cut off with "..." when long; the whole of it on hover), the elapsed time,
 // a short time line (draggable for "My files"; another app cannot be moved through from here), the
-// length, and the button back to the full panel. Volume, repeat, the source, the list and the
-// settings are in the full panel only. One window, at the same six places as the full panel.
+// length, for "My files" a small volume slider (the owner, 2026-11-15: "so I don't need to expand
+// it back just to adjust volume"; another app's volume is not the mod's to set), and the button
+// back to the full panel. Repeat, the source, the list and the settings are in the full panel
+// only. One window, at the same six places as the full panel; 700 units wide: at 2558x1360 (scale
+// 1.25) 766 px with small text and 875 px with medium, inside the 970 px strip (large is wider).
 void DrawCompact(const PanelFrameInfo& info) {
     const Strings& s = S();
     ImVec2 pos, pivot;
     PlaceInCorner(info, &pos, &pivot);
-    float width = ImFloor(U() * 640.0f);
+    float width = ImFloor(U() * 700.0f);
     if (width > info.displayWidth) width = info.displayWidth;
     ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
     ImGui::SetNextWindowSize(ImVec2(width, 0.0f), ImGuiCond_Always);
@@ -1334,13 +1343,16 @@ void DrawCompact(const PanelFrameInfo& info) {
     const float spacing = style.ItemSpacing.x;
     const float inner = width - style.WindowPadding.x * 2.0f;
     const float lineWidth = ImFloor(U() * 110.0f);
+    const bool myFiles = g_settings.source == SourceMyFiles;
+    const float volumeWidth = myFiles ? ImFloor(U() * 64.0f) : 0.0f;
     char nowPlaying[768];
     // The song gets what is left once the buttons, the two times (`timeWidth` each), the line, the
-    // expand button and the four gaps between them have their room.
+    // volume (My files), the expand button and the gaps between them have their room.
     auto title = [&](float timeWidth) {
         ImGui::SameLine();
         const float used = ImGui::GetCursorPosX() - style.WindowPadding.x;
-        const float w = ImMax(ImFloor(inner - used - timeWidth * 2.0f - lineWidth - IconButtonWidth() - spacing * 4.0f) - 1.0f,
+        const float volume = myFiles ? volumeWidth + spacing : 0.0f;
+        const float w = ImMax(ImFloor(inner - used - timeWidth * 2.0f - lineWidth - volume - IconButtonWidth() - spacing * 4.0f) - 1.0f,
                               U() * 40.0f);
         ImGui::AlignTextToFramePadding();
         TextFit(nowPlaying, w);
@@ -1350,13 +1362,15 @@ void DrawCompact(const PanelFrameInfo& info) {
         Mark("title");
         ImGui::SameLine();
     };
-    if (g_settings.source == SourceMyFiles) {
+    if (myFiles) {
         const music::Snapshot& snapshot = CurrentSnapshot();
         NowPlayingMyFiles(snapshot, nowPlaying, sizeof(nowPlaying));
         TransportMyFiles(snapshot, info.displayOnly, false);
         const MyFilesTimes times = TimesOf(snapshot, info.displayOnly);
         title(times.width);
         SeekLine(snapshot, times, lineWidth, info.displayOnly);
+        ImGui::SameLine();
+        VolumeSlider(snapshot, volumeWidth, info.displayOnly, "##compact_volume", "compact_volume");
     } else {
         const remote::Snapshot other = other_app::GetSnapshot();
         const RemoteView view = ViewOf(other);

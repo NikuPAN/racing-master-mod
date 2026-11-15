@@ -38,16 +38,20 @@ one consumer for the input queue).
   screenshot run visits all six through the settings row (P1-P4: flush within 1 px, centred
   within 1 px, everything on screen with the list and settings row open).
 - **Compact panel (0.3.2, the owner's decision 15):** `DrawCompact`, one window named like the
-  bar (`###rmm_panel`, so the layout file's `bar` is the compact panel then), 640 units wide:
+  bar (`###rmm_panel`, so the layout file's `bar` is the compact panel then), 700 units wide:
   previous, play or pause, next, the song (`TextFit` with "...", its whole text on hover), the
   times (`TimeWidth`), a 110-unit time line (the seek slider for "My files", the non-draggable
-  `TimeLine` for "Other app", "--:--" when it reports none) and the expand button. Measured at
-  2558x1360 (suite of 2026-11-15): medium 800 x 46 px, small 700 x 40 px (K6 requires at most 970 x 70); large
-  text 1000 x 57 px, only reported. The full panel's button (inward arrows, between
-  Settings and Hide), the expand button (outward arrows) and "Compact panel" in the settings row
-  switch it; `[panel] compact=` remembers it. Every screenshot run shoots it at all six places
-  and once with the other app (K1-K6); the input run checks the buttons, the save, Insert and the
-  setting (I24). Stop, volume, repeat, the source, the list and the settings are not on it.
+  `TimeLine` for "Other app", "--:--" when it reports none), for "My files" a 64-unit volume
+  slider with the percentage inside (`VolumeSlider`, shared with the full panel; the owner,
+  2026-11-15: "so I don't need to expand it back to just adjust volume"; none for "Other app",
+  whose volume is not the mod's to set), and the expand button. 640 units before the volume
+  slider. Measured at 2558x1360 (suite of 2026-11-15, 700 units): small 765 x 40 px, medium 875 x 46 px, large 1093 x 57 px (K6 requires at
+  most 970 x 70 with small or medium text; large is only reported). The full panel's button
+  (inward arrows, between Settings and Hide), the expand button (outward arrows) and "Compact
+  panel" in the settings row switch it; `[panel] compact=` remembers it. Every screenshot run
+  shoots it at all six places and once with the other app (K1-K6, K2 also requires the volume
+  slider, K5 its absence); the input run checks the buttons, the volume slider, the save, Insert
+  and the setting (I24). Stop, repeat, the source, the list and the settings are not on it.
 - **Two windows since 0.3.2** (the owner's decision 6): the bar alone (`###rmm_panel`, always
   three rows, also for "Other app" with nothing playing, so its height never changes), anchored at
   its place, and beside it, away from the screen edge, `###rmm_extras` with the status lines (the
