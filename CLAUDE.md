@@ -8,6 +8,21 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ## Current state (2026-11-15)
 
+- **Version 0.3.1 on branch `fix/0.3.1` (not merged, test host only)**: the fixes for what the
+  owner's 0.3.0 game runs of 2026-11-15 showed. The final music save at a normal close (window
+  procedure passes the close to the worker, bounded 0.5 s wait after `WM_DESTROY`) and a save of
+  the place every 10 s (`integration.md`, "Shutdown"); the panel at the bottom centre by default
+  with the list growing upward (`music-panel.md`); one thread at a time in the per-frame work
+  (NVIDIA Smooth Motion presents from more than one); a Smooth Motion log line and the opt-in
+  `[debug] present_probe` (`present-probe.md`); one blank line between `settings.ini` sections.
+  46 hidden runs, 379 checks. **Not in the real game yet**: the owner's in-game test steps for
+  0.3.1 (Smooth Motion off, then on with `present_probe=1`) were handed over with the branch.
+- **0.3.0 ran in the real game on 2026-11-15 (throwaway account):** facts from its `mod.log` and
+  the owner: twice, closing with the window's X ended the process before the 0.3.0 window watch
+  fired (no final save; the list was intact next start), the top-right panel covered the diamond
+  counter, with Smooth Motion on the hook saw 120 presents/s (game capped at 60) and the panel
+  blinked as a whole (off: steady; no fault in about 8 min), and `settings.ini` lost the blank
+  line before `[music]`.
 - **Version 0.3.0 on main (integrated on branch `integrate`, fast-forwarded to main on
   2026-11-15), test host only.** The music panel (`src/ui`), the music engine (`src/music`) and the media remote
   (`src/remote`) are wired into one `version.dll`: 44 hidden runs, 344 checks in
@@ -104,7 +119,7 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.dll, testhost.exe, bystander.exe, musictest.exe
-powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 44 hidden runs, 344 checks, exit 0 = pass (about 2 min)
+powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 46 hidden runs, 379 checks, exit 0 = pass (about 2-3 min)
 ```
 
 The test script copies the panel screenshots to `out\screens\*.png` (bar, list, settings row,
