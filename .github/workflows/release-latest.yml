@@ -1,13 +1,15 @@
-# Builds the music panel on every push to main and publishes it as a single rolling "latest"
-# prerelease, so there is always one downloadable DLL from the newest main without a manual tag.
-# It is marked a prerelease and clearly labelled a development build: for normal use, people
-# download a versioned "Music panel" release (release-music.yml, made from a music-vX.Y.Z tag).
+# Builds the music player on every push to main and publishes it as a single rolling prerelease,
+# "Development build (main)" under the tag dev-build, so there is always one downloadable DLL from
+# the newest main without a manual tag. For normal use people download the versioned "Music player"
+# release (release-music.yml, made from a music-vX.Y.Z tag), which carries GitHub's green Latest
+# label. Until 2026-11-15 this one was titled "Latest build (main)" under the tag latest, which
+# the owner found confusing next to that label; the step below also removes the old one.
 #
 # The stable, versioned release is the deliberate one; this one is automatic. The host test is not
 # run here (it needs Direct3D output and Windows media sessions that GitHub's runners do not offer
 # dependably); it is the gate on the developer's PC before each commit.
 
-name: latest build (main)
+name: development build (main)
 
 on:
   push:
@@ -40,7 +42,7 @@ jobs:
         shell: pwsh
         run: |
           $v = [Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path 'out\version.dll')).FileVersion
-          $dir = 'racing-master-music-panel-main'
+          $dir = 'racing-master-music-player-dev'
           New-Item -ItemType Directory $dir | Out-Null
           Copy-Item out\version.dll, LICENSE, THIRD_PARTY.md $dir
           Copy-Item docs\release\INSTALL-music-panel.txt (Join-Path $dir 'INSTALL.txt')
@@ -48,17 +50,18 @@ jobs:
           (Get-FileHash "$dir.zip" -Algorithm SHA256).Hash.ToLower() + "  $dir.zip" | Out-File "$dir.zip.sha256" -Encoding ascii
           "ver=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      - name: Publish the rolling latest prerelease
+      - name: Publish the rolling development prerelease
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Continue'   # a missing previous release must not fail the step
-          gh release delete latest --yes --cleanup-tag
+          gh release delete dev-build --yes --cleanup-tag
+          gh release delete latest --yes --cleanup-tag   # the old name (until 2026-11-15)
           $v = '${{ steps.pack.outputs.ver }}'
-          $notes = "Automatic build of the latest ``main`` ($v, commit ``${{ github.sha }}``).`n`n" +
-                   "This is a development build, not a stable release. For normal use, download a versioned " +
-                   "**Music panel** release instead. Use a spare account; the game does not allow mods and an " +
+          $notes = "Automatic build of the newest ``main`` ($v, commit ``${{ github.sha }}``).`n`n" +
+                   "This is a development build for testing, not a release. Players: download the release marked " +
+                   "**Latest** (Music player) instead. Use a spare account; the game does not allow mods and an " +
                    "account can be banned."
-          gh release create latest 'racing-master-music-panel-main.zip' 'racing-master-music-panel-main.zip.sha256' `
-            --prerelease --title "Latest build (main)" --notes $notes --target ${{ github.sha }}
+          gh release create dev-build 'racing-master-music-player-dev.zip' 'racing-master-music-player-dev.zip.sha256' `
+            --prerelease --latest=false --title "Development build (main)" --notes $notes --target ${{ github.sha }}

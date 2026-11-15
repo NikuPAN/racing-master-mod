@@ -182,17 +182,24 @@ plugin as separate downloads). `.github/workflows/build.yml` builds with every g
 and keeps `version.dll` as a 7-day artifact; it does not run the host test (Direct3D output and
 media sessions are not dependable on GitHub's server runners), so the local suite stays the gate
 before every commit. `.github/workflows/release-latest.yml` runs on every push to **main**: build, then replace a single
-rolling **prerelease** tagged `latest` ("Latest build (main)") with the zip + SHA-256, so there is
+rolling **prerelease** tagged `dev-build` ("Development build (main)", asset
+`racing-master-music-player-dev.zip`, never marked Latest) with the zip + SHA-256, so there is
 always one downloadable DLL of the newest main without a manual tag (this is the owner's request,
-2026-11-15: "build automatically when main is pushed"). It is a prerelease and labelled a
-development build; `build.yml` therefore ignores main to avoid building it twice.
-`.github/workflows/release-music.yml` runs on a `music-vX.Y.Z` tag: build,
-refuse if the DLL's FileVersion is not X.Y.Z, zip `version.dll` + `docs/release/INSTALL-music-panel.txt`
-(as INSTALL.txt, both languages) + LICENSE + THIRD_PARTY.md, attach the zip and its SHA-256 to a
-release titled "Music panel X.Y.Z" (the deliberate, stable release). The DLSS plugin gets its own
-workflow and `dlss-v` tags when it exists. A `music-v` tag publishes a stable release: only on the
-owner's say-so. The `latest` prerelease updates on its own with every main push, so merging to main
-makes an unreviewed build publicly downloadable — keep that in mind before pushing.
+2026-11-15: "build automatically when main is pushed"); `build.yml` therefore ignores main to
+avoid building it twice. Until 2026-11-15 it was tagged `latest` and titled "Latest build
+(main)": the owner found that confusing next to GitHub's green Latest label, and the workflow
+still deletes that old one. `.github/workflows/release-music.yml` runs on a `music-vX.Y.Z` tag:
+build, refuse if the DLL's FileVersion is not X.Y.Z, zip `version.dll` +
+`docs/release/INSTALL-music-panel.txt` (as INSTALL.txt, both languages) + LICENSE +
+THIRD_PARTY.md as `racing-master-music-player.zip` (no version in the name on purpose: the
+README's download link is `releases/latest/download/racing-master-music-player.zip`), attach it
+and its SHA-256 to a release titled "Music player X.Y.Z" (the owner's name for it, 2026-11-15)
+and mark it Latest. The DLSS plugin gets its own workflow and `dlss-v` tags when it exists. A
+`music-v` tag publishes a stable release: only on the owner's say-so (music-v0.3.2 was approved
+on 2026-11-15). The `dev-build` prerelease updates on its own with every main push, so merging
+to main makes an unreviewed build downloadable — keep that in mind before pushing. README
+screenshots live in `docs/screenshots/` (player ID and in-game name masked before commit; the
+ID shows faintly even through the panel's background, so check a contrast-boosted copy).
 
 Both scripts run from the repo root. To inspect the DLL's imports by hand use the MSVC linker as
 dumpbin: `link.exe /DUMP /NOLOGO /IMPORTS out\version.dll` (the fetched SDK has no `dumpbin.exe`).

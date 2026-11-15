@@ -8,7 +8,7 @@
 
 《巔峰極速》（Racing Master）PC 版的音樂面板。比賽時直接在遊戲裡放自己的歌，或控制 Spotify、瀏覽器正在播的音樂，不用切出遊戲。
 
-<!-- 截圖：完整面板，正在播歌 -->
+![正在播歌的音樂面板，上面打開了設定](docs/screenshots/panel.png)
 
 這是玩家自己做的免費模組，跟網易沒有任何關係。它只在遊戲畫面上畫一個面板、播你的歌，不改遊戲檔案、不讀寫遊戲記憶體，也不連網路。
 
@@ -22,7 +22,7 @@
 
 ### 安裝
 
-1. 在這個頁面右邊的 **Releases** 打開最新的 **Music panel**，下載 `.zip`。
+1. 下載 **[racing-master-music-player.zip](https://github.com/NikuPAN/racing-master-mod/releases/latest/download/racing-master-music-player.zip)**（永遠是最新版）。也可以在這個頁面右邊的 **Releases**，找標著綠色 **Latest** 的 **Music player**。
 2. 對 `.zip` 按右鍵，選「全部解壓縮」，裡面就有 `version.dll`。
 3. 把遊戲和啟動器完全關掉。
 4. 對遊戲捷徑按右鍵，選「開啟檔案位置」，再打開 `Binaries`、`Win64`。看得到 `g112-Win64-Shipping` 就對了。預設路徑是 `C:\Program Files (x86)\g112\Binaries\Win64`。
@@ -44,7 +44,7 @@
 - **我的檔案**：播你電腦裡的歌。按「加入檔案」或「加入資料夾」，或者把歌複製到 `%LOCALAPPDATA%\RacingMasterMod\music`，每次開遊戲都會自動加進歌單。
 - **其他程式**：控制 Spotify、瀏覽器這類正在播音樂的程式。按鈕變灰的話，代表那個程式不開放這項操作，滑鼠停在上面會說明原因。
 
-<!-- 截圖：歌單展開 -->
+![歌單展開：加入檔案、加入資料夾、清空清單和歌曲數量](docs/screenshots/list.png)
 
 「設定」裡可以換語言、文字大小和面板位置（四個角落、上方中間或下方中間），還有三個開關：
 
@@ -52,8 +52,9 @@
 - **每首歌音量一樣**：大聲和小聲的歌用差不多的音量播。每首歌第一次會在背景量一次音量。
 - **精簡面板**：縮成一列，只留播放按鈕、歌名、進度和音量，適合放在畫面邊角。
 
-<!-- 截圖：精簡面板 -->
-<!-- 截圖：其他程式（Spotify 或瀏覽器） -->
+![精簡面板：一列放得下播放按鈕、歌名、進度和音量](docs/screenshots/compact.png)
+
+![其他程式：控制 Chrome 正在播的歌](docs/screenshots/other-app.png)
 
 比賽中可以用的按鍵，面板收起來也有效：
 
@@ -115,7 +116,7 @@ MIT，見 [LICENSE](LICENSE)。用到的第三方函式庫和它們的授權見 
 
 A music panel for the PC version of Racing Master (巔峰極速). Play your own songs while you race, or control what Spotify or your browser is playing, without leaving the game.
 
-<!-- screenshot: the full panel, playing -->
+![The music panel playing a song, with the settings open](docs/screenshots/panel.png)
 
 This is a free fan-made mod with no connection to NetEase. It draws a panel on the game's screen and plays your music. It does not change game files, does not read or write the game's memory, and never goes online.
 
@@ -129,7 +130,7 @@ This is a free fan-made mod with no connection to NetEase. It draws a panel on t
 
 ### Install
 
-1. Under **Releases** on the right of this page, open the newest **Music panel** and download the `.zip`.
+1. Download **[racing-master-music-player.zip](https://github.com/NikuPAN/racing-master-mod/releases/latest/download/racing-master-music-player.zip)** (always the newest version). You can also find it under **Releases** on the right of this page: the **Music player** with the green **Latest** label.
 2. Right-click the `.zip`, choose **Extract All**, and you will find `version.dll` inside.
 3. Close the game and its launcher completely.
 4. Right-click the game's shortcut, choose **Open file location**, then open `Binaries` and `Win64`. You are in the right place if you can see `g112-Win64-Shipping`. The usual path is `C:\Program Files (x86)\g112\Binaries\Win64`.
@@ -151,7 +152,7 @@ The two buttons at the left of the panel choose where the music comes from:
 - **My files**: songs on your computer. Use **Add files** or **Add folder**, or copy songs into `%LOCALAPPDATA%\RacingMasterMod\music` and they are added every time the game starts.
 - **Other app**: controls Spotify, a browser or another app that is playing music. A greyed-out button means that app doesn't allow it; rest the pointer on it to see why.
 
-<!-- screenshot: the song list open -->
+![The song list open: Add files, Add folder, Clear list and the song count](docs/screenshots/list.png)
 
 **Settings** has the language, the text size and where the panel sits (any corner, top centre or bottom centre), plus three switches:
 
@@ -159,8 +160,9 @@ The two buttons at the left of the panel choose where the music comes from:
 - **Same volume for every song**: quiet and loud songs play at about the same volume. Each song is checked once in the background the first time.
 - **Compact panel**: one row with the play buttons, the song, the time and the volume, for a corner of the screen.
 
-<!-- screenshot: the compact panel -->
-<!-- screenshot: Other app (Spotify or a browser) -->
+![The compact panel: play buttons, the song, the time and the volume in one row](docs/screenshots/compact.png)
+
+![Other app: controlling the song playing in Chrome](docs/screenshots/other-app.png)
 
 Keys you can use while racing, even with the panel hidden:
 
