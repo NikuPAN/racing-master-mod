@@ -15,8 +15,13 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   with the list growing upward (`music-panel.md`); the mod draws only on the thread that presents
   the game's frames (NVIDIA Smooth Motion presents from more than one); a Smooth Motion log line and the opt-in
   `[debug] present_probe` (`present-probe.md`); one blank line between `settings.ini` sections.
-  46 hidden runs, 379 checks. **Not in the real game yet**: the owner's in-game test steps for
-  0.3.1 (Smooth Motion off, then on with `present_probe=1`) were handed over with the branch.
+  After two adversarial reviews of the branch: `settings.ini` swapped in with one rename (it could
+  go missing when the process ended mid-save), a failed `[music]` save retried, the one-thread
+  drawing rule above (the first draft's try-lock still let a driver thread draw on the game's
+  context), the probe per thread and for callers in no module, whitespace-only lines as blank in
+  the panel's joins, the status lines above a bottom-anchored bar. Each fix has a check that
+  failed before it. 46 hidden runs, 387 checks. **Not in the real game yet**: the owner's in-game
+  test steps for 0.3.1 (Smooth Motion off, then on with `present_probe=1`) go with the branch.
 - **0.3.0 ran in the real game on 2026-11-15 (throwaway account):** facts from its `mod.log` and
   the owner: twice, closing with the window's X ended the process before the 0.3.0 window watch
   fired (no final save; the list was intact next start), the top-right panel covered the diamond
@@ -119,7 +124,7 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.dll, testhost.exe, bystander.exe, musictest.exe
-powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 46 hidden runs, 379 checks, exit 0 = pass (about 2-3 min)
+powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 46 hidden runs, 387 checks, exit 0 = pass (about 2-3 min)
 ```
 
 The test script copies the panel screenshots to `out\screens\*.png` (bar, list, settings row,
@@ -204,8 +209,12 @@ writing only its own section would drop the others, so it leaves the file as it 
 Both writers keep exactly one blank line between their own section and the ones around it, and
 treat a line of only spaces or tabs as blank (0.3.1;
 0.3.0 wrote "mode=on\r\n[music]" when `[music]` was last, and the panel put missing keys after the
-blank line ending `[panel]`); other lines are copied as they were, added lines use CR LF, UTF-8
-without a byte order mark unless the file had one. Musictest case 420 and run 38 check it.
+blank line ending `[panel]`). They differ in what else they keep: the **panel's writer** copies
+every other line byte for byte (its own line ending, a byte order mark if the file had one) and
+uses CR LF only for the lines it adds; the **engine's writer** (`WriteMusicSection`) rewrites the
+whole file as UTF-8 without a byte order mark and joins every kept line with CR LF. Musictest case
+420 and run 38 check the joins. The engine swaps `settings.ini` in with a single rename and keeps no
+backup of it (`music-engine.md`; nothing reads a `settings.ini.bak`).
 
 `settings.ini` (any letter case) **next to `version.dll` is not read**: the owner put one there
 once and it was silently ignored. `ReadSettings` now logs one line naming it as ignored, with the

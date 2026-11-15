@@ -62,8 +62,21 @@ unchanged:
   game can end its process. Only while the worker is watching; never on `WM_CLOSE`.
 - **Backstop:** the worker still checks the window every 250 ms. Gone, and no frame for a second
   (or gone at all after a close request): the same stop, logged as "the game window has closed".
-  This is the only path in `mode=display`, which has no window procedure. A gone window while
-  frames still arrive is logged once and ignored.
+  This is the only path in `mode=display`, which has no window procedure. There, a gone window
+  while frames still arrive is logged once and ignored. In `mode=on` it is not: `WM_DESTROY` of the
+  panel's window stops the music whatever happens next, so a game that destroyed its window and
+  carried on in a new one would lose its music for the session (Unreal does not normally do this;
+  not tested). The review's other note on this path, that a close request stays "requested" for the
+  whole session and skips the one-second wait, changes nothing observable for that reason: in
+  `mode=on` the `WM_DESTROY` stop comes first, and `mode=display` sees no requests at all. Left as is.
+  `WM_CLOSE`/`SC_CLOSE` count from any subclassed window, but only windows the panel has drawn into
+  are subclassed; a close of an older one would cost one extra save and a misleading "asked to
+  close" line, nothing else. Also left as is.
+- **A request and the window going at once:** if the game destroys its window inside the close,
+  both can reach the worker before it wakes, and then only "is closing" is logged, not "asked to
+  close" (review finding; in the test host the worker woke in between in every run, also before
+  any change, so it could not be shown and was not changed). The owner's steps treat "is closing"
+  and "stopped and saved" as the lines that matter.
 - **Periodic save:** in every mode, while a song plays its place is saved every 10 s when it
   moved (`music-engine.md`), so a forced exit (the game ending from its own menu, a crash) loses
   at most 10 s.
