@@ -14,14 +14,16 @@ enum UiMode : unsigned {
 };
 
 // Where the panel sits ([panel] corner). The numbers are what the panel stores; bottom centre was
-// added in 0.3.1 as 4 so the four corners keep their old numbers.
+// added in 0.3.1 as 4 and top centre in 0.3.2 as 5, so the older places keep their numbers. Every
+// place is flush with the screen edges it touches (0.3.2, the owner's decision).
 enum UiCorner : unsigned {
     UiCornerTopLeft = 0,
     UiCornerTopRight = 1,
     UiCornerBottomLeft = 2,
     UiCornerBottomRight = 3,
     UiCornerBottomCentre = 4,   // the default since 0.3.1 (the owner's choice: top-right covered the game's diamond counter)
-    UiCornerCount = 5,
+    UiCornerTopCentre = 5,      // 0.3.2
+    UiCornerCount = 6,
 };
 
 // The in-game panel's settings: the [panel] and [keys] sections.

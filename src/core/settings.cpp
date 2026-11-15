@@ -86,9 +86,9 @@ void ApplyDebugKey(const char* key, const char* value, const char* path8, Settin
 void ApplyPanelKey(const char* key, const char* value, const char* path8, UiSettings* ui) {
     static const char* const kLanguages[] = {"auto", "en", "zh-TW"};
     static const char* const kSizes[] = {"small", "medium", "large"};
-    // In UiCorner order. "bottom-center" is accepted too.
-    static const char* const kCorners[UiCornerCount] = {"top-left", "top-right", "bottom-left", "bottom-right",
-                                                        "bottom-centre"};
+    // In UiCorner order. "bottom-center" and "top-center" are accepted too.
+    static const char* const kCorners[UiCornerCount] = {"top-left",     "top-right",     "bottom-left",
+                                                        "bottom-right", "bottom-centre", "top-centre"};
     static const char* const kModes[] = {"off", "display", "on"};
     static const char* const kSources[] = {"my_files", "other_app"};
     if (_stricmp(key, "mode") == 0) {
@@ -135,11 +135,14 @@ void ApplyPanelKey(const char* key, const char* value, const char* path8, UiSett
         if (index < 0 && _stricmp(value, "bottom-center") == 0) {
             index = UiCornerBottomCentre;
         }
+        if (index < 0 && _stricmp(value, "top-center") == 0) {
+            index = UiCornerTopCentre;
+        }
         if (index >= 0) {
             ui->corner = static_cast<unsigned>(index);
         } else {
-            Log("settings: \"corner=%s\" is not bottom-centre, top-left, top-right, bottom-left or bottom-right (in %s); "
-                "using bottom-centre",
+            Log("settings: \"corner=%s\" is not top-left, top-centre, top-right, bottom-left, bottom-centre or "
+                "bottom-right (in %s); using bottom-centre",
                 value, path8);
         }
     } else {

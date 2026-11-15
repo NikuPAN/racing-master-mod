@@ -1007,7 +1007,23 @@ ShotResult Shoot(Host& host, const char* name, const RECT* marker = nullptr) {
             *r = static_cast<int>((v >> 16) & 255);
         }
     };
-    const uint32_t clearValue = raw[static_cast<size_t>(desc.Height - 2) * desc.Width + 1];   // bottom-left corner
+    // The clear colour, read where no panel window is: the panel can sit at any of six places, so
+    // the first of a few points that none of its windows covers (2 px margin).
+    const POINT candidates[5] = {{1, static_cast<LONG>(desc.Height / 2)}, {static_cast<LONG>(desc.Width) - 2, static_cast<LONG>(desc.Height / 2)},
+                                 {static_cast<LONG>(desc.Width / 2), static_cast<LONG>(desc.Height / 2)},
+                                 {1, static_cast<LONG>(desc.Height) - 2}, {static_cast<LONG>(desc.Width) - 2, 1}};
+    POINT sample = candidates[0];
+    for (const POINT& p : candidates) {
+        bool covered = false;
+        for (const RECT& w : layout.windows) {
+            covered = covered || (p.x >= w.left - 2 && p.x < w.right + 2 && p.y >= w.top - 2 && p.y < w.bottom + 2);
+        }
+        if (!covered) {
+            sample = p;
+            break;
+        }
+    }
+    const uint32_t clearValue = raw[static_cast<size_t>(sample.y) * desc.Width + static_cast<size_t>(sample.x)];
     long long inside = 0, changed = 0;
     std::vector<uint32_t> bgra(raw.size());
     for (UINT y = 0; y < desc.Height; ++y) {
@@ -1083,19 +1099,38 @@ bool SongsReady(const LayoutFile& l) {
     return l.Int("tracks") >= kPanelSongs && l.Int("scanning") == 0;
 }
 
-// The default place since 0.3.1: the bar's centre within 3 px of the back buffer's centre, its
-// bottom edge above the bottom by no more than 64 px (the margin is 16 units).
-bool BarAtBottomCentre(const LayoutFile& l) {
+// UiCorner numbers (src\core\settings.h) and the order the Position list shows them in.
+constexpr int kCornerTopLeft = 0, kCornerTopRight = 1, kCornerBottomLeft = 2, kCornerBottomRight = 3,
+              kCornerBottomCentre = 4, kCornerTopCentre = 5;
+constexpr int kPositionListOrder[6] = {kCornerTopLeft,    kCornerTopCentre,    kCornerTopRight,
+                                       kCornerBottomLeft, kCornerBottomCentre, kCornerBottomRight};
+const char* const kPositionNames[6] = {"top-left", "top-centre", "top-right", "bottom-left", "bottom-centre", "bottom-right"};
+
+// The bar at its place since 0.3.2: flush with the screen edges the place touches (its outer edge
+// within 1 px of the back buffer's edge) and, at the two centre places, centred within 1 px.
+bool BarPlaced(const LayoutFile& l, int corner) {
     if (!l.hasBar || l.displayWidth <= 0) return false;
-    const LONG centre = (l.bar.left + l.bar.right) / 2;
-    const LONG gap = l.displayHeight - l.bar.bottom;
-    return std::abs(centre - l.displayWidth / 2) <= 3 && gap > 0 && gap <= 64;
+    const bool top = corner == kCornerTopLeft || corner == kCornerTopRight || corner == kCornerTopCentre;
+    const bool centre = corner == kCornerBottomCentre || corner == kCornerTopCentre;
+    const bool right = corner == kCornerTopRight || corner == kCornerBottomRight;
+    const LONG vertical = top ? l.bar.top : l.displayHeight - l.bar.bottom;
+    bool ok = vertical >= 0 && vertical <= 1;
+    if (centre) {
+        ok = ok && std::abs((l.bar.left + l.bar.right) - l.displayWidth) <= 2;   // both halves within 1 px
+    } else if (right) {
+        ok = ok && l.displayWidth - l.bar.right >= 0 && l.displayWidth - l.bar.right <= 1;
+    } else {
+        ok = ok && l.bar.left >= 0 && l.bar.left <= 1;
+    }
+    return ok;
+}
+
+bool BarAtBottomCentre(const LayoutFile& l) {
+    return BarPlaced(l, kCornerBottomCentre);
 }
 
 bool BarAtTopRight(const LayoutFile& l) {
-    if (!l.hasBar || l.displayWidth <= 0) return false;
-    const LONG right = l.displayWidth - l.bar.right;
-    return right > 0 && right <= 64 && l.bar.top > 0 && l.bar.top <= 64;
+    return BarPlaced(l, kCornerTopRight);
 }
 
 // Every window of the panel (the bar with its list and settings row, drop-downs) inside the back buffer.
@@ -1148,6 +1183,8 @@ bool WaitForModLog(Host& host, const char* text, int milliseconds = 4000) {
 bool PanelReady(Host& host, int seconds) {
     return WaitLayout(host, [](const LayoutFile& l) { return l.values.count("open") != 0; }, seconds * 1000);
 }
+
+bool ChoosePosition(Host& host, int listIndex);
 
 void ScriptShots(Host& host, const std::string& prefix) {
     const bool ready = WaitLayout(
@@ -1216,6 +1253,59 @@ void ScriptShots(Host& host, const std::string& prefix) {
     // The example app of the screenshot runs plays a 1:12:30 video at 24:25 (the owner's case).
     Check("T2 Other app, 24:25 of 1:12:30: neither time is cut off and both share the progress line's centre",
           TimeRowOk(ReadLayout(), "progress"));
+
+    // The six places, chosen in the settings row as a player would: at each one the bar alone and
+    // the bar with the song list and the settings row open, flush with the edges it touches.
+    Click(host, Item("source_my_files"));
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("source") == 0; });
+    for (int i = 0; i < 6; ++i) {
+        const int corner = kPositionListOrder[i];
+        if (!ChoosePosition(host, i)) {
+            Check((std::string("P0 choosing ") + kPositionNames[i] + " in the settings row").c_str(), false);
+            continue;
+        }
+        if (ReadLayout().Int("list") != 1) Click(host, Item("list"));
+        WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 1 && l.Int("settings") == 1 && l.Has("row0"); });
+        Pump(host, 4);
+        MoveAway(host);
+        const std::string open = prefix + "-" + kPositionNames[i] + "-open";
+        CheckShot(("P1 " + std::string(kPositionNames[i]) + " with the list and settings row").c_str(), Shoot(host, open.c_str()), true);
+        LayoutFile l = ReadLayout();
+        PrintBar(kPositionNames[i]);
+        Check(("P2 " + std::string(kPositionNames[i]) + ": flush with its screen edges (within 1 px), centred within 1 px "
+               "at a centre place, everything on screen, list and settings row open")
+                  .c_str(),
+              BarPlaced(l, corner) && PanelOnScreen(l));
+        Click(host, Item("list"));
+        Click(host, Item("settings"));
+        WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 0 && l.Int("settings") == 0; });
+        Pump(host, 4);
+        MoveAway(host);
+        CheckShot(("P3 " + std::string(kPositionNames[i]) + " bar alone").c_str(),
+                  Shoot(host, (prefix + "-" + kPositionNames[i] + "-bar").c_str()), true);
+        l = ReadLayout();
+        Check(("P4 " + std::string(kPositionNames[i]) + ": the bar alone is flush there too, and its times fit").c_str(),
+              BarPlaced(l, corner) && PanelOnScreen(l) && TimeRowOk(l, "seek"));
+    }
+    ChoosePosition(host, 4);   // back to bottom centre
+    Click(host, Item("settings"));
+}
+
+// Opens the settings row (if it is not open) and picks the place at `listIndex` of the Position
+// list. True once the panel reports that place and a save.
+bool ChoosePosition(Host& host, int listIndex) {
+    if (ReadLayout().Int("settings") != 1) Click(host, Item("settings"));
+    if (!WaitLayout(host, [](const LayoutFile& l) { return l.Int("settings") == 1 && l.Has("position"); })) return false;
+    Pump(host, 4);
+    char item[32];
+    snprintf(item, sizeof(item), "position_item%d", listIndex);
+    Click(host, Item("position"));
+    if (!WaitLayout(host, [&](const LayoutFile& l) { return l.Has(item); })) return false;
+    Click(host, Item(item));
+    const int corner = kPositionListOrder[listIndex];
+    const bool ok = WaitLayout(host, [&](const LayoutFile& l) { return l.Int("corner") == corner; });
+    Pump(host, 4);
+    return ok;
 }
 
 void ScriptShot1(Host& host, const std::string& name) {
@@ -1224,6 +1314,9 @@ void ScriptShot1(Host& host, const std::string& name) {
     if (!ready) return;
     MoveAway(host);
     CheckShot(("S5 " + name).c_str(), Shoot(host, name.c_str()), true);
+    const LayoutFile placed = ReadLayout();
+    printf("panel corner: %d\n", placed.Int("corner"));
+    Check("B4 the bar sits flush at the place the settings file chose", BarPlaced(placed, placed.Int("corner")) && PanelOnScreen(placed));
     if (ReadLayout().Has("progress")) {
         Check("T2 the other app's times fit their boxes and share the progress line's centre", TimeRowOk(ReadLayout(), "progress"));
     }
@@ -1480,11 +1573,11 @@ void ScriptInput(Host& host) {
     Click(host, Item("language_item1"));
     WaitLayout(host, [](const LayoutFile& l) { return l.Int("language") == 1; });
 
-    // Where the panel sits: bottom centre by default, the four corners to choose from, saved.
+    // Where the panel sits: bottom centre by default, six places to choose from, saved.
     long savesBefore = ReadLayout().Int("saves");
     Click(host, Item("position"));
     ok = WaitLayout(host, [](const LayoutFile& l) { return l.Has("position_item2"); });
-    Click(host, Item("position_item2"));   // listed: bottom centre, top left, top right, bottom left, bottom right
+    Click(host, Item("position_item2"));   // listed: top left, top centre, top right, bottom left, bottom centre, bottom right
     ok = ok && WaitLayout(host, [&](const LayoutFile& l) {
         return l.Int("corner") == 1 && l.Int("saves") > savesBefore && BarAtTopRight(l) && PanelOnScreen(l);
     });
@@ -1494,8 +1587,8 @@ void ScriptInput(Host& host) {
           ok && placeIni.find("corner=top-right") != std::string::npos);
     savesBefore = ReadLayout().Int("saves");
     Click(host, Item("position"));
-    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Has("position_item0"); });
-    Click(host, Item("position_item0"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Has("position_item4"); });
+    Click(host, Item("position_item4"));
     ok = ok && WaitLayout(host, [&](const LayoutFile& l) {
         return l.Int("corner") == 4 && l.Int("saves") > savesBefore && BarAtBottomCentre(l) && PanelOnScreen(l);
     });

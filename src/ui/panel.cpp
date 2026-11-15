@@ -717,11 +717,6 @@ void ControlsOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, 
     (void)width;
 }
 
-// The gap between the panel and the edges of the screen it sits against.
-float ScreenMargin() {
-    return ImFloor(U() * 16.0f);
-}
-
 // True when the panel sits at the bottom of the screen: the song list and the settings row then
 // open above the bar, so the bar stays where it is.
 bool AtBottom() {
@@ -746,7 +741,7 @@ int ListRowsThatFit(int count, float rowStep, const PanelFrameInfo& info) {
     // which would hide by how much the content is too tall.
     const ImGuiWindow* window = ImGui::GetCurrentWindow();
     const float rest = window->ContentSizeIdeal.y + window->WindowPadding.y * 2.0f - g_lastListHeight;
-    const float available = info.displayHeight - ScreenMargin() * 2.0f - rest - ImGui::GetStyle().WindowPadding.y;
+    const float available = info.displayHeight - rest - ImGui::GetStyle().WindowPadding.y;
     const int fit = static_cast<int>(available / rowStep);
     const int least = count < 2 ? count : 2;
     if (fit < rows) {
@@ -920,13 +915,14 @@ bool ChoiceCombo(const char* id, const char* const* items, int count, unsigned* 
     return changed;
 }
 
-// Where the panel sits. Bottom centre (the default) is listed first; the stored value is a UiCorner.
+// Where the panel sits: the six places in screen order (top row, then bottom row); the stored
+// value is a UiCorner.
 void PositionChoice() {
     const Strings& s = S();
-    static const unsigned kShownOrder[UiCornerCount] = {UiCornerBottomCentre, UiCornerTopLeft, UiCornerTopRight,
-                                                        UiCornerBottomLeft, UiCornerBottomRight};
-    const char* names[UiCornerCount] = {s.positionBottomCentre, s.positionTopLeft, s.positionTopRight,
-                                        s.positionBottomLeft, s.positionBottomRight};
+    static const unsigned kShownOrder[UiCornerCount] = {UiCornerTopLeft,    UiCornerTopCentre,    UiCornerTopRight,
+                                                        UiCornerBottomLeft, UiCornerBottomCentre, UiCornerBottomRight};
+    const char* names[UiCornerCount] = {s.positionTopLeft,    s.positionTopCentre,    s.positionTopRight,
+                                        s.positionBottomLeft, s.positionBottomCentre, s.positionBottomRight};
     unsigned shown = 0;
     for (unsigned i = 0; i < UiCornerCount; ++i) {
         if (kShownOrder[i] == g_settings.corner) shown = i;
@@ -1005,15 +1001,16 @@ void MutedWrapped(const char* text) {
     ImGui::PopStyleColor();
 }
 
-// Window position for the chosen place (UiCorner). `pivot` makes the window grow away from the
-// edges it sits against; bottom centre grows up and to both sides equally.
+// Window position for the chosen place (UiCorner), flush with the screen edges it touches (the
+// owner's decision for 0.3.2: no gap, so the panel covers as little of the game as it can; 0.3.1
+// kept 16 units away). `pivot` makes the window grow away from those edges; the centre places
+// grow to both sides equally.
 void PlaceInCorner(const PanelFrameInfo& info, ImVec2* pos, ImVec2* pivot) {
-    const float margin = ScreenMargin();
     const bool right = g_settings.corner == UiCornerTopRight || g_settings.corner == UiCornerBottomRight;
-    const bool centre = g_settings.corner == UiCornerBottomCentre;
+    const bool centre = g_settings.corner == UiCornerBottomCentre || g_settings.corner == UiCornerTopCentre;
     const bool bottom = AtBottom();
-    pos->x = centre ? ImFloor(info.displayWidth * 0.5f) : (right ? info.displayWidth - margin : margin);
-    pos->y = bottom ? info.displayHeight - margin : margin;
+    pos->x = centre ? ImFloor(info.displayWidth * 0.5f) : (right ? info.displayWidth : 0.0f);
+    pos->y = bottom ? info.displayHeight : 0.0f;
     pivot->x = centre ? 0.5f : (right ? 1.0f : 0.0f);
     pivot->y = bottom ? 1.0f : 0.0f;
 }
@@ -1024,8 +1021,7 @@ void DrawBar(const PanelFrameInfo& info) {
     PlaceInCorner(info, &pos, &pivot);
     const ImGuiStyle& style = ImGui::GetStyle();
     float width = ImFloor(U() * 520.0f);
-    const float maxWidth = info.displayWidth - U() * 32.0f;
-    if (width > maxWidth) width = ImMax(maxWidth, U() * 200.0f);
+    if (width > info.displayWidth) width = info.displayWidth;
     ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
     ImGui::SetNextWindowSize(ImVec2(width, 0.0f), ImGuiCond_Always);
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |

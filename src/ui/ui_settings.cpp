@@ -31,8 +31,8 @@ void ValueWords(uint32_t packed, char values[kKeyCount][16]) {
     static const char* const kLanguages[] = {"auto", "en", "zh-TW", "auto"};
     static const char* const kSizes[] = {"small", "medium", "large", "medium"};
     // UiCorner order; the reader's words (settings.cpp).
-    static const char* const kCorners[8] = {"top-left",      "top-right",     "bottom-left",   "bottom-right",
-                                            "bottom-centre", "bottom-centre", "bottom-centre", "bottom-centre"};
+    static const char* const kCorners[8] = {"top-left",      "top-right",  "bottom-left",   "bottom-right",
+                                            "bottom-centre", "top-centre", "bottom-centre", "bottom-centre"};
     strcpy_s(values[0], 16, kLanguages[packed & 3u]);
     strcpy_s(values[1], 16, kSizes[(packed >> 2) & 3u]);
     strcpy_s(values[2], 16, (packed & 0x10u) ? "1" : "0");

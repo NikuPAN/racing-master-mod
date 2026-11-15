@@ -50,6 +50,8 @@
 #                                  with pixel checks; the bar at the bottom centre with the list and
 #                                  settings row above it; no time cut off, times on the bar's line
 #  33-34. "Other app" variants     an app that allows only play and pause, and no app at all
+#  34b. top centre from the ini    corner=top-center is read, the bar flush at the top centre
+#                                  (each screenshot run also visits all six places, P1-P4)
 #  35. panel and ResizeBuffers     five sizes with the panel, list and settings row drawing (large
 #                                  text): the bar stays at the bottom centre, all of it on screen
 #  36. fault inside the panel      game state put back, nothing leaked, mouse and keys back to the game
@@ -531,7 +533,7 @@ try {
     Write-Ini (Join-Path $panelIniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=3', '[panel]', 'language=zh-TW', 'text_size=huge', 'mode=sometimes', 'source=other_app', 'colour=red', 'corner=middle', '[keys]', 'next=F2', 'jump=F3') 'utf8'
     $run = Invoke-Run '25. settings.ini with [panel] and [keys] values' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $panelIniRoot
     $log = Read-Log $run.Log
-    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, display or on') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('"corner=middle" is not bottom-centre, top-left, top-right, bottom-left or bottom-right') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2, marker for 3 s') -and ($run.Lines -match '^marker: found').Count -eq 1)
+    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, display or on') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('"corner=middle" is not top-left, top-centre, top-right, bottom-left, bottom-centre or bottom-right') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2, marker for 3 s') -and ($run.Lines -match '^marker: found').Count -eq 1)
 
     # 27-32. Screenshots: English and the draft Chinese at each text size.
     foreach ($language in 'en', 'zh-TW') {
@@ -555,6 +557,10 @@ try {
     # app at all.
     Invoke-PanelRun 'panel, Other app allowing only play and pause' 'shot1' 'panel-en-medium-other-app-limited' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_SOURCE = 'other_app'; RACING_MASTER_MOD_TEST_REMOTE = 'limited' } @() | Out-Null
     Invoke-PanelRun 'panel, Other app with nothing playing' 'shot1' 'panel-zh-TW-medium-other-app-none' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'zh-TW'; RACING_MASTER_MOD_SOURCE = 'other_app'; RACING_MASTER_MOD_TEST_REMOTE = 'none' } @() | Out-Null
+
+    # 34b. The sixth place, top centre, written the American way in settings.ini (0.3.2).
+    $panelRun = Invoke-PanelRun 'panel, top centre from settings.ini' 'shot1' 'panel-en-medium-top-center-ini' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'en' } @('[panel]', 'corner=top-center')
+    Record 'corner=top-center in settings.ini: taken without a complaint, the bar flush at the top centre' (@($panelRun.Lines -eq 'panel corner: 5').Count -eq 1 -and -not $panelRun.Log.Contains('corner=top-center'))
 
     # 35. ResizeBuffers while the panel and its list are drawn.
     # The generated songs (Chinese, Japanese, Korean, CJK Extension B, a long title) and one file

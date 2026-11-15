@@ -32,8 +32,11 @@ one consumer for the input queue).
 - **Settings row behind a "Settings" button** at the end of row 1 (and "Hide" next to it), so the
   bar stays three rows. The owner listed a settings row without saying when it shows.
 - **Place: bottom centre** by default since 0.3.1 (the owner's decision, 2026-11-15: top-right
-  covered the game's diamond counter). The four corners stay selectable, in the settings row
-  ("Position", added in 0.3.1, bottom centre listed first) and as `[panel] corner=`. At the bottom
+  covered the game's diamond counter). Since 0.3.2 six places (top centre added), each flush with
+  the screen edges it touches (`PlaceInCorner`, no margin; the owner's decision 14), in the
+  settings row ("Position", listed top row then bottom row) and as `[panel] corner=`. Every
+  screenshot run visits all six through the settings row (P1-P4: flush within 1 px, centred
+  within 1 px, everything on screen with the list and settings row open). At the bottom
   (centre or a bottom corner) the song list and the settings row open above the bar in mirror
   order, and so do the status lines that come and go (the engine's "Added ...", the other app's
   help and messages: between the list and the bar since 0.3.1's review, run 40 E6), so the bar stays

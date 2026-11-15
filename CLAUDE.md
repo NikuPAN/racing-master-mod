@@ -185,9 +185,11 @@ language=auto        ; auto | en | zh-TW    (auto: Windows UI language zh-TW, zh
 text_size=medium     ; small | medium | large  (never pixels)
 pause_when_unfocused=0
 source=my_files      ; my_files | other_app
-corner=bottom-centre ; bottom-centre (default since 0.3.1; bottom-center also read) | top-left | top-right
-                     ; | bottom-left | bottom-right. Stored as UiCorner (settings.h): the corners 0-3 as in
-                     ; 0.3.0, bottom centre 4. At the bottom the list and settings row open above the bar.
+corner=bottom-centre ; top-left | top-centre | top-right | bottom-left | bottom-centre (default since 0.3.1)
+                     ; | bottom-right; bottom-center and top-center also read. Stored as UiCorner (settings.h):
+                     ; the corners 0-3 as in 0.3.0, bottom centre 4, top centre 5 (0.3.2). Every place is flush
+                     ; with the screen edges it touches (0.3.2). At the bottom the list and settings row open
+                     ; above the bar.
 [keys]
 panel=Insert         ; the owner's choices; [Ctrl+][Shift+][Alt+]Name, or none
 stop=F5

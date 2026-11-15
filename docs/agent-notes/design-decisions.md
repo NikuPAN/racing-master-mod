@@ -37,6 +37,10 @@ The owner's choices, made with the trade-offs in front of them:
     WAV, OGG Vorbis and M4A/AAC.
 13. **The panel's default place is the bottom centre** (2026-11-15, after the first game run of
     0.3.0: top-right covered the game's diamond counter). The four corners stay selectable.
+14. **Six fixed places, flush with the screen edges** (2026-11-15, for 0.3.2): top left, top
+    centre, top right, bottom left, bottom centre (default), bottom right. The bar's outer edge
+    touches the window's edge (no 16-50 px margin); at the centre places only the top or bottom
+    edge is flush and the bar is centred. No dragging.
 
 Conditions I attached and the owner accepted by choosing option 2:
 

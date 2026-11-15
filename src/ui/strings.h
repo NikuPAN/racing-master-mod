@@ -95,6 +95,7 @@ struct Strings {
     const char* positionTopRight;
     const char* positionBottomLeft;
     const char* positionBottomRight;
+    const char* positionTopCentre;       // 0.3.2
     const char* keysLine;                // six %s: panel, stop, previous, play or pause, next, repeat
     const char* keyNone;                 // an action without a key
 
@@ -182,6 +183,7 @@ inline const Strings kStringsEnglish = {
     "Top right",
     "Bottom left",
     "Bottom right",
+    "Top centre",
     "Keys while racing: %s shows or hides this panel, %s stops, %s plays the previous song, %s plays or pauses, "
     "%s plays the next song, %s changes what repeats.",
     "no key",
@@ -266,6 +268,7 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "右上",          // DRAFT (0.3.1)
     "左下",          // DRAFT (0.3.1)
     "右下",          // DRAFT (0.3.1)
+    "上方中間",      // DRAFT (0.3.2)
     "比賽中的按鍵：%s 顯示或隱藏面板，%s 停止，%s 上一首，%s 播放或暫停，%s 下一首，%s 切換重複方式。",
     "沒有按鍵",
 

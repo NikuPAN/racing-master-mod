@@ -48,7 +48,7 @@ Close the game and delete `version.dll` from that folder. Nothing else in the ga
 
 ### The music panel
 
-Press **Insert** to show or hide the panel. It sits at the bottom centre of the screen as a compact bar: where the music comes from and what is playing, the buttons, the volume and the time line. **Show list** opens the song list above the bar. The panel can sit in any of the four corners instead (in **Settings**). Clicks on the panel stay on the panel; clicks anywhere else go to the game as usual, so you can keep driving with the panel open.
+Press **Insert** to show or hide the panel. It sits at the bottom centre of the screen as a compact bar: where the music comes from and what is playing, the buttons, the volume and the time line. **Show list** opens the song list above the bar. In **Settings** you can move it to any of six places: the four corners, the top centre or the bottom centre. Wherever it sits, it touches the edge of the screen, so it covers as little of the game as it can. Clicks on the panel stay on the panel; clicks anywhere else go to the game as usual, so you can keep driving with the panel open.
 
 Keys that work while racing, with the panel open or closed:
 
@@ -68,7 +68,7 @@ Two sources, chosen with the two buttons at the left of the bar:
 - **My files**: your own songs, played inside the game. Use **Add files** or **Add folder** in the list, or copy songs into the music folder (below). Click a song to play it; the cross at the end of a row takes it off the list (the file stays on your computer). The list, the volume and what repeats are remembered for next time. Nothing starts playing by itself when the game starts.
 - **Other app**: controls whatever Windows reports as playing music, for example Spotify or a browser. The panel shows what that app allows; buttons it does not allow are greyed out, and resting the pointer on one says why. **Not yet tried in the game.** The game runs with administrator rights, and whether Windows lets it see and control other apps from there is still unknown.
 
-**Settings** in the bar opens a row with the language (follow Windows, English or Traditional Chinese), the text size, where the panel sits (bottom centre or one of the four corners), and whether your own songs pause while the game is not the active window.
+**Settings** in the bar opens a row with the language (follow Windows, English or Traditional Chinese), the text size, where the panel sits (six places along the top and bottom edges), and whether your own songs pause while the game is not the active window.
 
 When you use **Add files** or **Add folder**, a normal Windows file window opens over the game, and the game does not react to keys or the mouse until you close it. In exclusive full screen these two buttons are greyed out, because the file window would minimise the game; use the music folder instead, or switch the game to windowed or borderless.
 
@@ -121,7 +121,7 @@ text_size=medium
 pause_when_unfocused=0
 ; my_files or other_app
 source=my_files
-; bottom-centre (default), top-left, top-right, bottom-left or bottom-right
+; top-left, top-centre, top-right, bottom-left, bottom-centre (default) or bottom-right
 corner=bottom-centre
 
 [keys]
@@ -211,7 +211,7 @@ The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vor
 
 ### 音樂面板
 
-按 **Insert** 打開或收起面板。面板是畫面下方中間的一條小工具列，上面有音樂來源、正在播的歌、各個按鈕、音量和進度條；按「顯示清單」，歌單會在工具列上方展開。想把面板放到四個角落也可以，在「設定」裡改。點在面板上的滑鼠只會操作面板，點在其他地方就照常交給遊戲，所以面板開著也能繼續開車。
+按 **Insert** 打開或收起面板。面板是畫面下方中間的一條小工具列，上面有音樂來源、正在播的歌、各個按鈕、音量和進度條；按「顯示清單」，歌單會在工具列上方展開。在「設定」裡可以把面板移到六個位置：四個角落、上方中間或下方中間。不管放在哪裡，面板都會貼齊畫面邊緣，盡量少擋到遊戲。<!-- DRAFT 0.3.2：這兩句待作者審閱 -->點在面板上的滑鼠只會操作面板，點在其他地方就照常交給遊戲，所以面板開著也能繼續開車。
 
 比賽中可以用的按鍵，面板開著或收起來都有效：
 
@@ -231,7 +231,7 @@ The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vor
 - **我的檔案**：在遊戲裡播你自己的歌。在歌單裡按「加入檔案」或「加入資料夾」，或是把歌直接複製到下面說的音樂資料夾。點一首歌就開始播；每一列最後面的叉叉會把那首歌從清單拿掉，檔案本身還留在電腦裡。歌單、音量和重複方式下次開遊戲都還在。遊戲開起來時不會自己開始放歌。
 - **其他程式**：控制 Windows 認為正在放音樂的程式，例如 Spotify 或瀏覽器。面板只會開放那個程式允許的操作，不允許的按鈕會變灰，滑鼠停在上面就會說明原因。**這部分還沒在遊戲裡試過。** 遊戲是用系統管理員權限執行的，Windows 會不會讓它看到、控制其他程式，目前還不知道。
 
-工具列上的「設定」會打開一列選項：語言（跟隨 Windows、English 或繁體中文）、文字大小、面板位置（下方中間或四個角落），以及遊戲不在最前面時，自己的歌要不要暫停。
+工具列上的「設定」會打開一列選項：語言（跟隨 Windows、English 或繁體中文）、文字大小、面板位置（畫面上緣或下緣的六個位置）<!-- DRAFT 0.3.2 -->，以及遊戲不在最前面時，自己的歌要不要暫停。
 
 按「加入檔案」或「加入資料夾」時，遊戲上面會開一個一般的 Windows 檔案視窗，關掉它之前，遊戲不會回應鍵盤和滑鼠。遊戲在獨佔全螢幕模式時，這兩個按鈕會變灰，因為檔案視窗會讓遊戲縮到最小；這時請改用音樂資料夾，或把遊戲切成視窗或無邊框模式。
 
@@ -284,7 +284,7 @@ text_size=medium
 pause_when_unfocused=0
 ; my_files（我的檔案）或 other_app（其他程式）
 source=my_files
-; bottom-centre（下方中間，預設）、top-left、top-right、bottom-left 或 bottom-right
+; top-left、top-centre（上方中間）、top-right、bottom-left、bottom-centre（下方中間，預設）或 bottom-right
 corner=bottom-centre
 
 [keys]
