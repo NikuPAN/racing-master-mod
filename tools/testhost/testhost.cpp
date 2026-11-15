@@ -832,14 +832,32 @@ bool WaitLayout(Host& host, Condition condition, int milliseconds = 4000) {
     }
 }
 
+Host* g_panelHost = nullptr;   // panel mode: the host Item() presents frames on
+
+// A widget's centre (client coordinates) once it holds still. At the bottom of the screen the
+// panel grows upward, and ImGui sizes an auto-sized window one frame late, so for one frame after
+// the list or the settings row changes size every widget sits lower than where it will be drawn
+// from then on; a click aimed from that frame misses (it once missed "Settings" right after Add
+// files made the list one row longer). So the position must be the same on two frames in a row.
 POINT Item(const char* name) {
-    const LayoutFile layout = ReadLayout();
-    auto it = layout.items.find(name);
-    if (it == layout.items.end()) {
-        printf("  (no widget named %s in the layout file)\n", name);
-        return POINT{-1, -1};
+    POINT last = {-1, -1};
+    bool have = false;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        const LayoutFile layout = ReadLayout();
+        auto it = layout.items.find(name);
+        if (it != layout.items.end()) {
+            if (have && it->second.x == last.x && it->second.y == last.y) return last;
+            last = it->second;
+            have = true;
+        }
+        if (!g_panelHost) break;
+        PanelFrame(*g_panelHost, 0);
+        Sleep(3);
     }
-    return it->second;
+    if (!have) {
+        printf("  (no widget named %s in the layout file)\n", name);
+    }
+    return last;
 }
 
 void PostKey(Host& host, UINT vk, bool down, bool repeat = false) {
@@ -1615,6 +1633,8 @@ void ScriptIntegrated(Host& host) {
     PostMessageW(host.window, WM_ACTIVATEAPP, TRUE, 0);
     Sync(host);
     const bool resumed = WaitLayout(host, [](const LayoutFile& l) { return l.Int("state") == 1; });
+    printf("  ticked and playing %d, paused on focus loss %d, playing again %d\n", ok ? 1 : 0, pausedByFocus ? 1 : 0,
+           resumed ? 1 : 0);
     Check("E7 with \"pause when the game is not in focus\" ticked, losing focus pauses the music and coming back plays on",
           ok && pausedByFocus && resumed);
     Click(host, Item("settings"));
@@ -1798,6 +1818,7 @@ void RunPanel(Host& host, const char* outputFolder, int seconds, const char* scr
     }
     host.format = kGameLayout.format;
     g_clearColour = kPanelClearColour;
+    g_panelHost = &host;
     wchar_t folder[MAX_PATH];
     MultiByteToWideChar(CP_ACP, 0, outputFolder, -1, folder, MAX_PATH);
     g_screensFolder = std::wstring(folder) + L"\\screens";

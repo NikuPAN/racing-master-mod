@@ -68,9 +68,11 @@ code 1 for both "no marker" and "forwarding failed"; the review showed what it d
 8. **The list scrolls under the wheel test**: the input script scrolls it back before using
    row and remove-button positions (only the visible rows have widget centres).
    **At the bottom of the screen (the default since 0.3.1) the panel grows upward**, and ImGui
-   sizes an auto-sized window one frame late, so after opening the list or the settings row the
-   widgets move once more: scripts pump a few frames (`Pump(host, 4)`) before reading positions.
-   Without it run 40's E7 clicked beside the checkbox (2026-11-15).
+   sizes an auto-sized window one frame late, so for one frame after the list or the settings
+   row changes size every widget sits lower than it will be drawn from then on. `Item()` therefore
+   presents frames until a widget's centre is the same on two frames in a row (at most 8). Without
+   it run 40's E7 missed "Settings" in about half the runs (2026-11-15): Add files had just made the
+   list one row longer, and the button was read from that one frame.
 9. **The panel drives the real music engine.** The script generates five quiet 20 s tone WAVs
    (neutral names in Chinese, Japanese, Korean, a character outside the basic plane, one long
    title) and copies them into each panel run's `RacingMasterMod\music` folder, which the engine
