@@ -1748,10 +1748,17 @@ void ScriptPanelOff(Host& host) {
 }
 
 // Two threads presenting the same swap chain at the same time, as NVIDIA Smooth Motion may do in
-// the game. The device is made multithread-protected (each context call is then atomic, as a
-// driver's own presents would need), and during the overlap neither thread touches the context
-// itself: only the mod draws. The mod must let one thread draw at a time and pass the other
-// straight on (counted as "skips" in the layout file), with no fault and no ImGui assertion.
+// the game. This thread is "the game's render thread": before each of its presents it binds the
+// game's pipeline state on the immediate context and checks it afterwards (PanelFrame). The second
+// thread stands in for a driver thread and only presents. The device is multithread-protected, so
+// each context call is atomic, as a driver's own presents would need; but a sequence of calls is
+// not, so if the mod drew on the second thread (its state swap, its draws) while this thread was
+// between binding and checking its state, the check would see the panel's state.
+//
+// The mod must draw only on the thread that showed the game's frames first, pass the second
+// thread's presents straight on (counted, "otherthread" in the layout file), never need its
+// one-at-a-time guard ("skips" stays 0), and follow the frames to the other thread only after the
+// first has shown none for a second (a game that moves its rendering to a new thread).
 struct SecondPresenter {
     Host* host;
     volatile LONG stop;
@@ -1771,43 +1778,77 @@ void ScriptConcurrent(Host& host) {
     const bool ready = WaitLayout(host, [](const LayoutFile& l) { return l.Int("drawn") == 1 && l.Has("next"); });
     Check("K0 the panel is drawn before the second thread starts", ready);
     if (!ready) return;
+    const std::string mainId = std::to_string(GetCurrentThreadId());
     ID3D11Multithread* protect = nullptr;
     if (SUCCEEDED(host.context->QueryInterface(__uuidof(ID3D11Multithread), reinterpret_cast<void**>(&protect)))) {
         protect->SetMultithreadProtected(TRUE);
         protect->Release();
     }
     SecondPresenter job = {&host, 0, 0};
-    const HANDLE thread = CreateThread(nullptr, 0, SecondPresenterThread, &job, 0, nullptr);
+    DWORD secondThreadId = 0;
+    const HANDLE thread = CreateThread(nullptr, 0, SecondPresenterThread, &job, 0, &secondThreadId);
+    const std::string secondId = std::to_string(secondThreadId);
+
+    // 1. Both threads present for 2 s.
+    const int failuresBefore = g_stateFailures;
     LONG mine = 0;
+    std::string drewOn = mainId;
     const ULONGLONG start = GetTickCount64();
-    while (GetTickCount64() - start < 4000) {
-        host.chain->Present(0, 0);
+    while (GetTickCount64() - start < 2000) {
+        PanelFrame(host, 0);
         ++mine;
-        if (GetTickCount64() - start >= 1500 && ReadLayout().Int("skips", 0) > 0) break;
+        const std::string now = ReadLayout().Text("thread");
+        if (!now.empty() && now != mainId) drewOn = now;
+    }
+    const int failuresDuring = g_stateFailures - failuresBefore;
+    const LONG secondDuring = job.presents;
+
+    // 2. This thread stops presenting: after a second the second thread takes the frames over.
+    const ULONGLONG quietUntil = GetTickCount64() + 4000;
+    bool movedToSecond = false;
+    while (!movedToSecond && GetTickCount64() < quietUntil) {
+        Sleep(20);
+        movedToSecond = ReadLayout().Text("thread") == secondId;
     }
     InterlockedExchange(&job.stop, 1);
     if (thread) {
         WaitForSingleObject(thread, INFINITE);
         CloseHandle(thread);
     }
+    const LONG secondAll = job.presents;
+    // 3. The second thread has stopped: a second later the frames are this thread's again.
+    const bool backToMain = WaitLayout(host, [&](const LayoutFile& l) { return l.Text("thread") == mainId; }, 5000);
     Pump(host, 10);
     const LayoutFile after = ReadLayout();
-    printf("  presents: %ld from this thread, %ld from the second; %d passed on while the other was drawing\n", mine,
-           job.presents, after.Int("skips", 0));
+    printf("  presents: %ld from this thread in the 2 s overlap, %ld from the second (%ld in all); passed on as another "
+           "thread's: %d; passed on while the other was drawing: %d; state differed after %d of this thread's presents\n",
+           mine, secondDuring, secondAll, after.Int("otherthread", -1), after.Int("skips", -1), failuresDuring);
     // The present probe ([debug] present_probe=1): the script checks this against the run's settings.
     printf("probe calls recorded: %d\n", after.Int("probe", 0));
+    printf("thread ids: this %s, second %s\n", mainId.c_str(), secondId.c_str());
     if (after.Int("probe", 0) > 0) {
         // Let the worker write probe blocks that cover the overlap (the test asks for one every 2 s);
         // Windows' present count shows as a change from the second block on.
         WaitForModLog(host, "at most 2 threads inside the hook at once", 8000);
         WaitForModLog(host, "Windows counted", 8000);
     }
-    Check("K1 both threads presented at the same time and the mod passed the overlapping ones straight on",
-          thread != nullptr && job.presents > 0 && after.Int("skips", 0) > 0);
-    Check("K1 the worker logged it once, in plain words",
-          WaitForModLog(host, "frames are being shown from two threads at the same moment", 3000));
+    // The second thread presents flat out and, with the device's lock, leaves this one few turns
+    // (38-2057 presents in 2 s seen on this PC); a handful is enough for the checks below.
+    Check("K1 both threads presented at the same time", thread != nullptr && mine >= 10 && secondDuring > 100);
+    Check("K1 the mod drew only on this thread while both presented, and never needed its one-at-a-time guard",
+          drewOn == mainId && after.Int("skips", -1) == 0);
+    // The count also holds this thread's presents in step 3 before the frames came back to it.
+    Check("K1 every present of the second thread while both presented was passed on untouched and counted",
+          after.Int("otherthread", -1) >= secondDuring);
+    Check("K1 the game's pipeline state on this thread was intact after every present while both presented",
+          failuresDuring == 0);
+    Check("K2 with this thread quiet for a second, the mod followed the frames to the second thread", movedToSecond);
+    Check("K3 and back to this thread once the second stopped", backToMain);
+    Check("K4 the worker logged the second thread once, in plain words",
+          WaitForModLog(host, "the game's frames also arrive from a second thread", 3000));
+    Check("K4 ... and the move to another thread", WaitForModLog(host, "the game's frames now come from another thread", 3000));
     MoveAway(host);
-    CheckShot("K2 the panel is still drawn afterwards", Shoot(host, "concurrent"), true);
+    CheckShot("K5 the panel is still drawn afterwards", Shoot(host, "concurrent"), true);
 }
 
 void RunPanel(Host& host, const char* outputFolder, int seconds, const char* script, const char* name) {

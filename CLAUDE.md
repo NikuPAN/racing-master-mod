@@ -12,8 +12,8 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   owner's 0.3.0 game runs of 2026-11-15 showed. The final music save at a normal close (window
   procedure passes the close to the worker, bounded 0.5 s wait after `WM_DESTROY`) and a save of
   the place every 10 s (`integration.md`, "Shutdown"); the panel at the bottom centre by default
-  with the list growing upward (`music-panel.md`); one thread at a time in the per-frame work
-  (NVIDIA Smooth Motion presents from more than one); a Smooth Motion log line and the opt-in
+  with the list growing upward (`music-panel.md`); the mod draws only on the thread that presents
+  the game's frames (NVIDIA Smooth Motion presents from more than one); a Smooth Motion log line and the opt-in
   `[debug] present_probe` (`present-probe.md`); one blank line between `settings.ini` sections.
   46 hidden runs, 379 checks. **Not in the real game yet**: the owner's in-game test steps for
   0.3.1 (Smooth Motion off, then on with `present_probe=1`) were handed over with the branch.
@@ -319,13 +319,21 @@ Details and the reasons: `docs/agent-notes/integration.md`.
 - `__try/__except` guards the per-frame code; keep C++ objects with destructors out of
   `GuardedOnFrame` (C2712). After a fault the mod releases `FrameRefs`, writes one log line
   (exception code, module, offset) and stays off until the game restarts. It does not retry.
-- **One thread at a time in the per-frame work** (0.3.1): `FrameWork` in `present_hook.cpp`
-  takes `g_frameBusy` with one interlocked compare-exchange; a present that finds it taken
-  (another thread is drawing) is counted in `concurrentSkips` and goes straight to the original
-  Present. Never a waiting lock there. Reason: with NVIDIA Smooth Motion on, the owner's game run
-  saw 120 presents/s and the driver may present from its own threads; ImGui, the panel's globals
-  and the context state swap assume one thread. The worker logs the first skip once and adds
-  the count to the 30 s "running" line; run 45 presents from two threads at once.
+- **The mod draws on one thread only** (0.3.1): the per-frame work runs only on the thread that
+  presents the bound swap chain (`g_frameThread` in `present_hook.cpp`, set when the swap chain
+  is bound). Presents of that chain from any other thread go straight to the original Present,
+  untouched, counted in `otherThreadPresents`; the frames move to another thread only after the
+  owner has shown no game frame for 1 s (`kFrameThreadQuietMs`, a game that moves its rendering).
+  Behind that, `g_frameBusy` (one interlocked compare-exchange, never a waiting lock) keeps two
+  threads out of the work at once (`concurrentSkips`). Reason: with NVIDIA Smooth Motion on, the
+  owner's game run saw 120 presents/s and the driver may present from its own thread while the
+  game's render thread is using the immediate context, which is not thread-safe. The try-lock
+  alone (first 0.3.1 draft) only kept the mod's own drawing apart: run 45 against it saw the game
+  thread's pipeline state changed after 60 of 2057 of its presents. Not covered: if Smooth Motion
+  wraps the swap chain so the game's own presents never reach the hook, the driver's thread is the
+  only one presenting the real chain and becomes the owner; the present probe's per-thread line
+  shows that (`present-probe.md`). The worker logs the second thread and a move once each and adds
+  the counts to the 30 s "running" line.
 - `PatchSlot` (`vtable_patch.cpp`) publishes the original pointer **before** switching the table
   entry. Every later hook goes through it; do not inline a table write elsewhere.
 - Any delay-loaded function the frame thread or the window thread calls must be resolved on the

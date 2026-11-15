@@ -317,6 +317,8 @@ void WatchFrames(bool musicStarted) {
     bool resumedLogged = false;
     bool faultHandled = false;
     bool concurrentLogged = false;
+    bool otherThreadLogged = false;
+    bool threadMoveLogged = false;
     ULONGLONG lastProbeReport = attachedAt;
     SmoothMotionCheck smoothMotion;
     smoothMotion.Tick();
@@ -379,11 +381,24 @@ void WatchFrames(bool musicStarted) {
             PresentHookProbeReport(static_cast<unsigned>((now - lastProbeReport + 500) / 1000));
             lastProbeReport = now;
         }
+        if (!otherThreadLogged && counters.otherThreadPresents != 0) {
+            otherThreadLogged = true;
+            Log("the game's frames also arrive from a second thread (%llu so far); the mod draws the panel and the marker "
+                "only on the thread that showed the game's frames first and passes the others on untouched, because "
+                "drawing from two threads could disturb the game's own drawing. NVIDIA Smooth Motion and similar "
+                "driver features do this.",
+                counters.otherThreadPresents);
+        }
+        if (!threadMoveLogged && counters.frameThreadMoves != 0) {
+            threadMoveLogged = true;
+            Log("the game's frames now come from another thread (the first showed none for a second); the mod draws "
+                "there from now on");
+        }
         if (!concurrentLogged && counters.concurrentSkips != 0) {
             concurrentLogged = true;
-            Log("frames are being shown from two threads at the same moment (%llu so far); each one that arrives while "
-                "another is being drawn is passed on without the panel and the marker, so the mod's drawing never runs "
-                "twice at once. NVIDIA Smooth Motion and similar driver features do this.",
+            Log("frames were shown from two threads at the same moment (%llu so far); each one that arrived while "
+                "another was being drawn was passed on without the panel and the marker, so the mod's drawing never "
+                "runs twice at once.",
                 counters.concurrentSkips);
         }
         if (!warned && now - attachedAt >= 10000) {
@@ -409,10 +424,19 @@ void WatchFrames(bool musicStarted) {
         }
         if (now - lastReport >= 30000) {
             const double seconds = static_cast<double>(now - lastReport) / 1000.0;
-            char skips[96] = "";
+            char skips[256] = "";
+            int used = 0;
+            if (counters.otherThreadPresents != 0) {
+                used += snprintf(skips + used, sizeof(skips) - static_cast<size_t>(used),
+                                 ", %llu from a second thread passed on", counters.otherThreadPresents);
+            }
+            if (counters.frameThreadMoves != 0) {
+                used += snprintf(skips + used, sizeof(skips) - static_cast<size_t>(used),
+                                 ", moved to another thread %llu times", counters.frameThreadMoves);
+            }
             if (counters.concurrentSkips != 0) {
-                snprintf(skips, sizeof(skips), ", %llu passed on while another thread was drawing",
-                         counters.concurrentSkips);
+                snprintf(skips + used, sizeof(skips) - static_cast<size_t>(used),
+                         ", %llu passed on while another thread was drawing", counters.concurrentSkips);
             }
             Log("running: %llu hook calls, %llu game frames so far, %.0f frames per second over the last %.0f s%s",
                 counters.hookCalls, counters.gameFrames,

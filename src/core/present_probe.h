@@ -26,7 +26,8 @@ enum class ProbeOutcome : int {
     OtherChain = 2,    // a swap chain that is not the game's
     Skipped = 3,       // another thread was inside the frame work: passed straight on
     Off = 4,           // the frame work is off for the session (after a fault), or a test present
-    Count = 5,
+    OtherThread = 5,   // the game's swap chain, from a thread the mod does not draw on: passed straight on
+    Count = 6,
 };
 
 // Frame threads, only while g_probeOn. ProbeEnter returns the caller's slot (or -1), which

@@ -241,7 +241,8 @@ void ProbeReport(void* originalPresent, void* originalPresent1, void** table, un
     // 2. Who called Present, and what the frame work did for each: one line per calling module.
     static const char* const kOutcomeNames[kOutcomes] = {"panel drawn", "game frame without the panel",
                                                          "another swap chain", "passed on while another thread drew",
-                                                         "frame work off"};
+                                                         "frame work off",
+                                                         "game frame from a thread the mod does not draw on"};
     for (const Caller& c : g_callers) {
         if (c.base == 0) continue;
         ModuleName(reinterpret_cast<const void*>(c.base), name, sizeof(name));

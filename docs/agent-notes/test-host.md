@@ -5,7 +5,8 @@ type: reference
 ---
 
 `tools\run-host-test.ps1` runs 46 hidden programs (45-46 since 0.3.1: two threads presenting at
-once, and the present probe; runs 1-14 the loader, runs 15-22 the media
+once, the "game" one with its pipeline state bound and checked around every present while the
+mod must draw only on it, and the present probe; runs 1-14 the loader, runs 15-22 the media
 remote (see `media-remote-tests.md`), run 23 the music engine's `musictest.exe` with one check
 per line it prints (see `music-tests.md`), runs 25-38 the music panel driving the real engine,
 39-44 the integration: `[panel] mode=off`, the two end-to-end runs, a misplaced settings.ini, and

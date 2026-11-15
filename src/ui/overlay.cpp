@@ -415,9 +415,14 @@ void ClearRects() {
 // the messages the test posts). Test host only; never written in the game.
 void WriteTestLayout(bool drawn, float sx, float sy) {
     static char text[8192];
-    int used = snprintf(text, sizeof(text), "open %d\ndrawn %d\nenabled %d\nsaves %ld\nskips %llu\nprobe %llu\n",
+    // "thread": the thread doing the frame work (this one); "otherthread": presents of the game's
+    // swap chain from another thread, passed on untouched (present_hook.cpp).
+    const PresentHookCounters counters = PresentHookGetCounters();
+    int used = snprintf(text, sizeof(text),
+                        "open %d\ndrawn %d\nenabled %d\nsaves %ld\nskips %llu\notherthread %llu\nthread %lu\nprobe %llu\n",
                         Shared().panelOpen.load() ? 1 : 0, drawn ? 1 : 0, Shared().enabled.load() ? 1 : 0,
-                        UiSettingsSavesWritten(), PresentHookGetCounters().concurrentSkips, ProbeRecordedCalls());
+                        UiSettingsSavesWritten(), counters.concurrentSkips, counters.otherThreadPresents,
+                        GetCurrentThreadId(), ProbeRecordedCalls());
     used += PanelAppendTestState(text + used, static_cast<int>(sizeof(text)) - used);
     if (drawn) {
         ImGuiContext& g = *ImGui::GetCurrentContext();

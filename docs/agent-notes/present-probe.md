@@ -11,9 +11,13 @@ game's own HUD stayed steady. Off, steady. Public sources (the RTSS author on gu
 PRs goatcorp/Dalamud#2849 and #2881, jlrouzies-fr/DLSS5-Feeder#1, NVIDIA's Linux README on
 nvpresent) say Smooth Motion may call Present from its own thread(s), possibly concurrently, and
 probably wraps the game's swap chain, so the game's own presents may go to a wrapper whose table
-the mod did not patch. None of that is verified for this game. 0.3.1 makes concurrent presents
-harmless (one thread at a time in the frame work, `CLAUDE.md`), logs one plain line when
-`NvPresent64.dll` is in the process, and adds this probe to find out what really happens.
+the mod did not patch. None of that is verified for this game. 0.3.1 draws only on the thread
+that presents the game's swap chain first and passes the same chain's presents from other
+threads straight on (`CLAUDE.md`, "The mod draws on one thread only"), logs one plain line when
+`NvPresent64.dll` is in the process, and adds this probe to find out what really happens. That
+rule stops the mod drawing from a driver thread while the game's thread presents too; it cannot
+help if the game's own presents never reach the hook (finding 3 below), because then the driver's
+thread is the only one the mod sees.
 
 **Switch:** `[debug]` `present_probe=1` in the per-user `settings.ini` (default off). Off, the
 hook does one load of `g_probeOn` per present and nothing else (run 45 checks that nothing is
@@ -28,7 +32,7 @@ those threads); the worker writes the block every 30 s.
 2. One `present probe: called from <module>: Present a, Present1 b; <outcome> n ...` line per
    module the call came from (the return address of the hook, resolved to a module by address
    range). Outcomes: panel drawn, game frame without the panel, another swap chain, passed on
-   while another thread drew, frame work off.
+   while another thread drew, frame work off, game frame from a thread the mod does not draw on.
 3. One `present probe: swap chain <pointer>, n presents: its function table is in <module> (the
    table the mod patched | not ...), and its Present entry points into <module>` line per swap
    chain (up to 4).
@@ -38,19 +42,20 @@ those threads); the worker writes the block every 30 s.
    last 30 s, Windows counted m presents of the game's swap chain` (from
    `IDXGISwapChain::GetLastPresentCount`, read on the frame thread for the game's chain; the
    first block gives the count itself, later blocks the change since the last one).
-   The test host's run gave, for example: 21144 presents from 2 threads, at most 2 inside the hook
-   at once, all from testhost.exe (panel drawn 208, passed on while another thread drew 20936),
-   one swap chain on the patched dxgi.dll table whose Present entry points into VERSION.dll.
 
 **What each finding would mean (read with Smooth Motion on, then off):**
 
 1. **K = 2 or more, or two threads with similar counts** (the game's render thread and a
-   driver thread): concurrent presents. The 0.3.1 try-lock already makes that safe; the "passed
-   on while another thread drew" counts show how many presents went out without the panel. If
-   the driver's thread presents the generated frames and our panel is drawn only on one of
-   every two, that alone explains the blink: the next step is to draw on every present of the
-   game's chain (not just the ones that win the flag), or to draw before the frame reaches the
-   driver's layer.
+   driver thread): presents from two threads. The mod draws only on the first; the "game frame
+   from a thread the mod does not draw on" count shows how many presents went out without the
+   panel. If those are the generated frames and the panel is drawn only on every other one, that
+   alone may explain the blink. Do **not** fix that by drawing on the other thread's presents:
+   the immediate context is not thread-safe, and drawing from a driver thread while the game's
+   thread renders changed the game's state in run 45 (before the one-thread rule). The fix would
+   have to draw before the frame reaches the driver's layer (finding 3's hook), or the advice
+   stays "Smooth Motion off". **If "panel drawn" appears under a caller other than the game's
+   executable (for example `NvPresent64.dll`), the mod is drawing from the driver's thread: treat
+   that as a crash risk and tell the owner to keep Smooth Motion off until it is solved.**
 2. **The original Present (or the patched table's entry) is in NvPresent64.dll**: hook order.
    The driver patched the same table, before or after the mod. "Points into NvPresent64.dll"
    after the mod's patch means the driver re-patched and now calls us (or skips us); the fix is
@@ -59,7 +64,8 @@ those threads); the worker writes the block every 30 s.
    presents the hook saw on the game's swap chain (its "swap chain" line) are about half of
    Windows' present count for it, or a swap chain line says "not the table the mod patched"**:
    wrapper bypass. ("game frames" counts only presents that ran the frame work, so presents
-   passed on while another thread drew are not in it; compare the swap chain line instead.) The game presents to a wrapper object whose own table
+   passed on from another thread are not in it; compare the swap chain line instead.) The game
+   presents to a wrapper object whose own table
    the mod never patched; what reaches the hook is the driver presenting the real chain
    underneath (generated and real frames alike). Fix C from the research: hook swap-chain
    creation (`IDXGIFactory::CreateSwapChain*`) and patch the wrapper's table too, so the panel

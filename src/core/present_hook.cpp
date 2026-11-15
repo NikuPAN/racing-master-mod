@@ -39,11 +39,24 @@ volatile LONG64 g_hookCalls = 0;
 volatile LONG64 g_frames = 0;
 volatile LONG g_frameWorkOff = 0;   // 1 after a fault: the mod no longer touches frames
 
-// 1 while a thread is inside the per-frame work. Everything below this hook (ImGui, the panel's
-// globals, the immediate context's state swap) assumes one thread at a time, but a game, or a
-// driver feature such as NVIDIA Smooth Motion, may present from two threads at once. A present
-// that finds the work taken passes straight on to the original Present, untouched, and is
-// counted; nothing ever waits here.
+// The thread that does the per-frame work: the one that presents the game's swap chain. The mod
+// draws on the game's immediate context, which is not thread-safe, so it may only draw on the
+// thread that also renders with it. A driver feature such as NVIDIA Smooth Motion may present the
+// same swap chain from its own thread while the game's render thread is busy recording the next
+// frame; drawing there would change the game's pipeline state under it (run 45 showed exactly that
+// before this rule). So the first thread that presents the bound swap chain owns the frame work;
+// presents of that chain from any other thread go straight to the original Present, untouched,
+// and are counted. The frames move to another thread only once the owner has shown none for
+// kFrameThreadQuietMs (a game that moves its rendering to a new thread). Set with the binding.
+volatile LONG g_frameThread = 0;
+constexpr ULONGLONG kFrameThreadQuietMs = 1000;
+volatile LONG64 g_otherThreadPresents = 0;
+volatile LONG g_frameThreadMoves = 0;
+
+// 1 while a thread is inside the per-frame work: the second line of defence behind g_frameThread
+// (two threads could still meet there around a move). Everything below this hook (ImGui, the
+// panel's globals, the context state swap) assumes one thread at a time. A present that finds the
+// work taken passes straight on to the original Present and is counted; nothing ever waits here.
 volatile LONG g_frameBusy = 0;
 volatile LONG64 g_concurrentSkips = 0;
 
@@ -145,29 +158,50 @@ bool WindowQualifies(HWND window) {
     return g_acceptHiddenWindow || IsWindowVisible(window);
 }
 
-bool IsGameSwapChain(IDXGISwapChain* swapChain, ULONGLONG now) {
+// True while another thread owns the frame work and has shown a game frame within the last
+// kFrameThreadQuietMs. Read without the frame-work flag (a stale answer only delays a move by a
+// present); IsGameSwapChain decides again under it.
+bool AnotherThreadDraws(LONG me, ULONGLONG now) {
+    const LONG owner = g_frameThread;
+    return owner != 0 && owner != me && now - g_lastBoundFrameTick < kFrameThreadQuietMs;
+}
+
+enum class ChainKind { Game, Other, OtherThread };
+
+ChainKind IsGameSwapChain(IDXGISwapChain* swapChain, ULONGLONG now) {
+    const LONG me = static_cast<LONG>(GetCurrentThreadId());
     IDXGISwapChain* bound = g_boundSwapChain;
     if (swapChain == bound) {
+        if (g_frameThread != me) {
+            if (AnotherThreadDraws(me, now)) {
+                return ChainKind::OtherThread;
+            }
+            // The owner has been quiet for a second: the game's frames come from this thread now.
+            InterlockedExchange(&g_frameThread, me);
+            InterlockedIncrement(&g_frameThreadMoves);
+        }
         g_lastBoundFrameTick = now;
-        return true;
+        return ChainKind::Game;
     }
     if (bound && now - g_lastBoundFrameTick < 2000) {
-        return false;
+        return ChainKind::Other;
     }
     DXGI_SWAP_CHAIN_DESC desc = {};
     if (FAILED(swapChain->GetDesc(&desc)) || !WindowQualifies(desc.OutputWindow)) {
-        return false;
+        return ChainKind::Other;
     }
-    // First one, or the game rebuilt its swap chain; only one of two racing threads wins.
+    // First one, or the game rebuilt its swap chain; only one of two racing threads wins. The
+    // thread that presents it owns the frame work from now on.
     if (InterlockedCompareExchangePointer(reinterpret_cast<void* volatile*>(&g_boundSwapChain), swapChain, bound) !=
         bound) {
-        return false;
+        return ChainKind::Other;
     }
+    InterlockedExchange(&g_frameThread, me);
     g_lastBoundFrameTick = now;
     if (bound) {
         Log("the game presents through a new swap chain; following it");
     }
-    return true;
+    return ChainKind::Game;
 }
 
 // What the frame work did with the present it is handling (for the present probe). Written and
@@ -177,7 +211,12 @@ ProbeOutcome g_frameOutcome = ProbeOutcome::OtherChain;
 void OnFrame(IDXGISwapChain* swapChain, UINT flags, FrameRefs& refs) {
     const ULONGLONG now = GetTickCount64();
     g_frameOutcome = ProbeOutcome::OtherChain;
-    if (!IsGameSwapChain(swapChain, now)) {
+    const ChainKind kind = IsGameSwapChain(swapChain, now);
+    if (kind != ChainKind::Game) {
+        if (kind == ChainKind::OtherThread) {
+            InterlockedIncrement64(&g_otherThreadPresents);
+            g_frameOutcome = ProbeOutcome::OtherThread;
+        }
         return;
     }
     g_frameOutcome = ProbeOutcome::GameFrame;
@@ -262,14 +301,20 @@ void GuardedOnFrame(IDXGISwapChain* swapChain, UINT flags) {
     }
 }
 
-// Counts the present and runs the per-frame work, unless another thread is inside it right now
-// (see g_frameBusy): then this present is only counted and passed on. Returns what happened, for
-// the present probe.
+// Counts the present and runs the per-frame work, unless the game's swap chain is presented from a
+// thread that does not own the frame work (see g_frameThread), or another thread is inside it right
+// now (see g_frameBusy): then this present is only counted and passed on. The first check comes
+// before the flag, so a driver thread presenting at the same time never takes the flag away from
+// the game's thread. Returns what happened, for the present probe.
 ProbeOutcome FrameWork(IDXGISwapChain* swapChain, UINT flags) {
     if (g_frameWorkOff || (flags & DXGI_PRESENT_TEST)) {
         return ProbeOutcome::Off;
     }
     InterlockedIncrement64(&g_hookCalls);
+    if (swapChain == g_boundSwapChain && AnotherThreadDraws(static_cast<LONG>(GetCurrentThreadId()), GetTickCount64())) {
+        InterlockedIncrement64(&g_otherThreadPresents);
+        return ProbeOutcome::OtherThread;
+    }
     if (InterlockedCompareExchange(&g_frameBusy, 1, 0) != 0) {
         InterlockedIncrement64(&g_concurrentSkips);
         return ProbeOutcome::Skipped;
@@ -378,6 +423,8 @@ PresentHookCounters PresentHookGetCounters() {
     counters.hookCalls = static_cast<unsigned long long>(g_hookCalls);
     counters.gameFrames = static_cast<unsigned long long>(g_frames);
     counters.concurrentSkips = static_cast<unsigned long long>(g_concurrentSkips);
+    counters.otherThreadPresents = static_cast<unsigned long long>(g_otherThreadPresents);
+    counters.frameThreadMoves = static_cast<unsigned long long>(g_frameThreadMoves);
     return counters;
 }
 

@@ -32,6 +32,11 @@ struct PresentHookCounters {
     // Presents that arrived while another thread was inside the per-frame work and were passed
     // straight on without it (two threads presenting at once, e.g. NVIDIA Smooth Motion).
     unsigned long long concurrentSkips;
+    // Presents of the game's swap chain from a thread other than the one the mod draws on, passed
+    // straight on (a driver thread, e.g. NVIDIA Smooth Motion), and how often the frame work moved
+    // to another thread after the one it was on showed no game frame for a second.
+    unsigned long long otherThreadPresents;
+    unsigned long long frameThreadMoves;
 };
 PresentHookCounters PresentHookGetCounters();
 
