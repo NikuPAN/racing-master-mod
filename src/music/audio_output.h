@@ -73,6 +73,10 @@ public:
     void SetVolume(float linearGain);  // 0..1, applied with a ramp in the callback; any thread
     float Volume() const;
 
+    // How long the gate takes to fade the sound in or out (pause, stop, song change, seek). 10 ms
+    // by default (just enough to avoid a click); any thread. 0 = instant.
+    void SetFadeMs(unsigned ms);
+
     // The callback never consumes past this frame count (UINT64_MAX = no limit).
     void SetPlayLimit(uint64_t frame);
     uint64_t PlayLimit() const;

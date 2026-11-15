@@ -15,7 +15,12 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   by a readable name (`src/remote/app_names.cpp`; "Chrome", never "Chrome.UserData.Profile1");
   the test's fake media players ignored outside the test host, and `tools\run-host-test.ps1`
   refusing to start while the game runs (the owner's panel had followed a suite's fake players).
-  Details: `music-panel.md`, `media-remote-design.md`, `test-host.md` item 15.
+  Details: `music-panel.md`, `media-remote-design.md`, `test-host.md` item 15. Later on the same
+  branch, for the public release: the marker square only as a test probe
+  (`RACING_MASTER_MOD_TEST_MARKER`), minimal mode `mode=keys` (global hotkeys, no window
+  procedure takeover), display mode removed, `stage` plain on/off, the game-music mute removed
+  (it had no effect in the game; do not re-add it), and a 250 ms fade on pause, stop and song
+  change (`music-engine.md`, "Fades").
 - **Version 0.3.1 on branch `fix/0.3.1` (not merged, test host only)**: the fixes for what the
   owner's 0.3.0 game runs of 2026-11-15 showed. The final music save at a normal close (window
   procedure passes the close to the worker, bounded 0.5 s wait after `WM_DESTROY`) and a save of
@@ -46,10 +51,10 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   next input.
 - **Loader 0.2.0** (inside 0.3.0): forwards the 17 real `version.dll` functions, wakes up only
   inside `g112-Win64-Shipping.exe` (or `testhost.exe` with the test flag), hooks
-  `IDXGISwapChain::Present`/`Present1`, binds to the game's one swap chain, can draw a marker
-  square (off by default since 0.3.2: `marker_seconds=0`; the owner asked for it gone once the
-  loader had proven itself in three game runs; the host tests that look for it set it explicitly)
-  and writes `%LOCALAPPDATA%\RacingMasterMod\mod.log`.
+  `IDXGISwapChain::Present`/`Present1`, binds to the game's one swap chain, and writes
+  `%LOCALAPPDATA%\RacingMasterMod\mod.log`. Its marker square left the product in 0.3.2 (the
+  owner: the loader had proven itself in three game runs); the host tests that look for it turn
+  it on with the `RACING_MASTER_MOD_TEST_MARKER` environment variable.
 - **0.2.0 ran in the real game on 2026-11-14 (23:55-23:58, throwaway account):** steady 60 fps,
   no fault, and the game's own log shows a normal exit request. 0.2.0 logged nothing about window
   changes, so whether the owner's resize / mode-switch / alt-tab steps happened cannot be told

@@ -28,6 +28,7 @@ struct OutputShared {
     std::atomic<uint32_t> gateEpoch{0};
     std::atomic<uint32_t> gateAck{0};
     std::atomic<float> volume{1.0f};
+    std::atomic<uint32_t> fadeMs{10};   // how long the gate fades in or out; any thread may change it
     std::atomic<uint32_t> underruns{0};
     std::atomic<uint64_t> callbacks{0};
     std::atomic<bool> deviceStopped{false};  // set by the notification callback only
@@ -78,7 +79,10 @@ void Callback(OutputShared* shared, float* out, ma_uint32 frames) {
     }
 
     const bool open = shared->gateOpen.load(std::memory_order_acquire) && !shared->userHold.load(std::memory_order_acquire);
-    const float step = 100.0f / static_cast<float>(shared->rate);  // gate fade: 10 ms
+    // Gate fade per frame: the whole way in fadeMs (10 ms by default, the player sets an audible
+    // 250 ms for pause, stop and song changes).
+    const uint32_t fadeMs = shared->fadeMs.load(std::memory_order_relaxed);
+    const float step = fadeMs == 0 ? 1.0f : 1000.0f / (static_cast<float>(fadeMs) * static_cast<float>(shared->rate));
     const float targetVolume = shared->volume.load(std::memory_order_relaxed);
     const float volumeFrom = shared->lastVolume;
     shared->lastVolume = targetVolume;
@@ -105,7 +109,7 @@ void Callback(OutputShared* shared, float* out, ma_uint32 frames) {
         const float* in = static_cast<const float*>(p);
         ma_uint32 used = 0;
         for (; used < n; ++used) {
-            // Gate gain moves linearly towards 1 or 0 over 10 ms; volume ramps across the buffer,
+            // Gate gain moves linearly towards 1 or 0 over fadeMs; volume ramps across the buffer,
             // so neither a pause nor a volume jump makes a step in the waveform.
             if (open) {
                 shared->gateGain = shared->gateGain + step > 1.0f ? 1.0f : shared->gateGain + step;
@@ -364,6 +368,10 @@ bool AudioOutput::UserHold() const {
 
 void AudioOutput::SetVolume(float linearGain) {
     if (shared_) shared_->volume.store(linearGain, std::memory_order_relaxed);
+}
+
+void AudioOutput::SetFadeMs(unsigned ms) {
+    if (shared_) shared_->fadeMs.store(ms, std::memory_order_relaxed);
 }
 
 float AudioOutput::Volume() const {

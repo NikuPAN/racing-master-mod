@@ -33,9 +33,20 @@ it was queued (loop mode, list edit) sets `playLimit` to the boundary and the de
 again there (`InvalidateSuccessorIfChanged`; identity is the entry id, not the index).
 
 **The gate:** every manual change (Stop, Seek, Next, play another track, remove the playing one)
-closes the gate, waits for the callback's acknowledgement (at most 100 ms), only then resets the
-ring. On a timeout the ring is not touched; the callback discards up to `discardBefore` instead.
-In Manual (test) output an SRW lock between `Render` and the reset gives the same guarantee.
+closes the gate, waits for the callback's acknowledgement (at most `kGateTimeoutMs`, 450 ms), only
+then resets the ring. On a timeout the ring is not touched; the callback discards up to
+`discardBefore` instead. In Manual (test) output an SRW lock between `Render` and the reset gives
+the same guarantee.
+
+**Fades (0.3.2):** the gate fades linearly over `AudioOutput::SetFadeMs`. The player sets 250 ms
+(`kFadeMs`) for pause, pause when the game loses focus, stop, Next/Previous and playing another
+track, and every start fades back in over the same time; no crossfade. Seek fades out in 10 ms
+(`kQuickFadeMs`) so it answers at once, then fades in at 250 ms. Shutdown also uses 10 ms, because
+the window close waits at most 0.5 s for the final save. A gapless track change never touches the
+gate, so albums play on without a dip. The audio keeps moving during a pause fade, so the saved
+place is up to 0.25 s past the moment Pause was pressed. Reason: the owner asked for it
+(2026-11-15); a hard cut sounded abrupt. Musictest case 500 checks the shape (full, about half at
+125 ms, silent from 250 ms) and the fade back in.
 
 **Files** in `%LOCALAPPDATA%\RacingMasterMod\`: `playlist.tsv` (+ `.bak`, `.broken`),
 `settings.ini` `[music]` section (volume, loop, pause_when_game_unfocused, current, position_ms;

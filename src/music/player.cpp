@@ -51,7 +51,13 @@ constexpr wchar_t kSettingsName[] = L"settings.ini";
 constexpr wchar_t kMusicFolderName[] = L"music";
 constexpr size_t kMaxScanFiles = 20000;
 constexpr int kMaxScanDepth = 8;
-constexpr unsigned kGateTimeoutMs = 100;
+// The owner (2026-11-15): pause, stop, focus-pause and song changes fade out, and the music fades
+// back in, instead of cutting. Seeks keep the short click-free fade so dragging stays responsive,
+// and so does the shutdown, which must finish its final save within the 0.5 s the game's window
+// procedure waits. A natural (gapless) end of a song does not go through the gate and never fades.
+constexpr unsigned kFadeMs = 250;
+constexpr unsigned kQuickFadeMs = 10;
+constexpr unsigned kGateTimeoutMs = kFadeMs + 200;   // a fade must finish before the wait gives up
 constexpr unsigned kListSaveDelayMs = 2000;
 constexpr unsigned kSettingsSaveDelayMs = 500;
 // While a song plays, its position is saved this often (only when it moved), so a game that ends
@@ -216,6 +222,7 @@ public:
 
     void Start() {
         if (running_.load()) return;
+        output_.SetFadeMs(kFadeMs);
         wchar_t flag[8];
         const bool testHost = GetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_HOST", flag, 8) == 1 && flag[0] == L'1';
         if (testHost && mode_ == OutputMode::Wasapi) {
@@ -402,6 +409,7 @@ private:
         // Shutdown: stop the sound, let the I/O thread finish its queued saves, then save the
         // final state from here (one writer per file at a time), and release the device.
         if (output_.IsInitialised()) {
+            output_.SetFadeMs(kQuickFadeMs);   // the game is closing: save first, no long fade
             output_.SetUserHold(true);
             output_.CloseGateAndFlush(kGateTimeoutMs);
             output_.StopDevice();
@@ -636,7 +644,9 @@ private:
         if (!(seconds > 0)) seconds = 0;  // also catches NaN
         int64_t frame = static_cast<int64_t>(seconds * rate);
         if (track.info.lengthFrames > 0 && frame >= track.info.lengthFrames) frame = track.info.lengthFrames - 1;
+        output_.SetFadeMs(kQuickFadeMs);   // a seek answers at once; it fades back in at the usual pace
         output_.CloseGateAndFlush(kGateTimeoutMs);
+        output_.SetFadeMs(kFadeMs);
         tracks_.resize(1);  // a queued successor is dropped; it is opened again at the new end
         endKind_ = EndKind::None;
         ClearChain();

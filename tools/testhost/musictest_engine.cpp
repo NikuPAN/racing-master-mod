@@ -136,20 +136,34 @@ MT_TEST(500, EnginePosition, "engine: position, pause, volume") {
     mt::Check(monotonic, "position only moves forward while playing");
     mt::Check(worst <= 0.020, "position equals the audio rendered, within 20 ms", "worst difference %.4f s", worst);
 
+    // The owner (2026-11-15): a pause fades out over 250 ms instead of cutting, and play fades back
+    // in. Linear: full level at first, about half at 125 ms, silence from 250 ms.
     P().Pause();
     const double pausedAt = Snap().positionSeconds;
     mt::Signal paused;
-    Render(0.3, &paused);
-    mt::Check(Silent(paused, 480, paused.Frames()), "paused: silence after a 10 ms fade");
+    Render(0.4, &paused);
+    const double fadeStart = mt::Rms(paused, 0, 1200);      // first 25 ms
+    const double fadeMiddle = mt::Rms(paused, 5400, 6600);  // 112-137 ms
+    mt::Check(fadeStart > 0.8 * mt::kExpectedRms && fadeMiddle > 0.35 * mt::kExpectedRms &&
+                  fadeMiddle < 0.65 * mt::kExpectedRms && Silent(paused, 12480, paused.Frames()),
+              "pause fades out over 250 ms (full, then about half at 125 ms, then silence)",
+              "RMS at the start %.4f, at 125 ms %.4f, expected %.4f", fadeStart, fadeMiddle, mt::kExpectedRms);
     const double stillAt = Snap().positionSeconds;
-    mt::Check(Snap().state == State::Paused && std::fabs(stillAt - pausedAt) <= 0.011, "paused: the position holds",
-              "%.4f s then %.4f s", pausedAt, stillAt);
+    Render(0.2, nullptr);
+    mt::Check(Snap().state == State::Paused && std::fabs(Snap().positionSeconds - stillAt) <= 0.011 &&
+                  stillAt - pausedAt <= 0.26,
+              "paused: the position holds once the fade is over (it moved only through the fade)",
+              "%.4f s at the pause, %.4f s after the fade, %.4f s later", pausedAt, stillAt, Snap().positionSeconds);
     P().Play();
     testing::Sync(5000);
     mt::Signal resumed;
-    Render(0.3, &resumed);
+    Render(0.4, &resumed);
     mt::Check(mt::Sequence(resumed, kKnown) == "A" && Snap().positionSeconds > stillAt + 0.25, "resume continues the same track",
               "sequence %s, position %.3f", mt::Sequence(resumed, kKnown).c_str(), Snap().positionSeconds);
+    const double inStart = mt::Rms(resumed, 0, 1200);
+    const double inEnd = mt::Rms(resumed, 14400, 19200);
+    mt::Check(inStart < 0.3 * mt::kExpectedRms && inEnd > 0.8 * mt::kExpectedRms, "play fades back in over 250 ms",
+              "RMS in the first 25 ms %.4f, after 300 ms %.4f", inStart, inEnd);
 
     // A jump from full volume to 10 % gain: ramped, so no sample-to-sample step above the sine's own.
     mt::Signal ramp;
@@ -405,7 +419,7 @@ MT_TEST(570, EngineNullDevice, "engine: real-time null device, device loss") {
               "null device: about 48000 frames a second taken in real time", "%llu frames, %llu callbacks in 2 s",
               static_cast<unsigned long long>(c.consumed), static_cast<unsigned long long>(c.callbacks));
     P().Pause();
-    Sleep(200);
+    Sleep(450);   // the pause fades out over 250 ms first, still taking audio while it does
     const uint64_t held = testing::GetCounters().consumed;
     Sleep(300);
     mt::Check(testing::GetCounters().consumed == held, "null device: nothing is taken while paused");
