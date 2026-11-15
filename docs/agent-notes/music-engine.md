@@ -49,6 +49,13 @@ place is up to 0.25 s past the moment Pause was pressed. Reason: the owner asked
 (2026-11-15); a hard cut sounded abrupt. Musictest case 500 checks the shape (full, about half at
 125 ms, silent from 250 ms) and the fade back in.
 
+**Heard (0.3.3):** a song counts as heard once 30 s of it have played (shorter than 31 s: all but
+its last second, at least half), measured in output frames actually played, so a seek or a skip
+does not count (`CountHeard`, also run before each gapless change-over). The Unix time goes into
+`Entry::lastPlayed` and playlist.tsv as a `P` line; shuffle orders songs by it (`shuffle.h`).
+Musictest 406 (P lines) and 589 (a 10 s song skipped at 3 s does not count, a 1 s song played
+through does).
+
 **Files** in `%LOCALAPPDATA%\RacingMasterMod\`: `playlist.tsv` (+ `.bak`, `.broken`),
 `settings.ini` `[music]` section (volume, loop, pause_when_game_unfocused, current, position_ms, even_volume;
 the loader's `[mod]` lines are kept, any encoding Notepad offers is read), `music\` drop-in folder.

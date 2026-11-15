@@ -2,6 +2,7 @@
 // first, the same artist never back-to-back where possible. Pure functions, fixed seeds.
 #include "musictest.h"
 
+#include "music/playlist_store.h"
 #include "music/shuffle.h"
 
 #include <windows.h>
@@ -37,6 +38,21 @@ std::vector<ShuffleItem> Artists(std::initializer_list<std::pair<const wchar_t*,
 }
 
 }  // namespace
+
+MT_TEST(406, PlaylistHeard, "playlist.tsv: when each song was last heard (P lines)") {
+    std::vector<StoredTrack> tracks(2);
+    tracks[0].path = L"C:\\Music\\heard.flac";
+    tracks[0].lastPlayed = 1800000123;
+    tracks[1].path = L"C:\\Music\\new.mp3";
+    std::vector<StoredTrack> back;
+    const std::string text = FormatPlaylist(tracks);
+    mt::Check(ParsePlaylist(text, &back) && back.size() == 2 && back[0].lastPlayed == 1800000123 && back[1].lastPlayed == 0 &&
+                  text.find("END\t2") != std::string::npos,
+              "P line: the time a song was last heard survives a save; a song never heard has none", "%s", text.c_str());
+    const std::string damaged = "RMM-PLAYLIST\t1\r\nT\t1\t2\t-1\t\t\tC:\\a.mp3\r\nP\tyesterday\r\nEND\t1\r\n";
+    mt::Check(ParsePlaylist(damaged, &back) && back.size() == 1 && back[0].lastPlayed == 0,
+              "P line: an unreadable one is ignored (the song counts as never heard), the list still loads");
+}
 
 MT_TEST(230, ShuffleOrder, "shuffle: every song once, not heard lately first, artists spread") {
     {

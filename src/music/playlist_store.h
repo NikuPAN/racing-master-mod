@@ -7,6 +7,7 @@
 //   T<tab><size bytes><tab><last write FILETIME><tab><duration ms or -1><tab><title><tab><artist><tab><full path>
 //   L<tab><loudness in 1/100 LUFS><tab><sample peak in millionths>   (0.3.2, optional, after its T)
 //   L<tab>none                       the song was measured and gave nothing (silent or undecodable)
+//   P<tab><Unix seconds>             (0.3.3, optional, after its T) when the song last counted as heard
 //   END<tab><number of T lines>
 // A file is accepted only when the first line matches and the END count equals the number of T
 // lines, so a file cut short by a crash never loads as a shorter list. Unknown line types are
@@ -31,6 +32,7 @@ struct StoredTrack {
     int loudnessState = 0;
     double lufs = 0;
     float peak = 0;
+    int64_t lastPlayed = 0;     // Unix seconds when it last counted as heard (shuffle.h); 0 = never
 };
 
 std::string FormatPlaylist(const std::vector<StoredTrack>& tracks);

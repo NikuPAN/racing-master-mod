@@ -111,6 +111,11 @@ std::string FormatPlaylist(const std::vector<StoredTrack>& tracks) {
         } else if (track.loudnessState == 2 && track.lastWrite != 0) {
             out += "L\tnone\r\n";
         }
+        if (track.lastPlayed > 0) {
+            out += "P\t";
+            out += std::to_string(track.lastPlayed);
+            out += "\r\n";
+        }
         ++written;
     }
     out += "END\t";
@@ -165,6 +170,10 @@ bool ParsePlaylist(const std::string& text, std::vector<StoredTrack>* tracks) {
                 parsed.back().lufs = static_cast<double>(lufs) / 100.0;
                 parsed.back().peak = static_cast<float>(static_cast<double>(peak) / 1e6);
             }
+        } else if (line.size() >= 2 && line[0] == 'P' && line[1] == '\t') {
+            // When the row above last counted as heard. Unreadable: ignored (the song counts as unheard).
+            long long seconds = 0;
+            if (!parsed.empty() && ParseInt(line.substr(2), &seconds) && seconds > 0) parsed.back().lastPlayed = seconds;
         } else if (line.size() >= 4 && line.compare(0, 4, "END\t") == 0) {
             long long count = -1;
             if (!ParseInt(line.substr(4), &count) || count != static_cast<long long>(parsed.size())) return false;

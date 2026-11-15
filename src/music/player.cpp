@@ -183,6 +183,7 @@ struct Entry {
     double lufs = 0;
     float peak = 0;
     bool measureSkipped = false;  // the file changed while it was measured; not again this session
+    int64_t lastPlayed = 0;       // Unix seconds when it last counted as heard (shuffle.h); 0 = never
 };
 
 // One open track in the play chain: tracks_[0] is audible, tracks_[1] (if any) is queued behind it.
@@ -204,6 +205,7 @@ struct OpenTrack {
     // being switched moves `gain` to `targetGain` over about a second instead of jumping.
     float gain = 1.0f;
     float targetGain = 1.0f;
+    bool heard = false;           // already counted as heard this time (CountHeard)
 };
 
 enum class EndKind {
@@ -1330,9 +1332,35 @@ private:
         return false;
     }
 
+    // A song counts as heard once 30 s of it have played, or, when it is shorter than 31 s, all
+    // but its last second (and at least half of it): what Spotify counts as a play, and what
+    // shuffle's "not heard lately" goes by. The time is kept with the song in playlist.tsv.
+    void CountHeard() {
+        if (tracks_.empty()) return;
+        OpenTrack& track = tracks_[0];
+        if (track.heard || track.index < 0 || track.index >= static_cast<int>(entries_.size())) return;
+        const uint64_t consumed = output_.Consumed();
+        const uint64_t played = consumed > track.startFrame ? consumed - track.startFrame : 0;
+        const uint64_t rate = output_.SampleRate();
+        uint64_t need = 30 * rate;
+        if (track.info.lengthFrames > 0 && track.info.sampleRate > 0) {
+            const uint64_t length = static_cast<uint64_t>(track.info.lengthFrames) * rate / track.info.sampleRate;
+            if (length < need + rate) need = std::max(length > rate ? length - rate : 0, length / 2);
+        }
+        if (played < need || need == 0) return;
+        track.heard = true;
+        FILETIME now = {};
+        GetSystemTimeAsFileTime(&now);
+        entries_[static_cast<size_t>(track.index)].lastPlayed =
+            static_cast<int64_t>((FileTimeValue(now) - 116444736000000000ull) / 10000000ull);
+        MarkListDirty();
+    }
+
     void CrossBoundaries() {
+        CountHeard();
         const uint64_t consumed = output_.Consumed();
         while (tracks_.size() >= 2 && consumed >= tracks_[1].startFrame) {
+            CountHeard();
             Log("music: ended %s", Utf8(FileName(tracks_[0].path, false)).c_str());
             // Only the position in the list moves; the status stays what the user made it (a
             // pause in the last few milliseconds of a track must stay a pause).
@@ -1737,6 +1765,7 @@ private:
             entry.loudnessState = entry.tagsKnown ? track.loudnessState : 0;
             entry.lufs = track.lufs;
             entry.peak = track.peak;
+            entry.lastPlayed = track.lastPlayed;
             keyIndex_.emplace(entry.key, entries_.size());
             entries_.push_back(std::move(entry));
         }
@@ -1779,6 +1808,7 @@ private:
             track.loudnessState = entry.tagsKnown ? entry.loudnessState : 0;
             track.lufs = entry.lufs;
             track.peak = entry.peak;
+            track.lastPlayed = entry.lastPlayed;
             stored.push_back(std::move(track));
         }
         return stored;

@@ -592,6 +592,42 @@ MT_TEST(587, EngineSaveRetried, "engine: a settings save that could not be writt
               static_cast<long long>(saved.positionMs));
 }
 
+// Shuffle's "not heard lately" (0.3.3): a song counts as heard after 30 s, or, shorter than 31 s,
+// all but its last second. A 10 s song skipped after 3 s does not count; a 1 s song played to its
+// end does, and the time is kept in playlist.tsv.
+MT_TEST(589, EngineHeard, "engine: a song counts as heard once most of it has played") {
+    const Fixtures& f = Files();
+    const std::wstring dir = mt::NewDir(L"heard");
+    {
+        Session session(dir);
+        P().SetLoop(LoopMode::Off);
+        P().AddFiles({f.a10, f.b});
+        testing::WaitForIdleIo(5000);
+        P().Play();
+        testing::Sync(5000);
+        Render(3.0, nullptr);
+        P().Next();
+        testing::Sync(5000);
+        Render(2.0, nullptr);
+        testing::Sync(5000);
+    }
+    const std::string list = mt::ReadBytes(dir + L"\\playlist.tsv");
+    // Each T line, and whether a P line follows it before the next T or END.
+    std::vector<std::pair<std::string, bool>> rows;
+    size_t at = 0;
+    while (at < list.size()) {
+        size_t end = list.find('\n', at);
+        if (end == std::string::npos) end = list.size();
+        const std::string line = list.substr(at, end - at);
+        if (line.rfind("T\t", 0) == 0) rows.emplace_back(line, false);
+        else if (line.rfind("P\t", 0) == 0 && !rows.empty()) rows.back().second = true;
+        at = end + 1;
+    }
+    const bool ok = rows.size() == 2 && !rows[0].second && rows[1].second;
+    mt::Check(ok, "a 10 s song skipped after 3 s is not counted; a 1 s song played to its end is, and playlist.tsv keeps it",
+              "%s", list.c_str());
+}
+
 MT_TEST(590, EngineFolders, "engine: drop-in folder, Add folder, natural order, duplicates") {
     const std::wstring dir = mt::NewDir(L"folders");
     CreateDirectoryW((dir + L"\\music").c_str(), nullptr);
