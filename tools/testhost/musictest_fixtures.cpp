@@ -25,14 +25,15 @@ void SafeRelease(T*& p) {
     }
 }
 
-int16_t SineSample(double frequency, uint32_t rate, uint64_t index) {
-    const double v = kAmplitude * std::sin(kTwoPi * frequency * static_cast<double>(index) / rate);
+int16_t SineSample(double frequency, uint32_t rate, uint64_t index, double amplitude = kAmplitude) {
+    const double v = amplitude * std::sin(kTwoPi * frequency * static_cast<double>(index) / rate);
     return static_cast<int16_t>(std::lround(v * 32767.0));
 }
 
 }  // namespace
 
-bool WriteWav(const std::wstring& path, uint32_t rate, uint32_t channels, uint32_t frames, double frequency, uint64_t startSample) {
+bool WriteWav(const std::wstring& path, uint32_t rate, uint32_t channels, uint32_t frames, double frequency, uint64_t startSample,
+              double amplitude) {
     const HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) return false;
     const uint32_t dataBytes = frames * channels * 2;
@@ -57,7 +58,7 @@ bool WriteWav(const std::wstring& path, uint32_t rate, uint32_t channels, uint32
 #pragma pack(pop)
     std::vector<int16_t> body(static_cast<size_t>(frames) * channels);
     for (uint32_t i = 0; i < frames; ++i) {
-        const int16_t v = SineSample(frequency, rate, startSample + i);
+        const int16_t v = SineSample(frequency, rate, startSample + i, amplitude);
         for (uint32_t c = 0; c < channels; ++c) body[static_cast<size_t>(i) * channels + c] = v;
     }
     DWORD written = 0;

@@ -2,6 +2,7 @@
 
 #include "text.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 
@@ -101,6 +102,15 @@ std::string FormatPlaylist(const std::vector<StoredTrack>& tracks) {
         out += '\t';
         out += path;
         out += "\r\n";
+        if (track.loudnessState == 1 && track.lastWrite != 0) {
+            out += "L\t";
+            out += std::to_string(static_cast<long long>(std::lround(track.lufs * 100.0)));
+            out += '\t';
+            out += std::to_string(static_cast<long long>(std::lround(static_cast<double>(track.peak) * 1e6)));
+            out += "\r\n";
+        } else if (track.loudnessState == 2 && track.lastWrite != 0) {
+            out += "L\tnone\r\n";
+        }
         ++written;
     }
     out += "END\t";
@@ -140,6 +150,21 @@ bool ParsePlaylist(const std::string& text, std::vector<StoredTrack>* tracks) {
             track.path = FromUtf8(fields[6]);
             if (track.path.empty()) return false;
             parsed.push_back(std::move(track));
+        } else if (line.size() >= 2 && line[0] == 'L' && line[1] == '\t') {
+            // Loudness of the row above. A line that does not parse is ignored (the song is
+            // simply measured again), never a reason to refuse the list.
+            if (parsed.empty() || parsed.back().lastWrite == 0) continue;
+            const std::vector<std::string_view> fields = SplitTabs(line, 3);
+            long long lufs = 0;
+            long long peak = 0;
+            if (fields.size() == 2 && fields[1] == "none") {
+                parsed.back().loudnessState = 2;
+            } else if (fields.size() == 3 && ParseInt(fields[1], &lufs) && ParseInt(fields[2], &peak) && lufs > -20000 &&
+                       lufs < 2000 && peak >= 0 && peak <= 100000000) {
+                parsed.back().loudnessState = 1;
+                parsed.back().lufs = static_cast<double>(lufs) / 100.0;
+                parsed.back().peak = static_cast<float>(static_cast<double>(peak) / 1e6);
+            }
         } else if (line.size() >= 4 && line.compare(0, 4, "END\t") == 0) {
             long long count = -1;
             if (!ParseInt(line.substr(4), &count) || count != static_cast<long long>(parsed.size())) return false;
@@ -159,6 +184,7 @@ std::string WriteMusicSection(const std::string& existingIni, const MusicSetting
     section += std::string("pause_when_game_unfocused=") + (settings.pauseWhenGameUnfocused ? "1" : "0") + "\r\n";
     section += "current=" + ToUtf8(SingleLine(settings.currentPath)) + "\r\n";
     section += "position_ms=" + std::to_string(settings.positionMs) + "\r\n";
+    section += std::string("even_volume=") + (settings.evenVolume ? "1" : "0") + "\r\n";
 
     // The file may have been saved by Notepad as UTF-16 or with a byte order mark; the loader's own
     // reader accepts all of those. Read it as text, never as raw bytes, or the [mod] lines would be
@@ -235,6 +261,9 @@ void ReadMusicSection(const std::string& ini, MusicSettings* settings) {
             settings->currentPath = FromUtf8(value);
         } else if (key == "position_ms") {
             if (ParseInt(value, &number) && number >= 0) settings->positionMs = number;
+        } else if (key == "even_volume") {
+            if (value == "1" || value == "true" || value == "yes") settings->evenVolume = true;
+            else if (value == "0" || value == "false" || value == "no") settings->evenVolume = false;
         }
     }
 }

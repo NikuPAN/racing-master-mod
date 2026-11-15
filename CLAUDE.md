@@ -19,8 +19,9 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   branch, for the public release: the marker square only as a test probe
   (`RACING_MASTER_MOD_TEST_MARKER`), minimal mode `mode=keys` (global hotkeys, no window
   procedure takeover), display mode removed, `stage` plain on/off, the game-music mute removed
-  (it had no effect in the game; do not re-add it), and a 250 ms fade on pause, stop and song
-  change (`music-engine.md`, "Fades").
+  (it had no effect in the game; do not re-add it), a 250 ms fade on pause, stop and song
+  change (`music-engine.md`, "Fades"), and "Same volume for every song" (`even-volume.md`: each
+  song measured once with EBU R128 on a background thread, played at -14 LUFS, on by default).
 - **Version 0.3.1 on branch `fix/0.3.1` (not merged, test host only)**: the fixes for what the
   owner's 0.3.0 game runs of 2026-11-15 showed. The final music save at a normal close (window
   procedure passes the close to the worker, bounded 0.5 s wait after `WM_DESTROY`) and a save of
@@ -189,7 +190,7 @@ dumpbin: `link.exe /DUMP /NOLOGO /IMPORTS out\version.dll` (the fetched SDK has 
 
 Two files, both optional, same `[mod]` key (`stage`: 0 off, 1 on, the default; an older file's 2 is read as on; the loader-only stage and `marker_seconds` were removed for the public release). The music
 engine keeps its own `[music]` section in the first one (volume, loop, pause_when_game_unfocused,
-current, position_ms) and rewrites only that section, in UTF-8, keeping the `[mod]` lines; the
+current, position_ms, even_volume) and rewrites only that section, in UTF-8, keeping the `[mod]` lines; the
 loader skips `[music]` without logging "changed nothing". While a song plays, `current` and
 `position_ms` are saved every 10 s, and only when they changed (`music-engine.md`).
 

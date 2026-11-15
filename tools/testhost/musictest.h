@@ -47,7 +47,7 @@ constexpr double kExpectedRms = 0.17677669;  // kAmplitude / sqrt(2)
 // 16-bit PCM WAV of a sine, the same in every channel. `startSample` continues an earlier file's
 // sine without a jump (the gapless fixtures are one sine cut in two). Accepts \\?\ paths.
 bool WriteWav(const std::wstring& path, uint32_t rate, uint32_t channels, uint32_t frames, double frequency,
-              uint64_t startSample = 0);
+              uint64_t startSample = 0, double amplitude = kAmplitude);
 // Encodes a sine with a Windows Media Foundation encoder (FLAC, MP3, AAC in .m4a). Returns the
 // HRESULT; the caller reports SKIPPED when this PC has no such encoder.
 long EncodeWithMediaFoundation(const std::wstring& path, const wchar_t* format, uint32_t rate, double seconds,

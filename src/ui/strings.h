@@ -94,6 +94,8 @@ struct Strings {
     const char* textLarge;
     const char* pauseWhenUnfocused;
     const char* pauseWhenUnfocusedHint;
+    const char* evenVolume;              // 0.3.2: play every song at about the same loudness
+    const char* evenVolumeHint;
     const char* position;                // where the panel sits on the screen
     const char* positionBottomCentre;
     const char* positionTopLeft;
@@ -192,6 +194,9 @@ inline const Strings kStringsEnglish = {
     "Pause music when the game is not in focus",
     "Your own songs pause when you switch to another window and carry on when you come back to the game. "
     "Music in another app is not paused.",
+    "Same volume for every song",
+    "Quiet songs and loud songs play at about the same volume. Each song is checked once in the background "
+    "the first time; until then it plays as it is.",
     "Position",
     "Bottom centre",
     "Top left",
@@ -287,6 +292,8 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "大",
     "遊戲不在前景時暫停音樂",
     "切換到其他視窗時，你自己的歌曲會暫停，回到遊戲就繼續。其他程式的音樂不會暫停。",
+    "每首歌音量一樣",   // DRAFT (0.3.2)
+    "大聲和小聲的歌會用差不多的音量播放。每首歌第一次會在背景量一次，量好之前照原本的音量播。",   // DRAFT (0.3.2)
     "位置",          // DRAFT (0.3.1), for the owner to review
     "下方中間",      // DRAFT (0.3.1)
     "左上",          // DRAFT (0.3.1)

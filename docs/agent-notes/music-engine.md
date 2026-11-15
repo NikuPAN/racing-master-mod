@@ -23,6 +23,7 @@ a fault marks the file damaged and the decoder object is leaked on purpose.
 | `rmm-player` | commands, playlist logic, opening and decoding into the 2 s ring, track boundaries, device start/stop/re-create, watchdog, snapshot | tag reads, scans, saves |
 | miniaudio device thread | the audio callback: copy from the ring, gate fade, volume ramp, count `consumed` | locks, allocation, system calls |
 | `rmm-io` | folder scans (background priority), tag reads, crash-safe saves | touching the ring or the device |
+| `rmm-level` | even volume: decodes one song at a time in background mode and measures its loudness (`even-volume.md`) | touching the ring, the device or the list |
 | dialog thread | one short-lived STA thread per open file dialog | anything else |
 
 **Gapless:** when the decoding track ends, the player thread asks the playlist logic on a copy
@@ -49,7 +50,7 @@ place is up to 0.25 s past the moment Pause was pressed. Reason: the owner asked
 125 ms, silent from 250 ms) and the fade back in.
 
 **Files** in `%LOCALAPPDATA%\RacingMasterMod\`: `playlist.tsv` (+ `.bak`, `.broken`),
-`settings.ini` `[music]` section (volume, loop, pause_when_game_unfocused, current, position_ms;
+`settings.ini` `[music]` section (volume, loop, pause_when_game_unfocused, current, position_ms, even_volume;
 the loader's `[mod]` lines are kept, any encoding Notepad offers is read), `music\` drop-in folder.
 Saves: temp file, flush, then the swap, list 2 s after the last change, settings 0.5 s after.
 The list swaps with `ReplaceFileW` (keeps `.bak`, which the loader falls back to); `settings.ini`

@@ -22,6 +22,7 @@
 #include "../core/settings_file_lock.h"
 #include "atomic_file.h"
 #include "audio_output.h"
+#include "loudness.h"
 #include "picker.h"
 #include "playlist_logic.h"
 #include "playlist_store.h"
@@ -70,6 +71,10 @@ constexpr unsigned kDeviceRetryMs = 3000;
 constexpr double kRestartPointSeconds = 3.0;
 constexpr uint32_t kDecodeChunk = 4096;       // frames per decode call
 constexpr uint32_t kSuccessorHeadroom = 2048;  // free ring frames needed before the next track is queued
+// Measurements are written into playlist.tsv at most this often while songs are being measured
+// (a list of a thousand songs would otherwise be rewritten every few hundred milliseconds), and
+// at the final save.
+constexpr unsigned kLoudnessSaveIntervalMs = 30000;
 
 const wchar_t* const kExtensions[] = {L".mp3", L".flac", L".wav", L".ogg", L".oga", L".opus", L".m4a", L".aac"};
 
@@ -101,7 +106,7 @@ uint64_t FileTimeValue(const FILETIME& time) {
 
 bool SameSettings(const MusicSettings& a, const MusicSettings& b) {
     return a.volumePercent == b.volumePercent && a.loop == b.loop && a.pauseWhenGameUnfocused == b.pauseWhenGameUnfocused &&
-           a.currentPath == b.currentPath && a.positionMs == b.positionMs;
+           a.currentPath == b.currentPath && a.positionMs == b.positionMs && a.evenVolume == b.evenVolume;
 }
 
 // ---- commands -------------------------------------------------------------------------------------
@@ -110,6 +115,7 @@ enum class CommandKind {
     Play, Pause, TogglePlayPause, Stop, Next, Previous, PlayIndex, Seek, SetVolume, SetLoop,
     SetPauseWhenUnfocused, FocusChanged, AddFiles, AddFolder, Remove, Clear, Rescan,
     FilesFound, TagsReady, IoMessage, SaveNow, Nop, Shutdown,
+    SetEvenVolume, Measured,
 };
 
 struct TagJobItem {
@@ -139,6 +145,16 @@ struct Command {
     std::wstring text;
     std::vector<std::wstring> paths;
     std::vector<TagResult> tags;
+    // Measured: text = the song's PathKey, flag = a result, seconds = LUFS, value = sample peak,
+    // and the file's size and time when it was measured.
+    uint64_t fileSize = 0;
+    uint64_t lastWrite = 0;
+};
+
+// One song for the measuring thread.
+struct MeasureJob {
+    std::wstring path;
+    std::wstring key;
 };
 
 struct IoJob {
@@ -163,6 +179,10 @@ struct Entry {
     uint64_t lastWrite = 0;
     bool tagsKnown = false;
     OpenError problem = OpenError::None;
+    int loudnessState = 0;        // as StoredTrack: 0 not measured, 1 measured, 2 measured without a result
+    double lufs = 0;
+    float peak = 0;
+    bool measureSkipped = false;  // the file changed while it was measured; not again this session
 };
 
 // One open track in the play chain: tracks_[0] is audible, tracks_[1] (if any) is queued behind it.
@@ -179,6 +199,11 @@ struct OpenTrack {
     bool readFailed = false;      // the decoder reported an error before the end
     bool faulted = false;         // the decoder faulted (access violation); handled by HandleFault
     bool endChecked = false;
+    // Even volume: the gain multiplied into its samples as they are decoded, so a gapless change
+    // to a song of another loudness is exact to the sample. A new measurement or the setting
+    // being switched moves `gain` to `targetGain` over about a second instead of jumping.
+    float gain = 1.0f;
+    float targetGain = 1.0f;
 };
 
 enum class EndKind {
@@ -218,6 +243,7 @@ public:
         silent_ = config.silentDevice;
         dataDirOverride_ = config.dataDir ? config.dataDir : L"";
         positionSaveMs_ = config.positionSaveMs ? config.positionSaveMs : kPositionSaveIntervalMs;
+        evenDefault_ = config.evenVolume;
     }
 
     void Start() {
@@ -238,6 +264,7 @@ public:
         shutdown_.store(false);
         if (!commandEvent_) commandEvent_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);
         if (!ioEvent_) ioEvent_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        if (!measureEvent_) measureEvent_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);
         if (!commandEvent_ || !ioEvent_) {
             Log("music: the engine could not create its events (error %lu); music is off", GetLastError());
             return;
@@ -259,6 +286,10 @@ public:
         }
         SetThreadPriority(playerThread_, THREAD_PRIORITY_ABOVE_NORMAL);
         SetThreadPriority(ioThread_, THREAD_PRIORITY_BELOW_NORMAL);
+        // The measuring thread is optional: without it every song plays at its own level.
+        measureStop_.store(false);
+        if (measureEvent_) measureThread_ = CreateThread(nullptr, 0, MeasureThreadEntry, this, 0, nullptr);
+        if (!measureThread_) Log("music: the even-volume thread could not start; songs play at their own level");
     }
 
     void Shutdown() {
@@ -277,7 +308,18 @@ public:
             CloseHandle(ioThread_);
             ioThread_ = nullptr;
         }
+        StopMeasuring();
+        if (measureThread_) {
+            WaitForSingleObject(measureThread_, 5000);
+            CloseHandle(measureThread_);
+            measureThread_ = nullptr;
+        }
         running_.store(false);
+    }
+
+    void StopMeasuring() {
+        measureStop_.store(true);
+        if (measureEvent_) SetEvent(measureEvent_);
     }
 
     // ---- posting (any thread) ----
@@ -371,8 +413,10 @@ public:
     void SimulateDeviceLoss() { output_.SimulateDeviceLoss(); }
     testing::Counters GetCounters() const {
         return {output_.Consumed(), output_.Produced(), output_.Callbacks(), output_.Underruns(), output_.SampleRate(),
-                output_.DeviceStarted(), opens_.load(), deviceRestarts_.load(), settingsSaves_.load()};
+                output_.DeviceStarted(), opens_.load(), deviceRestarts_.load(), settingsSaves_.load(), measured_.load()};
     }
+    bool EvenVolume() const { return evenShown_.load(std::memory_order_relaxed); }
+    void ShowEvenVolume(bool on) { evenShown_.store(on, std::memory_order_relaxed); }
 
 private:
     // ================================================================================================
@@ -414,6 +458,7 @@ private:
             output_.CloseGateAndFlush(kGateTimeoutMs);
             output_.StopDevice();
         }
+        StopMeasuring();  // it stops within one decode chunk; Shutdown() joins it after the save
         RememberPosition();
         PostIo(IoJob{});  // Quit
         if (ioThread_) WaitForSingleObject(ioThread_, 10000);
@@ -489,6 +534,8 @@ private:
                 SetMessage(c.text);
                 break;
             case CommandKind::SaveNow: HandleSaveNow(); break;
+            case CommandKind::SetEvenVolume: HandleEvenVolume(c.flag); break;
+            case CommandKind::Measured: ApplyMeasurement(c); break;
             case CommandKind::Nop: break;
             case CommandKind::Shutdown: break;
         }
@@ -543,6 +590,7 @@ private:
                 track.id = entry.id;
                 track.index = index;
                 track.path = entry.path;
+                track.gain = track.targetGain = GainFor(entry);
                 AdoptOpenedTrack(entry, track.info);
                 track.startFrame = output_.Produced();
                 if (startMs > 0 && track.info.sampleRate > 0) {
@@ -701,6 +749,165 @@ private:
             pausedByFocus_ = false;
             if (logic_.status == State::Paused) Apply(logic_.Play());
         }
+    }
+
+    // ---- even volume ----
+    float GainFor(const Entry& entry) const {
+        return evenVolume_ && entry.loudnessState == 1 ? LevelGain(entry.lufs, entry.peak) : 1.0f;
+    }
+
+    // Multiplies freshly decoded audio by the track's gain, moving towards a changed target by at
+    // most the whole range per second (no step, so no click and no sudden jump in level).
+    void ApplyGain(OpenTrack& track, float* samples, uint32_t frames) {
+        if (frames == 0) return;
+        if (track.gain == track.targetGain) {
+            if (track.gain == 1.0f) return;
+            const float gain = track.gain;
+            for (uint32_t i = 0; i < frames * 2; ++i) samples[i] *= gain;
+            return;
+        }
+        const float step = 1.0f / static_cast<float>(output_.SampleRate());
+        float gain = track.gain;
+        const float target = track.targetGain;
+        for (uint32_t f = 0; f < frames; ++f) {
+            if (gain < target) gain = std::min(target, gain + step);
+            else if (gain > target) gain = std::max(target, gain - step);
+            samples[f * 2] *= gain;
+            samples[f * 2 + 1] *= gain;
+        }
+        track.gain = gain;
+    }
+
+    void RetargetOpenTracks() {
+        for (OpenTrack& track : tracks_) {
+            if (track.index >= 0 && track.index < static_cast<int>(entries_.size())) {
+                track.targetGain = GainFor(entries_[static_cast<size_t>(track.index)]);
+            }
+        }
+    }
+
+    void HandleEvenVolume(bool on) {
+        if (evenVolume_ == on) return;
+        evenVolume_ = on;
+        evenShown_.store(on, std::memory_order_relaxed);
+        Log("music: even volume %s", on ? "on" : "off");
+        RetargetOpenTracks();
+        measureQueueStale_ = true;
+        MarkSettingsDirty();
+    }
+
+    void ApplyMeasurement(const Command& c) {
+        measured_.fetch_add(1);
+        RebuildKeyIndex();
+        const auto found = keyIndex_.find(c.text);
+        if (found == keyIndex_.end()) return;  // taken off the list meanwhile
+        Entry& entry = entries_[found->second];
+        if (entry.fileSize != c.fileSize || entry.lastWrite != c.lastWrite) {
+            // The file is not the one whose tags the list holds (it changed after they were
+            // read). Measured again once its tags are read again, never in a loop this session.
+            entry.measureSkipped = true;
+            return;
+        }
+        entry.loudnessState = c.flag ? 1 : 2;
+        entry.lufs = c.seconds;
+        entry.peak = c.value;
+        loudnessUnsaved_ = true;
+        RetargetOpenTracks();
+    }
+
+    // Hands the measuring thread the songs still to measure, the one playing first, then the
+    // ones after it in list order. Rebuilt whenever the list, the current song or the setting
+    // changed; the thread takes them from the back.
+    void RefreshMeasureQueue() {
+        const bool stale = measureQueueStale_ || measuredListGeneration_ != listGeneration_ || measuredCurrent_ != logic_.current;
+        if (!stale || !measureThread_) return;
+        measureQueueStale_ = false;
+        measuredListGeneration_ = listGeneration_;
+        measuredCurrent_ = logic_.current;
+        std::vector<MeasureJob> jobs;
+        if (evenVolume_ && !entries_.empty()) {
+            const size_t count = entries_.size();
+            const size_t first = logic_.current >= 0 && logic_.current < static_cast<int>(count) ? static_cast<size_t>(logic_.current) : 0;
+            for (size_t n = 0; n < count; ++n) {
+                const Entry& entry = entries_[(first + n) % count];
+                if (!entry.tagsKnown || entry.loudnessState != 0 || entry.measureSkipped || entry.problem != OpenError::None) continue;
+                jobs.push_back({entry.path, entry.key});
+            }
+            std::reverse(jobs.begin(), jobs.end());
+        }
+        AcquireSRWLockExclusive(&measureLock_);
+        if (!measuringKey_.empty()) {
+            // The song being measured right now is not queued a second time.
+            jobs.erase(std::remove_if(jobs.begin(), jobs.end(), [this](const MeasureJob& job) { return job.key == measuringKey_; }),
+                       jobs.end());
+        }
+        measureJobs_.swap(jobs);
+        const bool any = !measureJobs_.empty();
+        ReleaseSRWLockExclusive(&measureLock_);
+        // `jobs` (the old queue) is released here, outside the lock.
+        if (any) SetEvent(measureEvent_);
+    }
+
+    // ================================================================================================
+    // Measuring thread ("rmm-level"): decodes one song at a time, in background mode (lowest CPU,
+    // disk and memory priority, so the game always comes first), and posts the result to the
+    // player thread. It touches nothing the player thread owns.
+    // ================================================================================================
+    static DWORD WINAPI MeasureThreadEntry(LPVOID self) {
+        static_cast<Engine*>(self)->MeasureThread();
+        return 0;
+    }
+
+    void MeasureThread() {
+        NameThread(L"rmm-level");
+        SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+        const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);   // Media Foundation decoders
+        int measuredInRun = 0;
+        while (!measureStop_.load()) {
+            WaitForSingleObject(measureEvent_, 1000);
+            for (;;) {
+                if (measureStop_.load()) break;
+                MeasureJob job;
+                bool have = false;
+                AcquireSRWLockExclusive(&measureLock_);
+                if (!measureJobs_.empty()) {
+                    job = std::move(measureJobs_.back());
+                    measureJobs_.pop_back();
+                    measuringKey_ = job.key;
+                    have = true;
+                }
+                ReleaseSRWLockExclusive(&measureLock_);
+                if (!have) {
+                    if (measuredInRun > 0) Log("music: even volume: %d song(s) measured", measuredInRun);
+                    measuredInRun = 0;
+                    break;
+                }
+                Command result;
+                result.kind = CommandKind::Measured;
+                result.text = job.key;
+                WIN32_FILE_ATTRIBUTE_DATA attributes = {};
+                bool stopped = false;
+                if (GetFileAttributesExW(ToExtendedPath(job.path).c_str(), GetFileExInfoStandard, &attributes) &&
+                    !(attributes.dwFileAttributes &
+                      (FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS | FILE_ATTRIBUTE_RECALL_ON_OPEN | FILE_ATTRIBUTE_OFFLINE))) {
+                    result.fileSize = (static_cast<uint64_t>(attributes.nFileSizeHigh) << 32) | attributes.nFileSizeLow;
+                    result.lastWrite = FileTimeValue(attributes.ftLastWriteTime);
+                    const LoudnessResult loudness = MeasureFile(job.path, measureStop_, &stopped);
+                    result.flag = loudness.measured;
+                    result.seconds = loudness.lufs;
+                    result.value = loudness.peak;
+                }
+                AcquireSRWLockExclusive(&measureLock_);
+                measuringKey_.clear();
+                ReleaseSRWLockExclusive(&measureLock_);
+                if (stopped) break;
+                // A file that is gone or online-only reports size 0: the player ignores it (its
+                // tag check flags the row), so it is not measured in a loop.
+                ++measuredInRun;
+                Post(std::move(result));
+            }
+        }
+        if (SUCCEEDED(com)) CoUninitialize();
     }
 
     void HandleRemove(int index) {
@@ -872,6 +1079,10 @@ private:
                 changed = true;
             }
             if (result.unchanged) continue;
+            if (entry.tagsKnown && (entry.fileSize != result.fileSize || entry.lastWrite != result.lastWrite)) {
+                entry.loudnessState = 0;  // the file changed: its loudness is measured again
+                entry.measureSkipped = false;
+            }
             entry.fileSize = result.fileSize;
             entry.lastWrite = result.lastWrite;
             entry.tagsKnown = true;
@@ -904,6 +1115,7 @@ private:
         }
         Watchdog(now);
         IdleDevice(now);
+        RefreshMeasureQueue();
         Saves(now);
         PublishView();
     }
@@ -928,6 +1140,7 @@ private:
                 break;
             }
             const uint32_t written = Decode(track, out, space);
+            ApplyGain(track, out, written);
             output_.CommitWrite(written);
             if (track.faulted) {
                 HandleFault();  // may replace tracks_; the next pass fetches the back again
@@ -1090,6 +1303,7 @@ private:
                 next.id = entry.id;
                 next.index = step.index;
                 next.path = entry.path;
+                next.gain = next.targetGain = GainFor(entry);
                 AdoptOpenedTrack(entry, next.info);
                 // With the same format the converter keeps running across the boundary (no
                 // tick); with another format its tail is flushed first, so the boundary sits
@@ -1198,6 +1412,14 @@ private:
     }
 
     void Saves(ULONGLONG now) {
+        if (loudnessUnsaved_ && now - lastLoudnessSave_ >= kLoudnessSaveIntervalMs) {
+            loudnessUnsaved_ = false;
+            lastLoudnessSave_ = now;
+            if (!listDirty_) {
+                listDirty_ = true;
+                listDirtyAt_ = now - kListSaveDelayMs;   // saved below, without the usual wait
+            }
+        }
         if (listDirty_ && now - listDirtyAt_ >= kListSaveDelayMs && !playlistPath_.empty()) {
             listDirty_ = false;
             IoJob job;
@@ -1315,6 +1537,9 @@ private:
                 ma_uint64 inCount = latency;
                 ma_uint64 outCount = 1024;
                 ma_data_converter_process_pcm_frames(&chain_, zeros, &inCount, tail, &outCount);
+                // The tail is the end of the track being decoded until now (tracks_.back() when a
+                // successor is queued, which flushes before it is added).
+                if (!tracks_.empty()) ApplyGain(tracks_.back(), tail, static_cast<uint32_t>(outCount));
                 output_.Write(tail, static_cast<uint32_t>(outCount));
             }
         }
@@ -1383,6 +1608,7 @@ private:
             info.problem = DescribeProblem(entry.problem);
             list->push_back(std::move(info));
         }
+        ++listGeneration_;
         std::shared_ptr<const std::vector<TrackInfo>> old = std::move(list);
         AcquireSRWLockExclusive(&viewLock_);
         view_.list.swap(old);
@@ -1453,6 +1679,16 @@ private:
         opens_.store(0);
         deviceRestarts_.store(0);
         settingsSaves_.store(0);
+        measured_.store(0);
+        evenVolume_ = evenDefault_;
+        evenShown_.store(evenVolume_);
+        measureQueueStale_ = true;
+        loudnessUnsaved_ = false;
+        lastLoudnessSave_ = GetTickCount64();
+        AcquireSRWLockExclusive(&measureLock_);
+        measureJobs_.clear();
+        measuringKey_.clear();
+        ReleaseSRWLockExclusive(&measureLock_);
         AcquireSRWLockExclusive(&viewLock_);
         view_.message.clear();
         ++view_.messageSerial;
@@ -1498,15 +1734,21 @@ private:
             entry.fileSize = track.fileSize;
             entry.lastWrite = track.lastWrite;
             entry.tagsKnown = track.lastWrite != 0;
+            entry.loudnessState = entry.tagsKnown ? track.loudnessState : 0;
+            entry.lufs = track.lufs;
+            entry.peak = track.peak;
             keyIndex_.emplace(entry.key, entries_.size());
             entries_.push_back(std::move(entry));
         }
 
         MusicSettings settings;
+        settings.evenVolume = evenDefault_;
         if (ReadWholeFile(settingsPath_, &text, 1u << 20)) ReadMusicSection(text, &settings);
         volume_ = static_cast<float>(settings.volumePercent) / 100.0f;
         output_.SetVolume(volume_ * volume_);
         pauseWhenUnfocused_ = settings.pauseWhenGameUnfocused;
+        evenVolume_ = settings.evenVolume;
+        evenShown_.store(evenVolume_);
         logic_.loop = settings.loop == 0 ? LoopMode::Off : settings.loop == 1 ? LoopMode::One : LoopMode::All;
         logic_.Inserted(0, static_cast<int>(entries_.size()));
         if (!settings.currentPath.empty()) {
@@ -1534,6 +1776,9 @@ private:
             track.durationMs = entry.durationMs;
             track.fileSize = entry.tagsKnown ? entry.fileSize : 0;
             track.lastWrite = entry.tagsKnown ? entry.lastWrite : 0;
+            track.loudnessState = entry.tagsKnown ? entry.loudnessState : 0;
+            track.lufs = entry.lufs;
+            track.peak = entry.peak;
             stored.push_back(std::move(track));
         }
         return stored;
@@ -1552,6 +1797,7 @@ private:
         settings.volumePercent = static_cast<int>(volume_ * 100.0f + 0.5f);
         settings.loop = logic_.loop == LoopMode::Off ? 0 : logic_.loop == LoopMode::One ? 1 : 2;
         settings.pauseWhenGameUnfocused = pauseWhenUnfocused_;
+        settings.evenVolume = evenVolume_;
         if (logic_.current >= 0 && logic_.current < static_cast<int>(entries_.size())) {
             settings.currentPath = entries_[static_cast<size_t>(logic_.current)].path;
         }
@@ -1875,6 +2121,26 @@ private:
     std::atomic<uint32_t> opens_{0};
     std::atomic<uint32_t> deviceRestarts_{0};
     std::atomic<uint32_t> settingsSaves_{0};
+
+    // Even volume. evenVolume_ and the bookkeeping below are the player thread's; evenShown_ is
+    // what the panel reads; measureJobs_ and measuringKey_ are shared with the measuring thread
+    // under measureLock_.
+    bool evenDefault_ = true;   // when settings.ini does not say (tests set it through Configure)
+    bool evenVolume_ = true;
+    std::atomic<bool> evenShown_{true};
+    uint32_t listGeneration_ = 0;
+    uint32_t measuredListGeneration_ = 0;
+    int measuredCurrent_ = -1;
+    bool measureQueueStale_ = true;
+    bool loudnessUnsaved_ = false;
+    ULONGLONG lastLoudnessSave_ = 0;
+    HANDLE measureThread_ = nullptr;
+    HANDLE measureEvent_ = nullptr;
+    std::atomic<bool> measureStop_{false};
+    SRWLOCK measureLock_ = SRWLOCK_INIT;
+    std::vector<MeasureJob> measureJobs_;   // the next song to measure is at the back
+    std::wstring measuringKey_;             // the song being measured now, if any
+    std::atomic<uint32_t> measured_{0};
 };
 
 // Created on first use and never destroyed: nothing may run at process exit (the game can end
@@ -1932,6 +2198,16 @@ void Player::SetVolume(float v) {
     command.value = v;
     TheEngine().Post(std::move(command));
 }
+
+void Player::SetEvenVolume(bool on) {
+    TheEngine().ShowEvenVolume(on);   // the panel's tick follows at once
+    Command command;
+    command.kind = CommandKind::SetEvenVolume;
+    command.flag = on;
+    TheEngine().Post(std::move(command));
+}
+
+bool Player::EvenVolume() const { return TheEngine().EvenVolume(); }
 
 void Player::SetLoop(LoopMode m) {
     Command command;

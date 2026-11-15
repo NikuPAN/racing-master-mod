@@ -1103,6 +1103,14 @@ void SettingsRow() {
     }
     Tip(s.pauseWhenUnfocusedHint);
     Mark("pause");
+    char evenLabel[160];
+    snprintf(evenLabel, sizeof(evenLabel), "%s##even_volume", s.evenVolume);
+    bool even = music::Player::Get().EvenVolume();
+    if (ImGui::Checkbox(evenLabel, &even)) {
+        music::Player::Get().SetEvenVolume(even);   // the engine saves it with the other [music] values
+    }
+    Tip(s.evenVolumeHint);
+    Mark("even_volume");
     char compactLabel[96];
     snprintf(compactLabel, sizeof(compactLabel), "%s##compact_setting", s.compactPanel);
     bool compact = g_settings.compact;

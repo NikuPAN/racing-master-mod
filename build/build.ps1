@@ -248,6 +248,7 @@ $musicSources = @(
     'src\music\source_opus.cpp',
     'src\music\source_mf.cpp',
     'src\music\tag_reader.cpp',
+    'src\music\loudness.cpp',
     'src\music\playlist_store.cpp',
     'src\music\atomic_file.cpp',
     'src\music\text.cpp',
@@ -388,6 +389,7 @@ $musicTestSources = @(
     'tools\testhost\musictest_opus.cpp',
     'tools\testhost\musictest_store.cpp',
     'tools\testhost\musictest_engine.cpp',
+    'tools\testhost\musictest_loudness.cpp',
     'tools\testhost\musictest_picker.cpp',
     'tools\testhost\musictest_appnames.cpp'
 )

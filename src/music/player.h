@@ -74,6 +74,10 @@ public:
     void SetLoop(LoopMode m);
     void SetPauseWhenGameUnfocused(bool on);
     void OnGameFocusChanged(bool focused);
+    // Even volume (0.3.2): every song is measured once in the background (loudness.h) and played
+    // at about the same loudness. On by default; saved as [music] even_volume.
+    void SetEvenVolume(bool on);
+    bool EvenVolume() const;  // cheap; any thread
 
     void AddFiles(const std::vector<std::wstring>& paths);  // files, or folders (scanned like AddFolder)
     void AddFolder(const std::wstring& folder);             // recursive, natural order, duplicates skipped

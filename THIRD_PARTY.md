@@ -18,6 +18,12 @@ notices to travel with binaries.
 Windows components the mod uses but does not ship: Media Foundation (M4A/AAC decoding and the tags
 of MP3, FLAC, WAV and M4A), COM and the shell's file dialog.
 
+The loudness meter behind "Same volume for every song" (`src/music/loudness.cpp`) is this
+project's own code, written from ITU-R BS.1770-4 and checked against EBU Tech 3341. It takes the
+K-weighting filter's analogue prototype values (two centre frequencies, a gain and two Q values)
+as libebur128 (MIT) publishes them; they are numbers derived from the standard, and no libebur128
+code is used.
+
 Used only by the test program `out\musictest.exe`, never linked into `version.dll` and never
 shipped: **libvorbis 1.3.7** (BSD 3-clause, Copyright (c) 2002-2020 Xiph.org Foundation), whose
 encoder makes the OGG Vorbis test fixture because Windows has no Vorbis encoder. The test program

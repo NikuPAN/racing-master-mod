@@ -17,6 +17,9 @@ struct Config {
     bool silentDevice = false;         // real device, zero output (developer switch, never in automated runs)
     const wchar_t* dataDir = nullptr;  // overrides %LOCALAPPDATA%\RacingMasterMod
     unsigned positionSaveMs = 0;       // how often the playing position is saved; 0 = the engine's 10 s
+    // Even volume when settings.ini does not say. The product's default is on; tests other than the
+    // even-volume cases keep it off, so their exact level checks are not moved by a measurement.
+    bool evenVolume = false;
 };
 void Configure(const Config& config);
 
@@ -46,6 +49,7 @@ struct Counters {
     uint32_t opens;          // source opens since Start (successful or not)
     uint32_t deviceRestarts; // watchdog restarts since Start
     uint32_t settingsSaves;  // [music] saves handed to the I/O thread or done at shutdown, since Start
+    uint32_t measured;       // songs whose loudness measurement came back to the player, since Start
 };
 Counters GetCounters();
 
