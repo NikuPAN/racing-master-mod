@@ -69,7 +69,11 @@
 #                                  at the first F12): the panel closes, the game gets every key and
 #                                  click, and the worker pauses the song that was playing
 #  45. two threads presenting      the same swap chain from two threads at once (as NVIDIA Smooth
-#                                  Motion may): one draws, the other is passed on and counted
+#                                  Motion may): one draws, the other is passed on and counted;
+#                                  the present probe is off: nothing recorded, nothing logged
+#  46. present probe on            the same with [debug] present_probe=1: the probe block's values
+#                                  (threads, callers, tables, flags, Windows' present count), and
+#                                  the Smooth Motion line pointed at a DLL the host loads
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1
 # Exit code 0 = every check passed.
@@ -621,6 +625,22 @@ try {
     # the game): one draws, the other passes straight on; no fault, no ImGui assertion.
     $panelRun = Invoke-PanelRun '45. presents from two threads at once' 'concurrent' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'en' } @()
     Record 'two threads at once: the log says frames came from two threads at the same moment, and nothing failed' ($panelRun.Log.Contains('frames are being shown from two threads at the same moment') -and -not $panelRun.Log.Contains('frame code failed'))
+    Record 'present probe off (the default): no probe line, nothing recorded, no Smooth Motion line' (@($panelRun.Lines -eq 'probe calls recorded: 0').Count -eq 1 -and -not $panelRun.Log.Contains('present probe') -and -not $panelRun.Log.Contains('Smooth Motion is on'))
+
+    # 46. The same with [debug] present_probe=1, a block every 2 s instead of 30, and the Smooth
+    # Motion check pointed at a DLL the host does load (the real NvPresent64.dll is never here).
+    $panelRun = Invoke-PanelRun '46. present probe on, presents from two threads' 'concurrent' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_PROBE_SECONDS = '2'; RACING_MASTER_MOD_TEST_SMOOTH_MOTION_DLL = 'd3d11.dll' } @('[debug]', 'present_probe=1')
+    $probe = $panelRun.Log
+    $recorded = 0
+    foreach ($line in $panelRun.Lines) { if ($line -match '^probe calls recorded: (\d+)$') { $recorded = [long]$Matches[1] } }
+    Record 'present probe on: the log says so, and presents were recorded' ($probe.Contains('present probe: on ([debug] present_probe=1)') -and $recorded -gt 0)
+    Record 'present probe: two threads, both inside the hook at once at some point' ($probe -match 'at most [2-9] threads inside the hook at once; threads: \d+ x\d+ \d+ x\d+.*\(2 in all\)')
+    Record 'present probe: the caller is the host program, with the frame work''s outcomes' ($probe -match 'present probe: called from testhost\.exe: Present \d+, Present1 \d+; .*panel drawn \d+.*passed on while another thread drew \d+')
+    Record 'present probe: the original Present is in dxgi.dll and the patched table entry points into the mod' ($probe -match '(?i)the Present the mod passes frames on to is in dxgi\.dll .*the patched table''s Present entry now points into version\.dll')
+    Record 'present probe: the swap chain uses the patched table, whose Present entry is the mod''s' ($probe -match '(?i)present probe: swap chain [0-9a-f]+, \d+ presents: its function table is in dxgi\.dll \(the table the mod patched\), and its Present entry points into version\.dll')
+    Record 'present probe: Windows'' own present count of the game''s swap chain is reported and moves' ($probe -match 'Windows counted [1-9]\d* presents of the game''s swap chain')
+    Record 'present probe: flags and sync intervals are listed' ($probe -match 'present probe: flags: none \d+.*; sync interval: 0 x\d+')
+    Record 'Smooth Motion check: one plain line when its DLL is loaded (here a stand-in name)' (([regex]::Matches($probe, 'NVIDIA Smooth Motion is on for this game')).Count -eq 1)
 
     Write-Host ''
     Write-Host 'Summary'

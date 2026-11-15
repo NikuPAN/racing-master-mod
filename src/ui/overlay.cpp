@@ -29,6 +29,7 @@
 #include "../core/frame.h"
 #include "../core/log.h"
 #include "../core/present_hook.h"
+#include "../core/present_probe.h"
 #include "../core/settings.h"
 
 #include "imgui_impl_dx11.h"
@@ -414,9 +415,9 @@ void ClearRects() {
 // the messages the test posts). Test host only; never written in the game.
 void WriteTestLayout(bool drawn, float sx, float sy) {
     static char text[8192];
-    int used = snprintf(text, sizeof(text), "open %d\ndrawn %d\nenabled %d\nsaves %ld\nskips %llu\n",
+    int used = snprintf(text, sizeof(text), "open %d\ndrawn %d\nenabled %d\nsaves %ld\nskips %llu\nprobe %llu\n",
                         Shared().panelOpen.load() ? 1 : 0, drawn ? 1 : 0, Shared().enabled.load() ? 1 : 0,
-                        UiSettingsSavesWritten(), PresentHookGetCounters().concurrentSkips);
+                        UiSettingsSavesWritten(), PresentHookGetCounters().concurrentSkips, ProbeRecordedCalls());
     used += PanelAppendTestState(text + used, static_cast<int>(sizeof(text)) - used);
     if (drawn) {
         ImGuiContext& g = *ImGui::GetCurrentContext();
@@ -702,9 +703,9 @@ void PanelStart(const UiSettings& settings, bool testHost) {
     g_started = true;
 }
 
-void PanelOnFrame(IDXGISwapChain* swapChain, UINT presentFlags, FrameRefs& refs) {
+bool PanelOnFrame(IDXGISwapChain* swapChain, UINT presentFlags, FrameRefs& refs) {
     if (!g_started || g_dead.load(std::memory_order_relaxed)) {
-        return;
+        return false;
     }
     if (WindowProcedureFaulted()) {
         // Without the window procedure nothing could close an open panel or reach the music any
@@ -713,7 +714,7 @@ void PanelOnFrame(IDXGISwapChain* swapChain, UINT presentFlags, FrameRefs& refs)
         Log("panel: the mod's part of the game window procedure failed; clicks and keys go to the game from now on, "
             "and the panel is closed for this session");
         PanelOnFault();
-        return;
+        return false;
     }
     // Hotkeys run every frame, whether or not the panel is drawn.
     SharedInput& shared = Shared();
@@ -728,13 +729,13 @@ void PanelOnFrame(IDXGISwapChain* swapChain, UINT presentFlags, FrameRefs& refs)
         // Start-up waits for an ordinary frame (not a re-shown one) on the login screen, so its
         // few milliseconds never land in a race.
         if (presentFlags & DXGI_PRESENT_DO_NOT_SEQUENCE) {
-            return;
+            return false;
         }
         const bool ok = InitOnFrameThread(swapChain, refs);
         ReleaseFrameRefs(refs);
         g_init = ok ? InitState::Ready : InitState::Unavailable;
         if (!ok) {
-            return;
+            return false;
         }
         if (g_testHost) {
             WriteTestLayout(false, 1.0f, 1.0f);   // tells the test the panel is ready
@@ -747,7 +748,7 @@ void PanelOnFrame(IDXGISwapChain* swapChain, UINT presentFlags, FrameRefs& refs)
             Log("panel: the panel was asked to open but cannot be drawn (see the earlier panel line); the music keys "
                 "still work");
         }
-        return;
+        return false;
     }
     if (swapChain != g_lastSwapChain) {
         // The game presents through a new swap chain: follow its window.
@@ -779,7 +780,7 @@ void PanelOnFrame(IDXGISwapChain* swapChain, UINT presentFlags, FrameRefs& refs)
                 ImGui::GetIO().AddFocusEvent(false);
             }
         }
-        return;
+        return false;
     }
     const bool drawn = DrawFrame(swapChain, refs, open);
     ReleaseFrameRefs(refs);
@@ -793,6 +794,7 @@ void PanelOnFrame(IDXGISwapChain* swapChain, UINT presentFlags, FrameRefs& refs)
         // Switched off after the frame completed, so the state swap above finished normally.
         PanelOnFault();
     }
+    return drawn;
 }
 
 void PanelOnFault() {

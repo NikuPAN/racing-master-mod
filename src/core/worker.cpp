@@ -3,6 +3,7 @@
 #include "game_close.h"
 #include "log.h"
 #include "present_hook.h"
+#include "present_probe.h"
 #include "settings.h"
 
 #include "../music/player.h"
@@ -193,6 +194,53 @@ private:
     bool logged_ = false;
 };
 
+// How often the present probe writes its block: 30 s; the test host may ask for less with
+// RACING_MASTER_MOD_TEST_PROBE_SECONDS. Worker only.
+unsigned ProbeIntervalSeconds() {
+    static unsigned seconds = 0;
+    if (seconds == 0) {
+        seconds = 30;
+        wchar_t value[16] = L"";
+        const DWORD n = g_testHost ? GetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_PROBE_SECONDS", value, 16) : 0;
+        const unsigned asked = n > 0 && n < 16 ? ParseDigits(value) : 0;
+        if (asked >= 1 && asked <= 600) {
+            seconds = asked;
+        }
+    }
+    return seconds;
+}
+
+// NVIDIA Smooth Motion (the driver's frame generation) works through NvPresent64.dll, which the
+// driver loads into the game. With it on, the owner's game run saw 120 presents a second and the
+// panel blinking as a whole. One plain line in the log, nothing on the panel. Checked once a
+// second from the worker (GetModuleHandleW only: this process, no other) until it is seen. In the
+// test host RACING_MASTER_MOD_TEST_SMOOTH_MOTION_DLL names another DLL to look for.
+class SmoothMotionCheck {
+public:
+    void Tick() {
+        if (logged_) {
+            return;
+        }
+        if (!name_[0]) {
+            lstrcpyW(name_, L"NvPresent64.dll");
+            wchar_t test[64] = L"";
+            const DWORD n = g_testHost ? GetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_SMOOTH_MOTION_DLL", test, 64) : 0;
+            if (n > 0 && n < 64) {
+                lstrcpyW(name_, test);
+            }
+        }
+        if (GetModuleHandleW(name_)) {
+            logged_ = true;
+            Log("NVIDIA Smooth Motion is on for this game (NvPresent64.dll is loaded); the music panel may blink. Turn "
+                "Smooth Motion off for Racing Master in the NVIDIA app to keep the panel steady.");
+        }
+    }
+
+private:
+    wchar_t name_[64] = L"";
+    bool logged_ = false;
+};
+
 // When the game closes: the music fades out instead of being cut off mid-sound, the list and
 // settings get their final save, a window procedure waiting for that is released, and the
 // other-app control lets go (in the game it only lets go and sleeps, so it comes last).
@@ -269,6 +317,9 @@ void WatchFrames(bool musicStarted) {
     bool resumedLogged = false;
     bool faultHandled = false;
     bool concurrentLogged = false;
+    ULONGLONG lastProbeReport = attachedAt;
+    SmoothMotionCheck smoothMotion;
+    smoothMotion.Tick();
     GameWindowWatch window;
     WindowStateLog windowLog;
     CloseWatch close;
@@ -323,6 +374,11 @@ void WatchFrames(bool musicStarted) {
         }
         const PresentHookCounters counters = PresentHookGetCounters();
         const ULONGLONG now = GetTickCount64();
+        smoothMotion.Tick();
+        if (g_probeOn && now - lastProbeReport >= ProbeIntervalSeconds() * 1000ull) {
+            PresentHookProbeReport(static_cast<unsigned>((now - lastProbeReport + 500) / 1000));
+            lastProbeReport = now;
+        }
         if (!concurrentLogged && counters.concurrentSkips != 0) {
             concurrentLogged = true;
             Log("frames are being shown from two threads at the same moment (%llu so far); each one that arrives while "
@@ -470,6 +526,12 @@ DWORD WINAPI ModThread(LPVOID) {
                 Log("test host: a deliberate fault is scheduled for frame %u", options.testFaultAtFrame);
             }
         }
+    }
+    if (settings.presentProbe) {
+        // Before the hook exists, so every present it sees is recorded.
+        InterlockedExchange(&g_probeOn, 1);
+        Log("present probe: on ([debug] present_probe=1); a block of \"present probe\" lines follows every %u s",
+            ProbeIntervalSeconds());
     }
     if (!InstallPresentHook(options)) {
         Log("the frame hook was not installed; the game runs unmodified");

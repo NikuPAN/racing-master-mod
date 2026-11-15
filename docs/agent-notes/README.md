@@ -18,4 +18,5 @@ One fact per file. Machine-specific notes live in `local/` (gitignored).
 - [music-engine-review.md](music-engine-review.md) — what the unbuilt first draft of the engine got wrong and what changed (do not bring it back)
 - [music-tests.md](music-tests.md) — how musictest.exe checks the engine without sound or windows, its fixtures, what only a person can check
 - [music-engine-open-items.md](music-engine-open-items.md) — what the engine still needs after integration and what stays unverified until an in-game run
+- [present-probe.md](present-probe.md) — the [debug] present_probe diagnostic for the NVIDIA Smooth Motion blink, its log block, and what each finding would mean
 - [integration.md](integration.md) — how 0.3.0 wires the panel, the engine and the media remote into version.dll, and why

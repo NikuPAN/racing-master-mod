@@ -3,11 +3,14 @@
 #include "dxgi_probe.h"
 #include "frame.h"
 #include "log.h"
+#include "present_probe.h"
 #include "vtable_patch.h"
 
 #include "../ui/overlay.h"
 
 #include <windows.h>
+
+#include <intrin.h>
 
 #include <d3d11_1.h>
 #include <dxgi1_2.h>
@@ -26,6 +29,7 @@ void* volatile g_originalPresent = nullptr;
 void* volatile g_originalPresent1 = nullptr;
 
 // Set before the hook is installed, read-only afterwards.
+void** g_patchedTable = nullptr;   // DXGI's swap chain function table (for the present probe's report)
 ULONGLONG g_markerMs = 0;
 bool g_acceptHiddenWindow = false;
 unsigned g_testFaultAtFrame = 0;
@@ -166,10 +170,22 @@ bool IsGameSwapChain(IDXGISwapChain* swapChain, ULONGLONG now) {
     return true;
 }
 
+// What the frame work did with the present it is handling (for the present probe). Written and
+// read only by the thread that holds g_frameBusy.
+ProbeOutcome g_frameOutcome = ProbeOutcome::OtherChain;
+
 void OnFrame(IDXGISwapChain* swapChain, UINT flags, FrameRefs& refs) {
     const ULONGLONG now = GetTickCount64();
+    g_frameOutcome = ProbeOutcome::OtherChain;
     if (!IsGameSwapChain(swapChain, now)) {
         return;
+    }
+    g_frameOutcome = ProbeOutcome::GameFrame;
+    if (g_probeOn) {
+        UINT count = 0;
+        if (SUCCEEDED(swapChain->GetLastPresentCount(&count))) {
+            ProbeRecordPresentCount(count);
+        }
     }
     const LONG64 frame = InterlockedIncrement64(&g_frames);
     if (frame == 1) {
@@ -185,7 +201,9 @@ void OnFrame(IDXGISwapChain* swapChain, UINT flags, FrameRefs& refs) {
     }
     // The music panel (does nothing when [panel] mode=off). Runs after the marker, which has
     // already given back everything it held.
-    PanelOnFrame(swapChain, flags, refs);
+    if (PanelOnFrame(swapChain, flags, refs)) {
+        g_frameOutcome = ProbeOutcome::Drawn;
+    }
 }
 
 LONG FrameFaultFilter(EXCEPTION_POINTERS* info) {
@@ -245,28 +263,40 @@ void GuardedOnFrame(IDXGISwapChain* swapChain, UINT flags) {
 }
 
 // Counts the present and runs the per-frame work, unless another thread is inside it right now
-// (see g_frameBusy): then this present is only counted and passed on.
-void FrameWork(IDXGISwapChain* swapChain, UINT flags) {
+// (see g_frameBusy): then this present is only counted and passed on. Returns what happened, for
+// the present probe.
+ProbeOutcome FrameWork(IDXGISwapChain* swapChain, UINT flags) {
     if (g_frameWorkOff || (flags & DXGI_PRESENT_TEST)) {
-        return;
+        return ProbeOutcome::Off;
     }
     InterlockedIncrement64(&g_hookCalls);
     if (InterlockedCompareExchange(&g_frameBusy, 1, 0) != 0) {
         InterlockedIncrement64(&g_concurrentSkips);
-        return;
+        return ProbeOutcome::Skipped;
     }
     GuardedOnFrame(swapChain, flags);   // returns normally after a fault too, so the flag is always given back
+    const ProbeOutcome outcome = g_frameWorkOff ? ProbeOutcome::Off : g_frameOutcome;
     InterlockedExchange(&g_frameBusy, 0);
+    return outcome;
 }
 
 // One of the two functions may call the other internally; the depth counter makes sure such a
-// frame is handled once.
+// frame is handled once. With the present probe on (and only then) the outermost call of each
+// thread is recorded; off, the probe costs the one load of g_probeOn.
 thread_local int t_presentDepth = 0;
 
 HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags) {
     // Read once: the worker published this before the table entry pointed here.
     const auto original = reinterpret_cast<PresentFn>(g_originalPresent);
     if (t_presentDepth++ == 0) {
+        if (g_probeOn) {
+            const int caller = ProbeEnter(0, _ReturnAddress(), swapChain, syncInterval, flags);
+            ProbeRecordOutcome(caller, FrameWork(swapChain, flags));
+            const HRESULT result = original(swapChain, syncInterval, flags);
+            ProbeLeave();
+            --t_presentDepth;
+            return result;
+        }
         FrameWork(swapChain, flags);
     }
     const HRESULT result = original(swapChain, syncInterval, flags);
@@ -278,6 +308,14 @@ HRESULT STDMETHODCALLTYPE HookedPresent1(IDXGISwapChain1* swapChain, UINT syncIn
                                          const DXGI_PRESENT_PARAMETERS* parameters) {
     const auto original = reinterpret_cast<Present1Fn>(g_originalPresent1);
     if (t_presentDepth++ == 0) {
+        if (g_probeOn) {
+            const int caller = ProbeEnter(1, _ReturnAddress(), swapChain, syncInterval, flags);
+            ProbeRecordOutcome(caller, FrameWork(swapChain, flags));
+            const HRESULT result = original(swapChain, syncInterval, flags, parameters);
+            ProbeLeave();
+            --t_presentDepth;
+            return result;
+        }
         FrameWork(swapChain, flags);
     }
     const HRESULT result = original(swapChain, syncInterval, flags, parameters);
@@ -321,6 +359,7 @@ bool InstallPresentHook(const PresentHookOptions& options) {
     if (!table) {
         return false;
     }
+    g_patchedTable = table;
     if (!PatchSlot(table, kSlotPresent, reinterpret_cast<void*>(&HookedPresent), &g_originalPresent)) {
         Log("hook: could not attach to Present (error %lu)", GetLastError());
         return false;
@@ -340,6 +379,10 @@ PresentHookCounters PresentHookGetCounters() {
     counters.gameFrames = static_cast<unsigned long long>(g_frames);
     counters.concurrentSkips = static_cast<unsigned long long>(g_concurrentSkips);
     return counters;
+}
+
+void PresentHookProbeReport(unsigned seconds) {
+    ProbeReport(g_originalPresent, g_originalPresent1, g_patchedTable, static_cast<unsigned long long>(g_frames), seconds);
 }
 
 bool PresentHookSwitchedOff() {

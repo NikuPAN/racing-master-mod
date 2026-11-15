@@ -1774,6 +1774,14 @@ void ScriptConcurrent(Host& host) {
     const LayoutFile after = ReadLayout();
     printf("  presents: %ld from this thread, %ld from the second; %d passed on while the other was drawing\n", mine,
            job.presents, after.Int("skips", 0));
+    // The present probe ([debug] present_probe=1): the script checks this against the run's settings.
+    printf("probe calls recorded: %d\n", after.Int("probe", 0));
+    if (after.Int("probe", 0) > 0) {
+        // Let the worker write probe blocks that cover the overlap (the test asks for one every 2 s);
+        // Windows' present count shows as a change from the second block on.
+        WaitForModLog(host, "at most 2 threads inside the hook at once", 8000);
+        WaitForModLog(host, "Windows counted", 8000);
+    }
     Check("K1 both threads presented at the same time and the mod passed the overlapping ones straight on",
           thread != nullptr && job.presents > 0 && after.Int("skips", 0) > 0);
     Check("K1 the worker logged it once, in plain words",

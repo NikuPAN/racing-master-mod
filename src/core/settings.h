@@ -42,6 +42,8 @@ struct Settings {
     unsigned stage = 2;
     // How long the "mod is alive" square stays on screen, 0 to 600 seconds.
     unsigned markerSeconds = 20;
+    // [debug] present_probe=1: the present probe (present_probe.h), a diagnostic; off by default.
+    bool presentProbe = false;
     UiSettings ui;
 };
 

@@ -24,8 +24,9 @@ struct UiSettings;
 void PanelStart(const UiSettings& settings, bool testHost);
 
 // Frame thread, from OnFrame for the bound swap chain. Everything it acquires from Direct3D goes
-// into `refs`, so the fault handler can give it back.
-void PanelOnFrame(IDXGISwapChain* swapChain, UINT presentFlags, FrameRefs& refs);
+// into `refs`, so the fault handler can give it back. True when the panel (or a notice) was drawn
+// on this frame (the present probe counts it).
+bool PanelOnFrame(IDXGISwapChain* swapChain, UINT presentFlags, FrameRefs& refs);
 
 // From the fault handler, after the game's pipeline state was put back, and from PanelOnFrame
 // after an ImGui assertion or a fault in the window procedure. Sets atomics only: no ImGui, no

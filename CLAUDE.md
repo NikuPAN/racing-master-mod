@@ -172,6 +172,9 @@ play_pause=F7
 next=F8
 loop=F9
 media_keys=1         ; the keyboard's media keys, only while "My files" is the source
+[debug]
+present_probe=0      ; 1 = the present probe (0.3.1, docs/agent-notes/present-probe.md): a block of
+                     ; "present probe" lines in mod.log every 30 s. Diagnostic for the owner's runs only.
 ```
 
 The panel writes `language`, `text_size`, `pause_when_unfocused`, `source` and (since 0.3.1)
@@ -197,8 +200,10 @@ full paths of `racing-master-mod.ini` beside the DLL and the per-user `settings.
   `settings`, `vtable_patch` (the only place that writes into a foreign function table),
   `dxgi_probe` (finds DXGI's swap chain table with a throwaway device), `present_hook` (hook,
   swap chain binding, fault guard, counters), `frame.h` (`FrameRefs`), `worker` (start-up
-  order, watchdog, periodic status line), `game_close` (the close messages the window procedure
-  hands to the worker, and the bounded wait for the final save).
+  order, watchdog, periodic status line, the NVIDIA Smooth Motion line), `game_close` (the close
+  messages the window procedure hands to the worker, and the bounded wait for the final save),
+  `present_probe` (the `[debug] present_probe` diagnostic: interlocked tables on the presenting
+  threads, the block written by the worker).
 - `src/remote/` — remote control of other music apps through Windows media sessions.
   `remote.h` is the panel's interface (plain types; `Snapshot` with a `Message` id for
   translation); `remote.cpp` is the only file that includes the WinRT ABI headers. See
@@ -362,7 +367,10 @@ Details and the reasons: `docs/agent-notes/integration.md`.
   (the example "Other app", or the real remote), `_TEST_PICKER_FILES=<path>|<path>` (a suppressed
   file dialog reports these instead of a cancel), and for `testhost.exe` itself
   `_TEST_FAKE_PLAYER=1` (panel mode publishes the silent fake player) and
-  `_TEST_FAKE_PLAYER_ID` (the fake player's app id, new for every run; see the media gotcha below). In the test host the mod writes `%LOCALAPPDATA%\RacingMasterMod\test-layout.txt`
+  `_TEST_FAKE_PLAYER_ID` (the fake player's app id, new for every run; see the media gotcha below),
+  `_TEST_EXIT_AFTER_CLOSE=1` (the host ends its process straight after closing its window),
+  `_TEST_PROBE_SECONDS` (the present probe's block interval) and `_TEST_SMOOTH_MOTION_DLL` (the
+  DLL the Smooth Motion check looks for instead of `NvPresent64.dll`). In the test host the mod writes `%LOCALAPPDATA%\RacingMasterMod\test-layout.txt`
   (state, window rectangles, widget centres) whenever it changes; the host reads it to aim its
   posted messages. Never in the game.
 - The test host's own window procedure counts what "the game" receives; panel runs also check 14

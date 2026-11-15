@@ -68,7 +68,20 @@ char* Trim(char* text) {
     return text;
 }
 
-enum class Section { Mod, Panel, Keys, Music, Other };
+enum class Section { Mod, Panel, Keys, Music, Debug, Other };
+
+// [debug]: diagnostics for a developer or for the owner's test runs; nothing a player needs.
+void ApplyDebugKey(const char* key, const char* value, const char* path8, Settings* settings) {
+    if (_stricmp(key, "present_probe") == 0) {
+        if (!ParseSwitch(value, &settings->presentProbe)) {
+            Log("settings: \"present_probe=%s\" under [debug] is not 0 or 1 (in %s); the present probe stays off",
+                value, path8);
+            settings->presentProbe = false;
+        }
+    } else {
+        Log("settings: unknown key \"%s\" under [debug] is ignored (in %s); the only one is present_probe", key, path8);
+    }
+}
 
 void ApplyPanelKey(const char* key, const char* value, const char* path8, UiSettings* ui) {
     static const char* const kLanguages[] = {"auto", "en", "zh-TW"};
@@ -207,10 +220,12 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
                 section = Section::Keys;
             } else if (_stricmp(name, "music") == 0) {
                 section = Section::Music;   // the music engine reads and writes it itself
+            } else if (_stricmp(name, "debug") == 0) {
+                section = Section::Debug;
             } else {
                 section = Section::Other;
-                Log("settings: the heading [%s] is not one the mod knows ([mod], [panel], [keys] or [music]); the "
-                    "lines under it are ignored (in %s)",
+                Log("settings: the heading [%s] is not one the mod knows ([mod], [panel], [keys], [music] or [debug]); "
+                    "the lines under it are ignored (in %s)",
                     name, path8);
             }
             continue;
@@ -240,6 +255,10 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
         }
         if (section == Section::Keys) {
             ApplyKeysKey(key, value, path8, &settings->ui);
+            continue;
+        }
+        if (section == Section::Debug) {
+            ApplyDebugKey(key, value, path8, settings);
             continue;
         }
         unsigned number = 0;

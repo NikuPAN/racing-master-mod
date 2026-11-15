@@ -35,6 +35,9 @@ struct PresentHookCounters {
 };
 PresentHookCounters PresentHookGetCounters();
 
+// Worker, only with the present probe on (present_probe.h): writes its block to mod.log.
+void PresentHookProbeReport(unsigned seconds);
+
 // True after a fault in the per-frame code; the mod then stays off for this session.
 bool PresentHookSwitchedOff();
 
