@@ -36,16 +36,19 @@ one consumer for the input queue).
   the screen edges it touches (`PlaceInCorner`, no margin; the owner's decision 14), in the
   settings row ("Position", listed top row then bottom row) and as `[panel] corner=`. Every
   screenshot run visits all six through the settings row (P1-P4: flush within 1 px, centred
-  within 1 px, everything on screen with the list and settings row open). At the bottom
-  (centre or a bottom corner) the song list and the settings row open above the bar in mirror
-  order, and so do the status lines that come and go (the engine's "Added ...", the other app's
-  help and messages: between the list and the bar since 0.3.1's review, run 40 E6), so the bar stays
-  put. One known flicker: ImGui sizes an auto-sized window from the previous frame's content, so on
-  the one frame where the panel's height changes (list or settings row opened or closed, a status
-  line appearing) the bar is drawn one row low and clipped. The fix would be two ImGui windows (the
-  bar alone, anchored at the bottom, and the list and settings above it); not done, it is a layout
-  change for the owner to agree. The list shows up to 8 rows and fewer when the whole panel would
-  not fit on the screen (`ListRowsThatFit`, measured from the previous frame's content height);
+  within 1 px, everything on screen with the list and settings row open).
+- **Two windows since 0.3.2** (the owner's decision 6): the bar alone (`###rmm_panel`, always
+  three rows, also for "Other app" with nothing playing, so its height never changes), anchored at
+  its place, and beside it, away from the screen edge, `###rmm_extras` with the status lines (the
+  engine's "Added ...", the other app's help and messages), the song list and the settings row, in
+  that order outward from the bar (mirrored at the bottom). Reason: ImGui sizes an auto-sized
+  window from the previous frame's content, so while the panel was one window, on the frame the
+  list, the settings row or a status line appeared at a bottom place the bar was drawn one list
+  lower and clipped (0.3.1 known flicker). Now only the extras window lags a frame as it grows,
+  away from the bar. B5-B7 and E6 present frames one at a time and require the bar's window and its
+  play and next buttons to be exactly unchanged on every frame (`BarHoldsStill`). The list shows up
+  to 8 rows and fewer when the bar and the extras window would not fit on the screen
+  (`ListRowsThatFit`: this frame's bar height plus the extras window's previous content height);
   run 35 checks five sizes down to 1024x576 with large text, list and settings row open.
 - **Add files / Add folder greyed** with the reason while a file window is already open and in
   exclusive full screen (the full-screen reason names the music folder). Added at integration.

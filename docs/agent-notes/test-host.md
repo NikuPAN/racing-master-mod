@@ -74,7 +74,9 @@ code 1 for both "no marker" and "forwarding failed"; the review showed what it d
    row and remove-button positions (only the visible rows have widget centres).
    **At the bottom of the screen (the default since 0.3.1) the panel grows upward**, and ImGui
    sizes an auto-sized window one frame late, so for one frame after the list or the settings
-   row changes size every widget sits lower than it will be drawn from then on. `Item()` therefore
+   row changes size its widgets sit lower than they will be drawn from then on (since 0.3.2 only
+   the window beside the bar does this; the bar itself holds still, which `BarHoldsStill` checks
+   frame by frame). `Item()` therefore
    presents frames until a widget's centre is the same on two frames in a row (at most 8). Without
    it run 40's E7 missed "Settings" in about half the runs (2026-11-15): Add files had just made the
    list one row longer, and the button was read from that one frame.

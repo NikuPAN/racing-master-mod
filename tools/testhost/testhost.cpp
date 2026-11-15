@@ -1161,6 +1161,68 @@ bool TimeRowOk(const LayoutFile& l, const char* bar) {
     return fit && centred;
 }
 
+bool SameRect(const RECT& a, const RECT& b) {
+    return a.left == b.left && a.top == b.top && a.right == b.right && a.bottom == b.bottom;
+}
+
+// The window beside the bar (status lines, list, settings row) on the side away from the screen
+// edge: at a bottom place it ends where the bar starts, at a top place it starts where the bar ends.
+bool ExtrasBesideBar(const LayoutFile& l, bool bottom) {
+    for (const RECT& w : l.windows) {
+        if (SameRect(w, l.bar)) continue;
+        const bool touching = bottom ? std::abs(w.bottom - l.bar.top) <= 1 : std::abs(w.top - l.bar.bottom) <= 1;
+        if (touching && std::abs(w.left - l.bar.left) <= 1 && std::abs(w.right - l.bar.right) <= 1) return true;
+    }
+    return false;
+}
+
+// A click posted without waiting for it to be handled (for BarHoldsStill, which presents the
+// frames itself, one at a time).
+void PostClick(Host& host, POINT p) {
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") != 1 || !l.hits.empty(); }, 1000);
+    Move(host, p);
+    PostMessageW(host.window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(p.x, p.y));
+    PostMessageW(host.window, WM_LBUTTONUP, 0, MAKELPARAM(p.x, p.y));
+}
+
+// The owner's decision 6 for 0.3.2: the bar never moves, not even for one frame, when the list,
+// the settings row or a status line appears. Runs `action` (which posts messages), then presents
+// frames one at a time and reads the layout after each: the bar's window and the centres of its
+// play and next buttons must be exactly what they were on the frame before, on every frame until
+// `done` has held for 8 frames. While the panel was one window, ImGui's one-frame-late sizing drew
+// the bar one list lower on the frame the list opened at a bottom place.
+template <typename Action, typename Done>
+bool BarHoldsStill(Host& host, const char* what, Action action, Done done, int milliseconds = 5000) {
+    PanelFrame(host, 0);
+    const LayoutFile before = ReadLayout();
+    auto centre = [](const LayoutFile& l, const char* name) {
+        const auto it = l.at.find(name);
+        return it == l.at.end() ? std::make_pair(-1.0, -1.0) : it->second;
+    };
+    const auto play = centre(before, "play_pause"), next = centre(before, "next");
+    action();
+    int frames = 0, moved = 0, doneAt = -1;
+    const ULONGLONG end = GetTickCount64() + static_cast<ULONGLONG>(milliseconds);
+    while (GetTickCount64() < end) {
+        PanelFrame(host, 0);
+        ++frames;
+        const LayoutFile l = ReadLayout();
+        if (!l.hasBar || !SameRect(l.bar, before.bar) || centre(l, "play_pause") != play || centre(l, "next") != next) {
+            if (moved++ == 0) {
+                printf("  %s: on frame %d the bar was at %ld,%ld..%ld,%ld (before %ld,%ld..%ld,%ld), play at y %.1f (before %.1f)\n",
+                       what, frames, l.bar.left, l.bar.top, l.bar.right, l.bar.bottom, before.bar.left, before.bar.top,
+                       before.bar.right, before.bar.bottom, centre(l, "play_pause").second, play.second);
+            }
+        }
+        if (doneAt < 0 && done(l)) doneAt = frames;
+        if (doneAt >= 0 && frames - doneAt >= 8) break;
+        Sleep(2);
+    }
+    printf("  %s: %d frames read one by one; the change showed on frame %d; the bar moved on %d of them\n", what, frames,
+           doneAt, moved);
+    return before.hasBar && play.second >= 0.0 && moved == 0 && doneAt >= 0;
+}
+
 void PrintBar(const char* when) {
     const LayoutFile l = ReadLayout();
     printf("  bar %s: %ld,%ld to %ld,%ld in a %dx%d back buffer\n", when, l.bar.left, l.bar.top, l.bar.right, l.bar.bottom,
@@ -1200,15 +1262,17 @@ void ScriptShots(Host& host, const std::string& prefix) {
     const LayoutFile barAlone = ReadLayout();
     const POINT listButton = Item("list");
 
-    Click(host, Item("list"));
+    Check("B5 the bar holds still on every frame while the list opens (frame by frame, bar and buttons unmoved)",
+          BarHoldsStill(host, "list opening", [&] { PostClick(host, listButton); },
+                        [](const LayoutFile& l) { return l.Int("list") == 1 && l.Has("row0"); }));
     Check("S2 Show list opens the list", WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 1 && l.Has("row0"); }));
     Pump(host, 4);
     PrintBar("with the list");
     const LayoutFile withList = ReadLayout();
-    Check("B2 the list opens above the bar: the bar's buttons stay where they were and the songs are above them",
-          BarAtBottomCentre(withList) && PanelOnScreen(withList) && withList.bar.bottom == barAlone.bar.bottom &&
-              std::abs(Item("list").y - listButton.y) <= 1 && Item("row0").y < listButton.y &&
-              withList.bar.top < barAlone.bar.top);
+    Check("B2 the list opens above the bar in a window of its own: the bar's window and buttons are unchanged and "
+          "the songs are above them",
+          BarAtBottomCentre(withList) && PanelOnScreen(withList) && SameRect(withList.bar, barAlone.bar) &&
+              std::abs(Item("list").y - listButton.y) <= 1 && Item("row0").y < listButton.y && ExtrasBesideBar(withList, true));
     // Runs whose music folder holds a file that cannot be played (tools\run-host-test.ps1 puts
     // one there for the screenshot and resize runs). The engine finds out when it tries to play
     // it: the first click marks it (and the engine moves on), the list then draws it in that
@@ -1235,7 +1299,9 @@ void ScriptShots(Host& host, const std::string& prefix) {
     }
     Click(host, Item("list"));
 
-    Click(host, Item("settings"));
+    Check("B6 the bar holds still on every frame while the settings row opens",
+          BarHoldsStill(host, "settings row opening", [&] { PostClick(host, Item("settings")); },
+                        [](const LayoutFile& l) { return l.Int("settings") == 1 && l.Has("language"); }));
     Check("S3 Settings opens the settings row",
           WaitLayout(host, [](const LayoutFile& l) { return l.Int("settings") == 1 && l.Int("list") == 0 && l.Has("language"); }));
     MoveAway(host);
@@ -1264,7 +1330,9 @@ void ScriptShots(Host& host, const std::string& prefix) {
             Check((std::string("P0 choosing ") + kPositionNames[i] + " in the settings row").c_str(), false);
             continue;
         }
-        if (ReadLayout().Int("list") != 1) Click(host, Item("list"));
+        Check(("B7 " + std::string(kPositionNames[i]) + ": the bar holds still on every frame while the list opens").c_str(),
+              BarHoldsStill(host, kPositionNames[i], [&] { PostClick(host, Item("list")); },
+                            [](const LayoutFile& l) { return l.Int("list") == 1 && l.Has("row0"); }));
         WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 1 && l.Int("settings") == 1 && l.Has("row0"); });
         Pump(host, 4);
         MoveAway(host);
@@ -1272,10 +1340,11 @@ void ScriptShots(Host& host, const std::string& prefix) {
         CheckShot(("P1 " + std::string(kPositionNames[i]) + " with the list and settings row").c_str(), Shoot(host, open.c_str()), true);
         LayoutFile l = ReadLayout();
         PrintBar(kPositionNames[i]);
+        const bool bottomPlace = corner == kCornerBottomLeft || corner == kCornerBottomCentre || corner == kCornerBottomRight;
         Check(("P2 " + std::string(kPositionNames[i]) + ": flush with its screen edges (within 1 px), centred within 1 px "
-               "at a centre place, everything on screen, list and settings row open")
+               "at a centre place, everything on screen, list and settings row open beside the bar, away from the edge")
                   .c_str(),
-              BarPlaced(l, corner) && PanelOnScreen(l));
+              BarPlaced(l, corner) && PanelOnScreen(l) && ExtrasBesideBar(l, bottomPlace));
         Click(host, Item("list"));
         Click(host, Item("settings"));
         WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 0 && l.Int("settings") == 0; });
@@ -1597,11 +1666,12 @@ void ScriptInput(Host& host) {
           ok && placeIni.find("corner=bottom-centre") != std::string::npos);
 
     // A click outside closes an open drop-down, and reaches the game.
+    const size_t windowsBefore = ReadLayout().windows.size();   // the bar and the window beside it
     Click(host, Item("text_size"));
-    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Has("text_size_item0") && l.windows.size() >= 2; });
+    ok = WaitLayout(host, [&](const LayoutFile& l) { return l.Has("text_size_item0") && l.windows.size() > windowsBefore; });
     lDown = g_gotLDown.load();
     Click(host, outside);
-    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return !l.Has("text_size_item0") && l.windows.size() == 1; });
+    ok = ok && WaitLayout(host, [&](const LayoutFile& l) { return !l.Has("text_size_item0") && l.windows.size() == windowsBefore; });
     Check("I14 a click outside closes the open drop-down and reaches the game", ok && g_gotLDown.load() == lDown + 1);
 
     // Text field: keys are the panel's only while it has focus.
@@ -1743,7 +1813,9 @@ void ScriptIntegrated(Host& host) {
     Check("E5 F9 changes what repeats", WaitLayout(host, [&](const LayoutFile& l) { return l.Int("loop") == (loop + 1) % 3; }));
 
     const int before = ReadLayout().Int("tracks");
-    Click(host, Item("add_files"));
+    Check("E6 the bar holds still on every frame while the engine's status line (\"Added ...\") appears",
+          BarHoldsStill(host, "status line appearing", [&] { PostClick(host, Item("add_files")); },
+                        [](const LayoutFile& l) { return l.Int("message") == 1; }, 8000));
     ok = WaitLayout(host, [&](const LayoutFile& l) { return l.Int("tracks") == before + 1 && l.Int("scanning") == 0 && l.Has("row4"); },
                     8000);
     Check("E6 Add files hands the chosen file to the engine (no window shown) and the list shows it",

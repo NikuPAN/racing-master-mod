@@ -5,8 +5,9 @@
 //   Row 1: source ("My files" / "Other app"), what is playing, Settings, Hide
 //   Row 2: previous, play or pause, stop, next, what repeats, volume
 //   Row 3: elapsed, seek line, length, Show list
-//   then:  the song list (Add files, Add folder, one row per song with its length and a remove
-//          button) and/or the settings row (language, text size, pause when not in focus, keys)
+//   beside the bar, in a window of its own (away from the screen edge): the status lines, the
+//          song list (Add files, Add folder, one row per song with its length and a remove button)
+//          and the settings row (language, text size, place, pause when not in focus, keys)
 //
 // Sizes are written in units (pixels at 1080p with medium text) times Units(); no pixel constant.
 // Every control that cannot be used is greyed out and says why when the pointer rests on it.
@@ -605,10 +606,13 @@ void TimeRowMyFiles(const music::Snapshot& snapshot, float width, bool displayOn
 }
 
 // Another app has no list here (the list holds the player's own songs) and no seek: only its
-// timeline, when it reports one, or a line saying it does not. Nothing when no app is playing.
+// timeline, when it reports one, or a line saying it does not; an empty row when no app is playing.
 void TimeRowOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, float width) {
     const Strings& s = S();
     if (!view.session) {
+        // An empty row: the bar keeps its three rows whatever the source shows, so it never
+        // changes height (and never moves) when an app starts or stops playing.
+        ImGui::Dummy(ImVec2(width, ImGui::GetFrameHeight()));
         return;
     }
     if (snapshot.durationSeconds > 0.0) {
@@ -729,9 +733,13 @@ bool AtBottom() {
 float g_lastListHeight = 0.0f;
 bool g_listDrawnThisFrame = false;
 
+// The bar's height on this frame (its window is drawn before the list's).
+float g_barHeight = 0.0f;
+
 // The number of song rows to show: up to 8, fewer when the whole panel would not fit on the
 // screen otherwise (a small game window, large text, the settings row open as well). Measured from
-// the previous frame: the panel's height then, less the list's own height, is what the rest needs.
+// the previous frame: the list window's height then, less the list's own height, is what the rest
+// of that window needs; the bar is its own window, measured on this frame.
 int ListRowsThatFit(int count, float rowStep, const PanelFrameInfo& info) {
     int rows = count < 8 ? count : 8;
     if (g_lastListHeight <= 0.0f) {
@@ -741,7 +749,7 @@ int ListRowsThatFit(int count, float rowStep, const PanelFrameInfo& info) {
     // which would hide by how much the content is too tall.
     const ImGuiWindow* window = ImGui::GetCurrentWindow();
     const float rest = window->ContentSizeIdeal.y + window->WindowPadding.y * 2.0f - g_lastListHeight;
-    const float available = info.displayHeight - rest - ImGui::GetStyle().WindowPadding.y;
+    const float available = info.displayHeight - g_barHeight - rest - ImGui::GetStyle().WindowPadding.y;
     const int fit = static_cast<int>(available / rowStep);
     const int least = count < 2 ? count : 2;
     if (fit < rows) {
@@ -750,13 +758,9 @@ int ListRowsThatFit(int count, float rowStep, const PanelFrameInfo& info) {
     return rows;
 }
 
-// `above`: the list opens above the bar (the panel sits at the bottom), so the divider goes
-// between the list and the bar, below the list.
-void SongList(const music::Snapshot& snapshot, const PanelFrameInfo& info, bool above) {
+// The song list, in the window beside the bar (DrawExtras puts the dividers).
+void SongList(const music::Snapshot& snapshot, const PanelFrameInfo& info) {
     const Strings& s = S();
-    if (!above) {
-        ImGui::Separator();
-    }
     // The file window belongs to the game's top-level window, so it stays above the game and
     // gives the focus back when it closes; Windows keeps the game from taking input meanwhile
     // (the hints say so). In exclusive full screen it would minimise the game, so it is not
@@ -799,9 +803,6 @@ void SongList(const music::Snapshot& snapshot, const PanelFrameInfo& info, bool 
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         ImGui::TextWrapped("%s", s.listEmpty);
         ImGui::PopStyleColor();
-        if (above) {
-            ImGui::Separator();
-        }
         return;
     }
     const float rowHeight = ImGui::GetFrameHeight();
@@ -887,9 +888,6 @@ void SongList(const music::Snapshot& snapshot, const PanelFrameInfo& info, bool 
     }
     ImGui::EndChild();
     ImGui::PopStyleVar();
-    if (above) {
-        ImGui::Separator();
-    }
 }
 
 bool ChoiceCombo(const char* id, const char* const* items, int count, unsigned* value, const char* testPrefix) {
@@ -937,12 +935,9 @@ void PositionChoice() {
     Mark("position");
 }
 
-// `above`: the row opens above the bar (the panel sits at the bottom), with the divider below it.
-void SettingsRow(bool above) {
+// The settings row, in the window beside the bar (DrawExtras puts the dividers).
+void SettingsRow() {
     const Strings& s = S();
-    if (!above) {
-        ImGui::Separator();
-    }
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(s.language);
     ImGui::SameLine();
@@ -987,9 +982,6 @@ void SettingsRow(bool above) {
         ImGui::InputText("##test_field", g_testText, sizeof(g_testText));
         Mark("test_field");
     }
-    if (above) {
-        ImGui::Separator();
-    }
 }
 
 void MutedWrapped(const char* text) {
@@ -1015,8 +1007,96 @@ void PlaceInCorner(const PanelFrameInfo& info, ImVec2* pos, ImVec2* pivot) {
     pivot->y = bottom ? 1.0f : 0.0f;
 }
 
-void DrawBar(const PanelFrameInfo& info) {
+// What row 1 says for "My files": the song, or why there is none.
+void NowPlayingMyFiles(const music::Snapshot& snapshot, char* buffer, int size) {
     const Strings& s = S();
+    if (snapshot.tracks.empty()) {
+        snprintf(buffer, static_cast<size_t>(size), "%s", s.noSongsYet);
+    } else if (snapshot.currentIndex >= 0 && snapshot.currentIndex < static_cast<int>(snapshot.tracks.size())) {
+        TrackLabel(snapshot.tracks[static_cast<size_t>(snapshot.currentIndex)], buffer, size);
+    } else {
+        snprintf(buffer, static_cast<size_t>(size), "%s", s.nothingPlaying);
+    }
+}
+
+// What row 1 says for "Other app": "App: title - artist", or that nothing is playing. An app with
+// no readable name (remote/app_names.h) shows its song alone.
+void NowPlayingOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, char* buffer, int size) {
+    const Strings& s = S();
+    if (!view.session) {
+        snprintf(buffer, static_cast<size_t>(size), "%s", s.noAppPlaying);
+        return;
+    }
+    char app[128], title[384], artist[256];
+    Utf8(snapshot.app, app, sizeof(app));
+    Utf8(snapshot.title, title, sizeof(title));
+    Utf8(snapshot.artist, artist, sizeof(artist));
+    const char* shownTitle = title[0] ? title : s.unknownTitle;
+    const size_t n = static_cast<size_t>(size);
+    if (app[0] && artist[0]) snprintf(buffer, n, "%s: %s - %s", app, shownTitle, artist);
+    else if (app[0]) snprintf(buffer, n, "%s: %s", app, shownTitle);
+    else if (artist[0]) snprintf(buffer, n, "%s - %s", shownTitle, artist);
+    else snprintf(buffer, n, "%s", shownTitle);
+}
+
+constexpr ImGuiWindowFlags kPanelWindowFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                               ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                                               ImGuiWindowFlags_NoNav | ImGuiWindowFlags_AlwaysAutoResize;
+
+// The panel is two windows (0.3.2, the owner's decision 6): the bar alone, anchored at its place,
+// and beside it, on the side away from the screen edge, the window with the settings row, the song
+// list and the status lines. ImGui sizes an auto-sized window from the previous frame's content,
+// so while the panel was one window the bar was drawn one row off for one frame whenever the list,
+// the settings row or a status line appeared at a bottom place. The bar's content never changes
+// height now (three rows for both sources), so it never moves; only the other window grows, away
+// from the bar.
+struct BarPlace {
+    ImVec2 pos;    // the bar window's top-left corner on this frame
+    ImVec2 size;   // and its size
+};
+
+void DrawExtras(const PanelFrameInfo& info, const BarPlace& bar, const char* message, const char* help,
+                const music::Snapshot* songs) {
+    const bool list = songs && g_listOpen && !info.displayOnly;
+    const bool status = (message && message[0]) || (help && help[0]);
+    if (!g_settingsOpen && !list && !status) {
+        return;
+    }
+    const bool bottom = AtBottom();
+    ImVec2 pos, pivot;
+    PlaceInCorner(info, &pos, &pivot);
+    pos.x = bar.pos.x + bar.size.x * pivot.x;   // the same side (or centre) as the bar
+    pos.y = bottom ? bar.pos.y : bar.pos.y + bar.size.y;
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
+    ImGui::SetNextWindowSize(ImVec2(bar.size.x, 0.0f), ImGuiCond_Always);
+    if (!ImGui::Begin("Music panel extras###rmm_extras", nullptr, kPanelWindowFlags)) {
+        ImGui::End();
+        return;
+    }
+    // From the bar outward: the status lines, the song list, the settings row. The window is drawn
+    // top-down, so at the bottom of the screen the order is reversed.
+    bool drewSection = false;
+    for (int i = 0; i < 3; ++i) {
+        const int which = bottom ? 2 - i : i;
+        if (which == 0 && status) {
+            if (drewSection) ImGui::Separator();
+            MutedWrapped(help);
+            MutedWrapped(message);
+            drewSection = true;
+        } else if (which == 1 && list) {
+            if (drewSection) ImGui::Separator();
+            SongList(*songs, info);
+            drewSection = true;
+        } else if (which == 2 && g_settingsOpen) {
+            if (drewSection) ImGui::Separator();
+            SettingsRow();
+            drewSection = true;
+        }
+    }
+    ImGui::End();
+}
+
+void DrawBar(const PanelFrameInfo& info) {
     ImVec2 pos, pivot;
     PlaceInCorner(info, &pos, &pivot);
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -1024,93 +1104,48 @@ void DrawBar(const PanelFrameInfo& info) {
     if (width > info.displayWidth) width = info.displayWidth;
     ImGui::SetNextWindowPos(pos, ImGuiCond_Always, pivot);
     ImGui::SetNextWindowSize(ImVec2(width, 0.0f), ImGuiCond_Always);
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
-                                   ImGuiWindowFlags_NoNav | ImGuiWindowFlags_AlwaysAutoResize;
-    if (!ImGui::Begin("Music panel###rmm_panel", nullptr, flags)) {
-        ImGui::End();
-        return;
-    }
-    const float inner = width - style.WindowPadding.x * 2.0f;
-    const bool myFiles = g_settings.source == SourceMyFiles;
-    // At the bottom of the screen the settings row and the song list open above the bar, in the
-    // mirror order (the list next to the bar), so the bar itself never moves.
-    const bool above = AtBottom();
     g_listDrawnThisFrame = false;
-    if (above && g_settingsOpen) {
-        SettingsRow(true);
-    }
+    const bool shown = ImGui::Begin("Music panel###rmm_panel", nullptr, kPanelWindowFlags);
+    BarPlace bar;
+    bar.pos = ImGui::GetWindowPos();
+    bar.size = ImGui::GetWindowSize();
+    g_barHeight = bar.size.y;
+    const float inner = width - style.WindowPadding.x * 2.0f;
     char nowPlaying[768];
-    if (myFiles) {
+    char message[512] = "";
+    const char* help = nullptr;
+    const music::Snapshot* songs = nullptr;
+    if (g_settings.source == SourceMyFiles) {
         const music::Snapshot& snapshot = CurrentSnapshot();
-        const bool list = g_listOpen && !info.displayOnly;
-        if (above && list) {
-            SongList(snapshot, info, true);
-        }
-        if (snapshot.tracks.empty()) {
-            strcpy_s(nowPlaying, s.noSongsYet);
-        } else if (snapshot.currentIndex >= 0 && snapshot.currentIndex < static_cast<int>(snapshot.tracks.size())) {
-            TrackLabel(snapshot.tracks[static_cast<size_t>(snapshot.currentIndex)], nowPlaying, sizeof(nowPlaying));
-        } else {
-            strcpy_s(nowPlaying, s.nothingPlaying);
-        }
-        // The engine's status line ("Added 6 file(s)", an error) comes and goes. Under the bar it
-        // would push a bottom-anchored bar up and down while it shows, so at the bottom it sits
-        // above the bar, where the panel grows away from the bar instead.
-        char message[512];
+        songs = &snapshot;
+        // The engine's status line ("Added 6 file(s)", an error) comes and goes: it goes in the
+        // window beside the bar, never in the bar.
         Utf8(snapshot.message, message, sizeof(message));
-        if (above) {
-            MutedWrapped(message);
-        }
-        SourceRow(nowPlaying, inner, info.displayOnly);
-        ControlsMyFiles(snapshot, inner, info.displayOnly);
-        TimeRowMyFiles(snapshot, inner, info.displayOnly);
-        if (!above) {
-            MutedWrapped(message);
-        }
-        if (!above && list) {
-            SongList(snapshot, info, false);
+        if (shown) {
+            NowPlayingMyFiles(snapshot, nowPlaying, sizeof(nowPlaying));
+            SourceRow(nowPlaying, inner, info.displayOnly);
+            ControlsMyFiles(snapshot, inner, info.displayOnly);
+            TimeRowMyFiles(snapshot, inner, info.displayOnly);
         }
     } else {
-        const remote::Snapshot snapshot = other_app::GetSnapshot();
-        const RemoteView view = ViewOf(snapshot);
-        if (!view.session) {
-            strcpy_s(nowPlaying, s.noAppPlaying);
-        } else {
-            char app[128], title[384], artist[256];
-            Utf8(snapshot.app, app, sizeof(app));
-            Utf8(snapshot.title, title, sizeof(title));
-            Utf8(snapshot.artist, artist, sizeof(artist));
-            const char* shownTitle = title[0] ? title : s.unknownTitle;
-            if (app[0] && artist[0]) snprintf(nowPlaying, sizeof(nowPlaying), "%s: %s - %s", app, shownTitle, artist);
-            else if (app[0]) snprintf(nowPlaying, sizeof(nowPlaying), "%s: %s", app, shownTitle);
-            else if (artist[0]) snprintf(nowPlaying, sizeof(nowPlaying), "%s - %s", shownTitle, artist);
-            else snprintf(nowPlaying, sizeof(nowPlaying), "%s", shownTitle);
-        }
-        // The help and status lines come and go with the other app: above the bar at the bottom,
-        // as for "My files".
-        char message[512];
-        RemoteMessageLine(snapshot, message, sizeof(message));
-        const char* help = !view.session && !message[0] ? s.noAppHelp : nullptr;
-        if (above) {
-            MutedWrapped(help);
-            MutedWrapped(message);
-        }
-        SourceRow(nowPlaying, inner, info.displayOnly);
-        ControlsOtherApp(snapshot, view, inner, info.displayOnly);
-        TimeRowOtherApp(snapshot, view, inner);
-        if (!above) {
-            MutedWrapped(help);
-            MutedWrapped(message);
+        const remote::Snapshot other = other_app::GetSnapshot();
+        const RemoteView view = ViewOf(other);
+        RemoteMessageLine(other, message, sizeof(message));
+        help = !view.session && !message[0] ? S().noAppHelp : nullptr;
+        if (shown) {
+            NowPlayingOtherApp(other, view, nowPlaying, sizeof(nowPlaying));
+            SourceRow(nowPlaying, inner, info.displayOnly);
+            ControlsOtherApp(other, view, inner, info.displayOnly);
+            TimeRowOtherApp(other, view, inner);
         }
     }
-    if (!above && g_settingsOpen) {
-        SettingsRow(false);
+    ImGui::End();
+    if (shown) {
+        DrawExtras(info, bar, message, help, songs);
     }
     if (!g_listDrawnThisFrame) {
         g_lastListHeight = 0.0f;   // the next list starts from 8 rows and is measured again
     }
-    ImGui::End();
 }
 
 void DrawNotice(const PanelFrameInfo& info, const char* text) {
