@@ -2,7 +2,9 @@
 
 Unofficial mod for the PC version of Racing Master (巔峰極速, NetEase, internal name `g112`).
 One DLL loaded into the game that will carry an in-game music panel and NVIDIA DLSS.
-Free, MIT, README in English and Traditional Chinese. Repo is private until the owner makes it public.
+Free, MIT, README in Traditional Chinese and English. The repository is **public** (seen on
+2026-11-15 at the 0.3.2 release): everything committed is visible to anyone, so personal details
+and owner-only notes stay in `docs/agent-notes/local/`.
 
 @docs/agent-notes/README.md
 
