@@ -989,11 +989,20 @@ void DrawBar(const PanelFrameInfo& info) {
         } else {
             strcpy_s(nowPlaying, s.nothingPlaying);
         }
+        // The engine's status line ("Added 6 file(s)", an error) comes and goes. Under the bar it
+        // would push a bottom-anchored bar up and down while it shows, so at the bottom it sits
+        // above the bar, where the panel grows away from the bar instead.
+        char message[512];
+        Utf8(snapshot.message, message, sizeof(message));
+        if (above) {
+            MutedWrapped(message);
+        }
         SourceRow(nowPlaying, inner, info.displayOnly);
         ControlsMyFiles(snapshot, inner, info.displayOnly);
         TimeRowMyFiles(snapshot, inner, info.displayOnly);
-        char message[512];
-        MutedWrapped(Utf8(snapshot.message, message, sizeof(message)));
+        if (!above) {
+            MutedWrapped(message);
+        }
         if (!above && list) {
             SongList(snapshot, info, false);
         }
@@ -1013,15 +1022,22 @@ void DrawBar(const PanelFrameInfo& info) {
             else if (artist[0]) snprintf(nowPlaying, sizeof(nowPlaying), "%s - %s", shownTitle, artist);
             else snprintf(nowPlaying, sizeof(nowPlaying), "%s", shownTitle);
         }
+        // The help and status lines come and go with the other app: above the bar at the bottom,
+        // as for "My files".
+        char message[512];
+        RemoteMessageLine(snapshot, message, sizeof(message));
+        const char* help = !view.session && !message[0] ? s.noAppHelp : nullptr;
+        if (above) {
+            MutedWrapped(help);
+            MutedWrapped(message);
+        }
         SourceRow(nowPlaying, inner, info.displayOnly);
         ControlsOtherApp(snapshot, view, inner, info.displayOnly);
         TimeRowOtherApp(snapshot, view, inner);
-        char message[512];
-        RemoteMessageLine(snapshot, message, sizeof(message));
-        if (!view.session && !message[0]) {
-            MutedWrapped(s.noAppHelp);
+        if (!above) {
+            MutedWrapped(help);
+            MutedWrapped(message);
         }
-        MutedWrapped(message);
     }
     if (!above && g_settingsOpen) {
         SettingsRow(false);
@@ -1194,8 +1210,10 @@ int PanelAppendTestState(char* buffer, int size) {
     for (const music::TrackInfo& track : snapshot.tracks) {
         unplayable += track.supported ? 0 : 1;
     }
-    int extra = snprintf(buffer + n, static_cast<size_t>(size - n), "position %d\nunplayable %d\ncorner %u\n",
-                         static_cast<int>(snapshot.positionSeconds), unplayable, g_settings.corner);
+    // "message": whether the engine's status line is showing.
+    int extra = snprintf(buffer + n, static_cast<size_t>(size - n), "position %d\nunplayable %d\ncorner %u\nmessage %d\n",
+                         static_cast<int>(snapshot.positionSeconds), unplayable, g_settings.corner,
+                         snapshot.message.empty() ? 0 : 1);
     if (g_settings.source == SourceOtherApp && extra > 0 && n + extra < size) {
         const remote::Snapshot other = other_app::GetSnapshot();
         const RemoteView view = ViewOf(other);

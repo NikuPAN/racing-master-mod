@@ -35,7 +35,13 @@ one consumer for the input queue).
   covered the game's diamond counter). The four corners stay selectable, in the settings row
   ("Position", added in 0.3.1, bottom centre listed first) and as `[panel] corner=`. At the bottom
   (centre or a bottom corner) the song list and the settings row open above the bar in mirror
-  order, so the bar never moves. The list shows up to 8 rows and fewer when the whole panel would
+  order, and so do the status lines that come and go (the engine's "Added ...", the other app's
+  help and messages: between the list and the bar since 0.3.1's review, run 40 E6), so the bar stays
+  put. One known flicker: ImGui sizes an auto-sized window from the previous frame's content, so on
+  the one frame where the panel's height changes (list or settings row opened or closed, a status
+  line appearing) the bar is drawn one row low and clipped. The fix would be two ImGui windows (the
+  bar alone, anchored at the bottom, and the list and settings above it); not done, it is a layout
+  change for the owner to agree. The list shows up to 8 rows and fewer when the whole panel would
   not fit on the screen (`ListRowsThatFit`, measured from the previous frame's content height);
   run 35 checks five sizes down to 1024x576 with large text, list and settings row open.
 - **Add files / Add folder greyed** with the reason while a file window is already open and in

@@ -1619,6 +1619,25 @@ void ScriptIntegrated(Host& host) {
                     8000);
     Check("E6 Add files hands the chosen file to the engine (no window shown) and the list shows it",
           ok && ModLogContains("music: added 1 file(s)"));
+    {
+        // The engine's status line ("Added ...") comes and goes. At the bottom of the screen it must
+        // sit above the bar: below it, it would push the bottom-anchored bar up while it shows. So
+        // nothing may be under the time row: from the time row to the panel's bottom is less than
+        // from the buttons to the time row.
+        const POINT next = Item("next");
+        const POINT seek = Item("seek");
+        const LayoutFile shown = ReadLayout();
+        RECT client = {};
+        GetClientRect(host.window, &client);
+        printf("  status line %s; buttons at y %ld, time row at y %ld, panel %ld..%ld in a %dx%d back buffer, client %ldx%ld\n",
+               shown.Int("message") == 1 ? "showing" : "not showing", next.y, seek.y, shown.bar.top, shown.bar.bottom,
+               shown.displayWidth, shown.displayHeight, client.right, client.bottom);
+        // Widget centres are in client coordinates, the panel in back-buffer pixels.
+        const double toBuffer = client.bottom > 0 ? static_cast<double>(shown.displayHeight) / client.bottom : 1.0;
+        const double nextY = next.y * toBuffer, seekY = seek.y * toBuffer;
+        Check("E6 the engine's status line shows above the bar, so the bar does not move with it",
+              shown.Int("message") == 1 && shown.hasBar && seekY > nextY && shown.bar.bottom - seekY < seekY - nextY);
+    }
 
     Click(host, Item("settings"));
     ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("settings") == 1 && l.Has("pause"); });
