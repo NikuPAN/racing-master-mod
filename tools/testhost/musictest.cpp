@@ -277,9 +277,14 @@ int MakePanelFixtures(const std::wstring& folder) {
 
 }  // namespace
 
+int SaveLoopChild(const wchar_t* path, const wchar_t* eventName);   // musictest_text.cpp
+
 int wmain(int argc, wchar_t** argv) {
     if (argc == 3 && lstrcmpW(argv[1], L"--fixtures") == 0) {
         return MakePanelFixtures(argv[2]);
+    }
+    if (argc == 4 && lstrcmpW(argv[1], L"--save-loop") == 0) {
+        return SaveLoopChild(argv[2], argv[3]);   // musictest_text.cpp, case 115
     }
     if (argc < 3) {
         printf("usage: musictest.exe <empty work folder> <repository folder>\n"

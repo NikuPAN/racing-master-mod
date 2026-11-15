@@ -1585,7 +1585,7 @@ private:
                 return false;
             }
         }
-        return SaveFileAtomically(path, WriteMusicSection(existing, settings), error);
+        return SaveFileReplacing(path, WriteMusicSection(existing, settings), error);   // never leaves it missing
     }
 
     static void LogSettingsLeftAsIs(unsigned long error) {

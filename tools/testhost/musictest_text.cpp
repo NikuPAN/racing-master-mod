@@ -6,6 +6,8 @@
 
 #include <windows.h>
 
+#include <cstdio>
+
 using namespace music;
 
 MT_TEST(100, TextHelpers, "text helpers: UTF-8, paths, natural order") {
@@ -62,4 +64,82 @@ MT_TEST(110, AtomicFile, "crash-safe save: temporary file, swap, backup") {
     }
     mt::Check(SaveFileAtomically(deep + L"\\settings.ini", "x", &error) && ReadWholeFile(deep + L"\\settings.ini", &text, 16),
               "a save under a path longer than 260 characters works", "Windows error %lu", error);
+    mt::Check(SaveFileReplacing(deep + L"\\settings.ini", "y", &error) && ReadWholeFile(deep + L"\\settings.ini", &text, 16) &&
+                  text == "y",
+              "the single-rename save (settings.ini) works under a long path too", "Windows error %lu", error);
+}
+
+// The game can end its process at any moment, also in the middle of a save of settings.ini (0.3.1
+// saves it every 10 s while a song plays, and at the very moment the X is clicked). Nothing reads a
+// backup of settings.ini, so the file must never be missing, whenever the process ends. A child
+// copy of this program saves settings.ini in a loop (musictest.exe --save-loop) and is ended with
+// TerminateProcess at a random moment, 100 times. ReplaceFileW (rename the old file to .bak, then
+// the new one into place) left the file missing after about 5-8 % of such kills.
+MT_TEST(115, AtomicFileKilled, "crash-safe save: settings.ini is there after the process is ended mid-save") {
+    const std::wstring dir = mt::NewDir(L"killed mid-save \u6E2C\u8A66");
+    const std::wstring path = dir + L"\\settings.ini";
+    unsigned long error = 0;
+    mt::Check(SaveFileReplacing(path, "[music]\r\nposition_ms=0\r\n", &error), "the first settings.ini is written",
+              "Windows error %lu", error);
+    wchar_t exe[MAX_PATH] = L"";
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    int kills = 0, missing = 0, notStarted = 0;
+    unsigned seed = GetTickCount();
+    for (int i = 0; i < 100; ++i) {
+        wchar_t eventName[96];
+        swprintf_s(eventName, L"Local\\rmm-musictest-save-loop-%lu-%d", GetCurrentProcessId(), i);
+        const HANDLE ready = CreateEventW(nullptr, TRUE, FALSE, eventName);
+        std::wstring command = L"\"" + std::wstring(exe) + L"\" --save-loop \"" + path + L"\" " + eventName;
+        STARTUPINFOW startup = {};
+        startup.cb = sizeof(startup);
+        PROCESS_INFORMATION child = {};
+        if (!ready || !CreateProcessW(exe, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr,
+                                      &startup, &child)) {
+            ++notStarted;
+            if (ready) CloseHandle(ready);
+            continue;
+        }
+        // After its first complete save, a random moment within the next 12 ms.
+        if (WaitForSingleObject(ready, 10000) != WAIT_OBJECT_0) ++notStarted;
+        seed = seed * 1103515245u + 12345u;
+        const ULONGLONG spinUntil = GetTickCount64();
+        LARGE_INTEGER frequency = {}, start = {}, now = {};
+        QueryPerformanceFrequency(&frequency);
+        QueryPerformanceCounter(&start);
+        const LONGLONG wait = frequency.QuadPart * static_cast<LONGLONG>((seed >> 8) % 12000) / 1000000;
+        do {
+            QueryPerformanceCounter(&now);
+        } while (now.QuadPart - start.QuadPart < wait && GetTickCount64() - spinUntil < 100);
+        TerminateProcess(child.hProcess, 1);
+        WaitForSingleObject(child.hProcess, 10000);
+        CloseHandle(child.hThread);
+        CloseHandle(child.hProcess);
+        CloseHandle(ready);
+        ++kills;
+        if (!mt::Exists(path)) {
+            ++missing;
+            SaveFileReplacing(path, "[music]\r\nposition_ms=0\r\n", &error);   // put it back for the next round
+        }
+    }
+    mt::Check(notStarted == 0 && kills == 100, "the saving copy of the program was started and ended 100 times",
+              "%d ended, %d not started", kills, notStarted);
+    mt::Check(missing == 0, "settings.ini was there after every one of the 100 kills mid-save",
+              "missing after %d of %d kills", missing, kills);
+    DeleteLeftoverTempFiles(dir, L"settings.ini");
+}
+
+// musictest.exe --save-loop <path> <event name>: saves `path` over and over, the way the engine saves
+// settings.ini, and sets the event after the first save. Ends only when the test ends it.
+int SaveLoopChild(const wchar_t* path, const wchar_t* eventName) {
+    const HANDLE ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, eventName);
+    unsigned long error = 0;
+    for (unsigned n = 1;; ++n) {
+        const std::string content = "[mod]\r\nstage=2\r\n\r\n[music]\r\ncurrent=C:\\\\music\\\\a.mp3\r\nposition_ms=" +
+                                    std::to_string(n * 10) + "\r\n";
+        if (!SaveFileReplacing(path, content, &error)) {
+            Sleep(1);
+        } else if (n == 1 && ready) {
+            SetEvent(ready);
+        }
+    }
 }

@@ -6,14 +6,10 @@
 
 namespace music {
 
-bool SaveFileAtomically(const std::wstring& path, const std::string& content, unsigned long* error) {
-    *error = 0;
-    const std::wstring temp = path + L"." + std::to_wstring(GetCurrentProcessId()) + L".tmp";
-    const std::wstring backup = path + L".bak";
-    const std::wstring tempX = ToExtendedPath(temp);
-    const std::wstring pathX = ToExtendedPath(path);
-    const std::wstring backupX = ToExtendedPath(backup);
+namespace {
 
+// Writes `content` to <path>.<pid>.tmp and flushes it to disk. On failure the temporary file is gone.
+bool WriteTemporary(const std::wstring& tempX, const std::string& content, unsigned long* error) {
     const HANDLE file = CreateFileW(tempX.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) {
         *error = GetLastError();
@@ -34,6 +30,23 @@ bool SaveFileAtomically(const std::wstring& path, const std::string& content, un
         DeleteFileW(tempX.c_str());
         return false;
     }
+    return true;
+}
+
+std::wstring TemporaryName(const std::wstring& path) {
+    return path + L"." + std::to_wstring(GetCurrentProcessId()) + L".tmp";
+}
+
+}  // namespace
+
+bool SaveFileAtomically(const std::wstring& path, const std::string& content, unsigned long* error) {
+    *error = 0;
+    const std::wstring tempX = ToExtendedPath(TemporaryName(path));
+    const std::wstring pathX = ToExtendedPath(path);
+    const std::wstring backupX = ToExtendedPath(path + L".bak");
+    if (!WriteTemporary(tempX, content, error)) {
+        return false;
+    }
 
     if (ReplaceFileW(pathX.c_str(), tempX.c_str(), backupX.c_str(), REPLACEFILE_IGNORE_MERGE_ERRORS, nullptr, nullptr)) {
         return true;
@@ -48,6 +61,22 @@ bool SaveFileAtomically(const std::wstring& path, const std::string& content, un
     } else {
         *error = replaceError;
     }
+    DeleteFileW(tempX.c_str());
+    return false;
+}
+
+bool SaveFileReplacing(const std::wstring& path, const std::string& content, unsigned long* error) {
+    *error = 0;
+    const std::wstring tempX = ToExtendedPath(TemporaryName(path));
+    const std::wstring pathX = ToExtendedPath(path);
+    if (!WriteTemporary(tempX, content, error)) {
+        return false;
+    }
+    // One rename: at every moment the name holds either the old file or the new one.
+    if (MoveFileExW(tempX.c_str(), pathX.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        return true;
+    }
+    *error = GetLastError();
     DeleteFileW(tempX.c_str());
     return false;
 }

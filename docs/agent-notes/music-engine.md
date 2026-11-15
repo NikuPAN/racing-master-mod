@@ -40,7 +40,13 @@ In Manual (test) output an SRW lock between `Render` and the reset gives the sam
 **Files** in `%LOCALAPPDATA%\RacingMasterMod\`: `playlist.tsv` (+ `.bak`, `.broken`),
 `settings.ini` `[music]` section (volume, loop, pause_when_game_unfocused, current, position_ms;
 the loader's `[mod]` lines are kept, any encoding Notepad offers is read), `music\` drop-in folder.
-Saves: temp file, flush, `ReplaceFileW`, list 2 s after the last change, settings 0.5 s after.
+Saves: temp file, flush, then the swap, list 2 s after the last change, settings 0.5 s after.
+The list swaps with `ReplaceFileW` (keeps `.bak`, which the loader falls back to); `settings.ini`
+swaps with one `MoveFileExW` rename (`SaveFileReplacing`, 0.3.1) and has no backup. Reason:
+`ReplaceFileW` is two renames, and a process that ends between them leaves no `settings.ini`;
+nothing reads a backup of it, so every section would fall back to defaults and the next save
+would make that permanent. Musictest case 115 ends a saving process 100 times at random moments
+(the old swap left the file missing after 9 of 100, the single rename after none).
 While a song plays its position is saved every 10 s (`kPositionSaveIntervalMs`, 30 s before
 0.3.1), and a `[music]` save whose values equal the last one handed to a save is skipped
 (`QueueSettingsSave`), so a song that stands still writes nothing. Reason: the owner's game
