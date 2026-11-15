@@ -89,14 +89,15 @@ void ApplyPanelKey(const char* key, const char* value, const char* path8, UiSett
     // In UiCorner order. "bottom-center" and "top-center" are accepted too.
     static const char* const kCorners[UiCornerCount] = {"top-left",     "top-right",     "bottom-left",
                                                         "bottom-right", "bottom-centre", "top-centre"};
-    static const char* const kModes[] = {"off", "display", "on", "keys"};
+    static const char* const kModes[] = {"off", "on", "keys"};
+    static const unsigned kModeValues[] = {UiModeOff, UiModeOn, UiModeKeys};
     static const char* const kSources[] = {"my_files", "other_app"};
     if (_stricmp(key, "mode") == 0) {
-        const int index = MatchWord(value, kModes, 4);
+        const int index = MatchWord(value, kModes, 3);
         if (index >= 0) {
-            ui->mode = static_cast<unsigned>(index);
+            ui->mode = kModeValues[index];
         } else {
-            Log("settings: \"mode=%s\" is not off, display, on or keys (in %s); the panel stays on", value, path8);
+            Log("settings: \"mode=%s\" is not off, on or keys (in %s); the panel stays on", value, path8);
         }
     } else if (_stricmp(key, "source") == 0) {
         const int index = MatchWord(value, kSources, 2);

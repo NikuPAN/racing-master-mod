@@ -58,7 +58,6 @@
 #  35. panel and ResizeBuffers     five sizes with the panel, list and settings row drawing (large
 #                                  text): the bar stays at the bottom centre, all of it on screen
 #  36. fault inside the panel      game state put back, nothing leaked, mouse and keys back to the game
-#  37. [panel] mode=display        drawn, but nothing taken from the game
 #  38. panel input                 clicks, pass-through, hotkeys, Insert, wheel, ClearInputMouse after
 #                                  a gap, drop-down closing, text field, focus, "Other app", a drag
 #                                  let go outside the game window, the compact panel (its buttons,
@@ -252,7 +251,7 @@ function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashta
         # waits after WM_DESTROY until the music is stopped and saved (at most half a second).
         Record "$($Title): when the game window closed, the music was stopped and saved before the window was gone" ($text.Contains('music: the game window is closing; stopping the music and saving the list') -and $text.Contains('music: stopped and saved') -and @($result.Lines -match 'music stopped and saved before the window was gone: yes$').Count -eq 1)
     } else {
-        # No window procedure (display mode): the worker's window watch is the backstop.
+        # No window procedure (minimal mode, mode=keys): the worker's window watch is the backstop.
         Record "$($Title): when the game window closed, the music was stopped and saved" ($text.Contains('music: the game window has closed; stopping the music and saving the list') -and $text.Contains('music: stopped and saved'))
     }
     # Frames drawn while the window still existed must not count as "frames still arrive".
@@ -543,7 +542,7 @@ try {
     Write-Ini (Join-Path $panelIniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'stage=2', '[panel]', 'language=zh-TW', 'text_size=huge', 'mode=sometimes', 'source=other_app', 'colour=red', 'corner=middle', 'compact=2', '[keys]', 'next=F2', 'jump=F3') 'utf8'
     $run = Invoke-Run '25. settings.ini with [panel] and [keys] values' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $panelIniRoot
     $log = Read-Log $run.Log
-    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, display, on or keys') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('"corner=middle" is not top-left, top-centre, top-right, bottom-left, bottom-centre or bottom-right') -and $log.Contains('"compact=2" is not 0 or 1') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2') -and ($run.Lines -match '^marker: found').Count -eq 1)
+    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, on or keys') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('"corner=middle" is not top-left, top-centre, top-right, bottom-left, bottom-centre or bottom-right') -and $log.Contains('"compact=2" is not 0 or 1') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2') -and ($run.Lines -match '^marker: found').Count -eq 1)
 
     # 27-32. Screenshots: English and the draft Chinese at each text size.
     foreach ($language in 'en', 'zh-TW') {
@@ -583,11 +582,6 @@ try {
     $panelRun = Invoke-PanelRun 'panel fault' 'fault' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_TEST_PANEL_FAULT = '60' } @()
     Record 'panel fault: one log line names the exception and the module and says the mod switched itself off' ($panelRun.Log -match 'frame code failed \(exception 0x[0-9A-Fa-f]{8} at .+version\.dll\+0x[0-9a-f]+\) and has switched itself off')
     Record 'panel fault: the music is paused because nothing can control it any more, and the log says so' ($panelRun.Log.Contains('music: paused, because the panel that controls it has switched off with the rest of the mod'))
-
-    # 37. [panel] mode=display: drawn, but no window procedure and no keys.
-    $panelRun = Invoke-PanelRun 'panel display mode' 'display' '' @{} @('[panel]', 'mode=display') $songs $false $false
-    Record 'panel display mode: the log says so and the game window is not watched' ($panelRun.Log.Contains('mode display only') -and -not $panelRun.Log.Contains('watching the game window'))
-    Record 'panel display mode: the key line says no key works in this mode' ($panelRun.Log.Contains('panel: no keys in display mode ([panel] mode=display); with mode=on they would be Insert panel, F5 stop') -and -not $panelRun.Log.Contains('panel: keys Insert'))
 
     # 37b. [panel] mode=keys (minimal mode): the panel is drawn, the keys are global hotkeys, and the
     # game window is never subclassed. The [keys] are F13-F18 so the test's real global hotkeys cannot

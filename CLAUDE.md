@@ -142,7 +142,7 @@ visible to every program on the PC, the game's panel included (`test-host.md`, i
 run a build or a suite while the owner plays, and only one at a time.
 
 The test script copies the panel screenshots to `out\screens\*.png` (bar, list, settings row,
-"Other app", each text size, English and draft Chinese, four resolutions, display mode, after a
+"Other app", each text size, English and draft Chinese, four resolutions, minimal mode, after a
 fault). Look at them with the Read tool after any panel change; the owner reviews the Chinese there.
 The two end-to-end screenshots (the engine's songs with the marker; "Other app" with the fake
 player) go to `out\preview\integrated\`.
@@ -334,7 +334,7 @@ Details and the reasons: `docs/agent-notes/integration.md`.
   `PanelOnFrame` (hotkeys every frame, ImGui only while something is shown).
 - Focus: `WM_ACTIVATEAPP` in the panel's window subclass -> `Player::OnGameFocusChanged`; the
   engine pauses only when "pause when the game is not in focus" is ticked, and resumes on return.
-  No subclass in `mode=display`, so no focus pausing there.
+  No subclass in `mode=keys`, so no focus pausing there.
 - Add files / Add folder: the picker gets `GetAncestor(window, GA_ROOT)`; both buttons are greyed
   with the reason while a file window is open and in exclusive full screen.
 - Shutdown (0.3.1, `integration.md`): in `mode=on` the window procedure passes the close to the
@@ -342,7 +342,7 @@ Details and the reasons: `docs/agent-notes/integration.md`.
   `WM_QUERYENDSESSION`) saves the song and its place (`Player::SaveNow`) and the music plays on;
   the window going (`WM_DESTROY` of the panel's window, `WM_ENDSESSION`) stops and saves, and the
   window procedure waits for that at most 500 ms after the game handled the message. Backstop,
-  and the only path in `mode=display`: `WatchFrames` checks every 250 ms whether the window is gone
+  and the only path in `mode=keys`: `WatchFrames` checks every 250 ms whether the window is gone
   and no frame arrived for a second. While a song plays its place is saved every 10 s. Then
   `Player::Shutdown()` (fade, final save) and `other_app::Shutdown()`. Nothing runs from `DllMain`. Whenever the panel is off for the session
   (a fault in the per-frame code, an ImGui assertion, or a fault in the window procedure, which

@@ -26,7 +26,7 @@ for the game window, `PanelStart`, `StartMusicParts`, Present hook, `WatchFrames
 
 **While running:** the marker and then the panel draw inside `GuardedOnFrame`'s fault guard;
 focus reaches `Player::OnGameFocusChanged` through the panel's `WM_ACTIVATEAPP` rule (none in
-display mode); Add files / Add folder use the game's top-level window as owner and are greyed in
+minimal mode (mode=keys)); Add files / Add folder use the game's top-level window as owner and are greyed in
 exclusive full screen and while a file window is open; the panel copies the song list only when
 it changed (`CurrentSnapshot`).
 
@@ -62,13 +62,13 @@ unchanged:
   game can end its process. Only while the worker is watching; never on `WM_CLOSE`.
 - **Backstop:** the worker still checks the window every 250 ms. Gone, and no frame for a second
   (or gone at all after a close request): the same stop, logged as "the game window has closed".
-  This is the only path in `mode=display`, which has no window procedure. There, a gone window
+  This is the only path in `mode=keys`, which has no window procedure. There, a gone window
   while frames still arrive is logged once and ignored. In `mode=on` it is not: `WM_DESTROY` of the
   panel's window stops the music whatever happens next, so a game that destroyed its window and
   carried on in a new one would lose its music for the session (Unreal does not normally do this;
   not tested). The review's other note on this path, that a close request stays "requested" for the
   whole session and skips the one-second wait, changes nothing observable for that reason: in
-  `mode=on` the `WM_DESTROY` stop comes first, and `mode=display` sees no requests at all. Left as is.
+  `mode=on` the `WM_DESTROY` stop comes first, and `mode=keys` sees no requests at all. Left as is.
   `WM_CLOSE`/`SC_CLOSE` count from any subclassed window, but only windows the panel has drawn into
   are subclassed; a close of an older one would cost one extra save and a misleading "asked to
   close" line, nothing else. Also left as is.
@@ -119,7 +119,7 @@ with `RACING_MASTER_MOD_TEST_REMOTE=real` the remote follows only `RACING_MASTER
 `musictest.exe --fixtures <folder>` writes the end-to-end songs. All need the test-host flag.
 
 **Only the game can confirm:** that NetEase's protection tolerates ImGui drawing, the window
-subclass, the extra threads, WASAPI, Media Foundation and COM (try `mode=display` first); that
+subclass, the extra threads, WASAPI, Media Foundation and COM (the old display test mode was removed for the public release); that
 Insert and F5-F9 are free in the game's UI; the music's level against the game's; the file
 window over the game; which close messages the game window really gets (`SC_CLOSE` for the X,
 then `WM_DESTROY`?) and whether the process lives the 0.5 s the final save needs (the log answers

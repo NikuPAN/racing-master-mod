@@ -25,7 +25,7 @@ wired: `integration.md`.
    at `Start` and on `RescanMusicFolder()`. The panel has no "rescan" button yet.
 7. `Player` has no "move track" command (the contract has none); the logic supports it.
 
-**Unverified until an in-game run (throwaway account, `mode=display` first):** that the game
+**Unverified until an in-game run (throwaway account):** that the game
 tolerates the extra threads, a WASAPI stream, Media Foundation and COM in its process; that the
 game's audio is in shared mode and in the default session (one mixer entry for game and music);
 real device re-routing (headset unplugged) and the length of its gap; the file dialog's z-order,

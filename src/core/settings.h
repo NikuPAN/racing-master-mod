@@ -5,11 +5,11 @@
 // Keys under [keys], in the order the panel's Command enum uses (src/ui/hotkeys.h).
 enum UiKey { UiKeyPanel = 0, UiKeyStop, UiKeyPrevious, UiKeyPlayPause, UiKeyNext, UiKeyLoop, UiKeyCount };
 
-// How much of the panel runs ([panel] mode). Lets the owner introduce the two new behaviours one
-// at a time on a throwaway account: drawing first, then the window procedure (clicks and keys).
+// How much of the panel runs ([panel] mode). Value 1 was the old "display" test mode, removed for
+// the public release (the owner: redundant once the mod had proven itself); the other values keep
+// their numbers.
 enum UiMode : unsigned {
     UiModeOff = 0,       // no panel: the loader alone, as in 0.2.0
-    UiModeDisplay = 1,   // the panel is drawn, always open, but cannot be clicked; no keys; the game window is not touched
     UiModeOn = 2,        // the full panel (default)
     // Minimal mode (0.3.2): the panel is drawn and the hotkeys work as GLOBAL hotkeys
     // (RegisterHotKey on the mod's own thread), but the mod never replaces the game window's

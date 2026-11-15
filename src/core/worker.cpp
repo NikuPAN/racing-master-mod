@@ -61,7 +61,7 @@ unsigned ParseDigits(const wchar_t* text) {
 }
 
 // Watches the window the panel draws into: the backstop for a close the window procedure did not
-// see (display mode has no window procedure; a game may also end its window without the
+// see (minimal mode, mode=keys, has no window procedure; a game may also end its window without the
 // messages). The game is closing when that window is gone and no frame has reached the hook for a
 // second; a window that is gone while frames still arrive (the game moved to a new window) is not
 // a close, and is logged once. After a close request the second is not waited for.

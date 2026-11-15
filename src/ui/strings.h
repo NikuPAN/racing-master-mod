@@ -77,7 +77,7 @@ struct Strings {
     const char* reasonNoApp;
     const char* reasonNoLength;          // a song whose length is not known cannot be moved through
     const char* reasonAlreadyStopped;
-    const char* reasonDisplayOnly;       // [panel] mode=display
+    const char* reasonDisplayOnly;       // [panel] mode=keys: the panel is drawn but not clickable
     const char* reasonDialogOpen;        // Add files / Add folder while a file window is open
     const char* reasonFullscreen;        // Add files / Add folder in exclusive full screen; %s = the music folder
 
@@ -174,7 +174,7 @@ inline const Strings kStringsEnglish = {
     "No other app is playing anything right now.",
     "The length of this song is not known, so you cannot move through it.",
     "The music is already stopped.",
-    "This is a display test: the panel cannot be used until mode=on in the settings file.",
+    "Keys-only mode: use the keys to control the music. Set mode=on in the settings file to click the panel.",
     "A file window is already open. Pick your songs there, or close it first.",
     "Not available while the game runs in exclusive full screen: the file window would minimise the game. "
     "Switch the game to windowed or borderless, or copy songs into %s; they are added the next time the game "
@@ -271,7 +271,7 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "目前沒有其他程式在播放。",
     "不知道這首歌的長度，所以無法跳轉。",
     "音樂已經停止。",
-    "這是顯示測試：在設定檔寫 mode=on 之後才能使用面板。",
+    "現在是只用按鍵的模式，請用按鍵控制音樂。想用滑鼠點面板，就在設定檔寫 mode=on。",   // DRAFT (0.3.2)
     "檔案視窗已經開著，請在那裡選歌，或先把它關掉。",
     "遊戲在獨佔全螢幕模式時不能用：檔案視窗會讓遊戲縮到最小。請把遊戲改成視窗或無邊框模式，"
     "或把歌曲複製到 %s，下次開遊戲時就會加入。",

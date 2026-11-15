@@ -510,7 +510,6 @@ void RunQuick(Host& host, int seconds) {
 //   shot1   <name>    one screenshot of the state the environment sets up
 //   resize            ResizeBuffers to four sizes with the panel and list open
 //   fault             a fault inside the panel code (RACING_MASTER_MOD_TEST_PANEL_FAULT)
-//   display           [panel] mode=display: drawn, nothing taken from the game
 //   input             clicks, pass-through, hotkeys, Insert, ClearInputMouse after a gap, text field
 //
 // Every message is posted to this program's own hidden window with PostMessageW: it goes through
@@ -1493,20 +1492,6 @@ void ScriptFault(Host& host) {
           g_gotKeyDown[VK_INSERT].load() == insertDown + 1 && g_gotLDown.load() == lDown + 1);
 }
 
-void ScriptDisplay(Host& host) {
-    const bool ready = WaitLayout(host, [](const LayoutFile& l) { return l.Int("drawn") == 1 && l.Has("next"); });
-    Check("D0 display mode: the panel is drawn without being asked", ready);
-    if (!ready) return;
-    CheckShot("D1 display mode", Shoot(host, "display-mode"), true);
-    const LayoutFile layout = ReadLayout();
-    const int insertDown = g_gotKeyDown[VK_INSERT].load();
-    const int lDown = g_gotLDown.load();
-    Key(host, VK_INSERT);
-    Click(host, Item("next"));
-    Check("D2 display mode takes nothing from the game (Insert and a click on the panel reach it)",
-          layout.Int("enabled") == 0 && g_gotKeyDown[VK_INSERT].load() == insertDown + 1 && g_gotLDown.load() == lDown + 1);
-}
-
 void ScriptInput(Host& host) {
     const bool ready = WaitLayout(host, [](const LayoutFile& l) { return l.Int("enabled") == 1; }, 10000);
     Check("I0 the panel is ready and watching the window", ready);
@@ -2243,7 +2228,6 @@ void RunPanel(Host& host, const char* outputFolder, int seconds, const char* scr
         else if (what == "shot1") ScriptShot1(host, name ? name : "panel");
         else if (what == "resize") ScriptResize(host);
         else if (what == "fault") ScriptFault(host);
-        else if (what == "display") ScriptDisplay(host);
         else if (what == "input") ScriptInput(host);
         else if (what == "integrated") ScriptIntegrated(host);
         else if (what == "extras") ScriptExtras(host);
@@ -2453,7 +2437,7 @@ int main(int argc, char** argv) {
     } else {
         // Closed the way a player closes a window: WM_CLOSE, which the host's procedure turns into
         // DestroyWindow. With the mod's window procedure (mode=on) the music is stopped and saved
-        // before SendMessage returns; display mode has none, and the worker's window watch notices
+        // before SendMessage returns; minimal mode (mode=keys) has none, and the worker's window watch notices
         // the window gone within about a second and a half.
         const ULONGLONG closing = GetTickCount64();
         SendMessageW(host.window, WM_CLOSE, 0, 0);

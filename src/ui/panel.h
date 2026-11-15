@@ -14,7 +14,7 @@ struct PanelFrameInfo {
     HWND window;          // the game window: owner of the file pickers
     float displayWidth;   // back buffer, pixels
     float displayHeight;
-    bool displayOnly;     // [panel] mode=display: drawn open, cannot be used
+    bool displayOnly;     // [panel] mode=keys: drawn, not clickable (keys only)
     bool exclusiveFullscreen;   // the game runs in exclusive full screen (no file window then)
 };
 

@@ -96,7 +96,7 @@ code 1 for both "no marker" and "forwarding failed"; the review showed what it d
     destroys it) and prints whether "music: stopped and saved" was already in the log when that
     returned: with the mod's window procedure (`mode=on`) it must be ("before the window was gone:
     yes"; the procedure waits up to 0.5 s after `WM_DESTROY`). Then it waits up to 10 s, pumping
-    messages, for the line (display mode: the worker's window watch). With
+    messages, for the line (minimal mode (mode=keys): the worker's window watch). With
     `RACING_MASTER_MOD_TEST_EXIT_AFTER_CLOSE=1` (run 40) it ends the process with
     `TerminateProcess` straight after the close instead, as the game did on 2026-11-15. While
     `g_refuseClose` is set the host's procedure swallows `WM_CLOSE` and `SC_CLOSE`, standing in for

@@ -139,7 +139,7 @@ marker_seconds=0
 
 [panel]
 ; on = 完整面板（預設）；keys = 畫出面板，只用 F5-F9 控制，不能點（最小干擾）；
-; display = 只顯示，不能點也不能用按鍵；off = 沒有面板，也沒有音樂
+; off = 沒有面板，也沒有音樂
 mode=on
 ; auto（跟隨 Windows）、en 或 zh-TW
 language=auto
@@ -166,7 +166,7 @@ loop=F9
 media_keys=1
 ```
 
-`mode=display` 適合第一次小心試用：面板會畫出來，但不接受滑鼠和按鍵，也完全不碰遊戲視窗。面板會把你在面板裡改的設定（語言、文字大小、暫停、音樂來源、面板位置、精簡或完整面板）寫回這個檔案，音樂播放器也會在裡面保留自己的 `[music]` 段落；這兩部分請不要手動改。
+面板會把你在面板裡改的設定（語言、文字大小、暫停、音樂來源、面板位置、精簡或完整面板）寫回這個檔案，音樂播放器也會在裡面保留自己的 `[music]` 段落；這兩部分請不要手動改。
 
 放在 `version.dll` 旁邊、檔名 `racing-master-mod.ini` 的檔案也會讀，而且以它的設定為準。兩個檔案都可以存成 UTF-8（有沒有 BOM 都行）或記事本裡叫「Unicode」的 UTF-16。`[mod]` 裡的設定值如果看不懂，模組會自己關掉，紀錄檔會寫出是哪一行、該怎麼改；`[panel]` 或 `[keys]` 裡看不懂的值則會用預設值，紀錄檔同樣會說明原因。
 
@@ -329,7 +329,7 @@ marker_seconds=0
 
 [panel]
 ; on = the full panel (default); keys = drawn, controlled by F5-F9 only, no clicks (smallest footprint);
-; display = shown but cannot be clicked, no keys; off = no panel and no music
+; off = no panel and no music
 mode=on
 ; auto (follow Windows), en or zh-TW
 language=auto
@@ -356,7 +356,7 @@ loop=F9
 media_keys=1
 ```
 
-`mode=display` is meant for a first careful try: the panel is drawn but takes no clicks or keys, and the game window is left alone. The panel writes its own changes (language, text size, pausing, source, position, compact or full) back into this file, and the music player keeps its own `[music]` section there; leave both as they are.
+The panel writes its own changes (language, text size, pausing, source, position, compact or full) back into this file, and the music player keeps its own `[music]` section there; leave both as they are.
 
 A file named `racing-master-mod.ini` next to `version.dll` is read as well and overrides it. Save either file as UTF-8 (with or without a byte order mark) or as the UTF-16 that Notepad calls "Unicode". If a `[mod]` value cannot be read, the mod switches itself off and the log says which line and what to write; a `[panel]` or `[keys]` value that cannot be read keeps its default, and the log says why.
 

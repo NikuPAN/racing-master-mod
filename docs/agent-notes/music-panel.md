@@ -125,7 +125,7 @@ example app answers at once, and run 41 sends single presses).
 ## Not verified (needs the real game, or not testable here)
 
 - Anything in the game: whether NetEase's protection tolerates ImGui drawing and the window
-  subclass (start with `mode=display`, then `on`, on the throwaway account), which thread
+  subclass (on the throwaway account), which thread
   presents, whether F5-F9 and Insert are free in the game's Lua UI, media keys reaching the window.
 - The software cursor (`io.MouseDrawCursor` when the game hides the system cursor): the test host
   never draws it, and hiding the real cursor on this PC was not allowed.

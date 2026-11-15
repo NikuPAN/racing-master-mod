@@ -251,9 +251,7 @@ bool InitOnFrameThread(IDXGISwapChain* swapChain, FrameRefs& refs) {
 
     RECT client = {};
     GetClientRect(g_window, &client);
-    const char* modeText = g_mode == UiModeDisplay ? "display only (cannot be clicked, no keys)"
-                           : g_mode == UiModeKeys  ? "minimal (drawn, global keys, the game window is not touched)"
-                                                   : "on";
+    const char* modeText = g_mode == UiModeKeys ? "minimal (drawn, global keys, the game window is not touched)" : "on";
     Log("panel: ready on the frame thread %lu; back buffer %ux%u, window client area %ldx%ld, mode %s",
         GetCurrentThreadId(), desc.BufferDesc.Width, desc.BufferDesc.Height, client.right, client.bottom, modeText);
     LogDisplayFacts(swapChain);
@@ -262,8 +260,6 @@ bool InitOnFrameThread(IDXGISwapChain* swapChain, FrameRefs& refs) {
         if (InstallWindowSubclass(g_window)) {
             Shared().enabled.store(true, std::memory_order_release);
         }
-    } else if (g_mode == UiModeDisplay) {
-        Shared().panelOpen.store(true, std::memory_order_relaxed);   // display mode: always shown
     }
     // Minimal mode (keys): the panel starts closed and the Insert global hotkey toggles it; the
     // hotkey thread was started in PanelStart. The game window is never subclassed.
@@ -690,12 +686,7 @@ void PanelStart(const UiSettings& settings, bool testHost) {
     for (int i = 0; i < kCommandCount; ++i) {
         HotkeyDisplayName(table->keys[i], "none", names[i], sizeof(names[i]));
     }
-    if (g_mode == UiModeDisplay) {
-        // Nothing listens for keys in display mode; say so rather than list keys that do nothing.
-        Log("panel: no keys in display mode ([panel] mode=display); with mode=on they would be %s panel, %s stop, "
-            "%s previous, %s play or pause, %s next, %s repeat; media keys %s",
-            names[0], names[1], names[2], names[3], names[4], names[5], table->mediaKeys ? "on" : "off");
-    } else {
+    {
         Log("panel: keys %s panel, %s stop, %s previous, %s play or pause, %s next, %s repeat; media keys %s",
             names[0], names[1], names[2], names[3], names[4], names[5], table->mediaKeys ? "on" : "off");
     }

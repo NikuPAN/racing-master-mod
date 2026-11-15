@@ -640,7 +640,7 @@ MT_TEST(600, EngineSettingsFiles, "engine: settings.ini shared with the loader, 
         // engine's 1 MB limit; in the game also an editor or scanner holding it) is left as it
         // is. Writing only [music] would drop the [mod], [panel] and [keys] lines.
         const std::wstring dir = mt::NewDir(L"settings unreadable");
-        std::string bytes = "[mod]\r\nstage=1\r\n[panel]\r\nmode=display\r\n; ";
+        std::string bytes = "[mod]\r\nstage=1\r\n[panel]\r\nmode=on\r\n;";
         bytes.append(1100000, 'x');
         bytes += "\r\n";
         mt::WriteBytes(dir + L"\\settings.ini", bytes);
