@@ -48,6 +48,9 @@ closed twice without the mod seeing it (0.3.0, 2026-11-15), and a forced exit lo
 last 10 s of the place in the song. The final save at `Shutdown` runs after the I/O thread has
 stopped (one writer per file). Musictest case 585 checks the periodic save with a 300 ms
 interval (`testing::Config::positionSaveMs`, test only) and `Counters::settingsSaves`.
+`Player::SaveNow()` (0.3.1) skips both delays: the list if it changed and the song with its place
+go to the I/O thread at once, and the music plays on. The worker calls it when the game is asked
+to close (`integration.md`, "Shutdown"); musictest case 586.
 
 **Start-up:** `Start()` reads playlist and settings on the calling thread, restores the cued track
 and position stopped, starts the two threads, scans the drop-in folder. No device and no Media

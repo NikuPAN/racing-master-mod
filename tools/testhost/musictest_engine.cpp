@@ -500,6 +500,44 @@ MT_TEST(585, EnginePositionSaves, "engine: the playing position is saved regular
     P().Shutdown();
 }
 
+// When the game is asked to close, the worker asks for an immediate save and the music plays on
+// (the close may be cancelled). Here with the engine's own 10 s interval, so only SaveNow can
+// have written the place.
+MT_TEST(586, EngineSaveNow, "engine: SaveNow writes the song and its place at once and keeps playing") {
+    const Fixtures& f = Files();
+    Session session(mt::NewDir(L"save now"));
+    P().AddFiles({f.a10, f.b});
+    testing::WaitForIdleIo(5000);
+    P().PlayIndex(0);
+    testing::Sync(5000);
+    // Let the save that starting the song asks for (place 0) go through first.
+    const ULONGLONG until = GetTickCount64() + 800;
+    while (GetTickCount64() < until) {
+        testing::Sync(2000);
+        Sleep(20);
+    }
+    testing::WaitForIdleIo(5000);
+    const uint32_t before = testing::GetCounters().settingsSaves;
+    Render(0.7, nullptr);
+    P().SaveNow();
+    testing::Sync(5000);
+    testing::WaitForIdleIo(5000);
+    MusicSettings saved;
+    ReadMusicSection(mt::ReadBytes(session.dir + L"\\settings.ini"), &saved);
+    mt::Check(testing::GetCounters().settingsSaves == before + 1 && saved.currentPath == f.a10 && saved.positionMs >= 650 &&
+                  saved.positionMs <= 750,
+              "SaveNow writes the song and its place straight away", "%u saves before, %u after, position_ms=%lld", before,
+              testing::GetCounters().settingsSaves, static_cast<long long>(saved.positionMs));
+    std::vector<StoredTrack> list;
+    ParsePlaylist(mt::ReadBytes(session.dir + L"\\playlist.tsv"), &list);
+    mt::Check(list.size() == 2, "the list is in playlist.tsv as well", "%zu tracks in playlist.tsv", list.size());
+    mt::Check(Snap().state == State::Playing, "the music keeps playing after SaveNow");
+    P().SaveNow();
+    testing::Sync(5000);
+    testing::WaitForIdleIo(5000);
+    mt::Check(testing::GetCounters().settingsSaves == before + 1, "a second SaveNow with nothing changed writes nothing");
+}
+
 MT_TEST(590, EngineFolders, "engine: drop-in folder, Add folder, natural order, duplicates") {
     const std::wstring dir = mt::NewDir(L"folders");
     CreateDirectoryW((dir + L"\\music").c_str(), nullptr);

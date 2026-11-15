@@ -80,6 +80,10 @@ public:
     void Remove(int index);
     void Clear();
     void RescanMusicFolder();  // re-reads the drop-in folder; new files are appended
+    // Saves the list (if it changed), the current song and its place at once, through the usual
+    // crash-safe save, and keeps playing. For the moment the game is asked to close: the close may
+    // still be cancelled, and the game may end before Shutdown runs.
+    void SaveNow();
 
     Snapshot GetSnapshot() const;  // cheap, callable from the frame thread every frame
 

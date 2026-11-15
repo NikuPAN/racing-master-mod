@@ -103,7 +103,7 @@ bool SameSettings(const MusicSettings& a, const MusicSettings& b) {
 enum class CommandKind {
     Play, Pause, TogglePlayPause, Stop, Next, Previous, PlayIndex, Seek, SetVolume, SetLoop,
     SetPauseWhenUnfocused, FocusChanged, AddFiles, AddFolder, Remove, Clear, Rescan,
-    FilesFound, TagsReady, IoMessage, Nop, Shutdown,
+    FilesFound, TagsReady, IoMessage, SaveNow, Nop, Shutdown,
 };
 
 struct TagJobItem {
@@ -475,6 +475,7 @@ private:
             case CommandKind::FilesFound: AddPaths(c.paths, c.flag, c.text); break;
             case CommandKind::TagsReady: ApplyTags(c.tags); break;
             case CommandKind::IoMessage: SetMessage(c.text); break;
+            case CommandKind::SaveNow: HandleSaveNow(); break;
             case CommandKind::Nop: break;
             case CommandKind::Shutdown: break;
         }
@@ -1198,6 +1199,25 @@ private:
             settingsDirty_ = false;
             QueueSettingsSave();
         }
+    }
+
+    // The game was asked to close: the list (if it changed) and the song with its place go to the
+    // I/O thread at once, without waiting for the usual delays. The music keeps playing; the close
+    // may still be cancelled, and the final save at Shutdown follows when the window goes.
+    void HandleSaveNow() {
+        if (listDirty_ && !playlistPath_.empty()) {
+            listDirty_ = false;
+            IoJob job;
+            job.kind = IoJob::Kind::SaveFile;
+            job.path = playlistPath_;
+            job.content = FormatPlaylist(Stored());
+            PostIo(std::move(job));
+        }
+        if (settingsPath_.empty()) return;
+        RememberPosition();
+        lastPositionSave_ = GetTickCount64();
+        settingsDirty_ = false;
+        QueueSettingsSave();
     }
 
     // Hands the [music] values to the I/O thread, unless they are what was saved last (a song
@@ -1939,6 +1959,7 @@ void Player::Remove(int index) {
 }
 
 void Player::Clear() { TheEngine().Simple(CommandKind::Clear); }
+void Player::SaveNow() { TheEngine().Simple(CommandKind::SaveNow); }
 void Player::RescanMusicFolder() { TheEngine().Simple(CommandKind::Rescan); }
 
 Snapshot Player::GetSnapshot() const {
