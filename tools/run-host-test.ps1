@@ -44,9 +44,11 @@
 #  25. [panel] and [keys] values   good values accepted, bad ones refused with a reason, mod keeps running
 #  26. [keys] chosen by the player the panel uses them; an unknown key name keeps the default and says why
 #  27-32. screenshots              English and draft Chinese, small/medium/large text: bar, list,
-#                                  settings row, "Other app"; PNG files with pixel checks
+#                                  settings row, "Other app"; PNG files with pixel checks; the bar
+#                                  at the bottom centre with the list and settings row above it
 #  33-34. "Other app" variants     an app that allows everything, and no app at all
-#  35. panel and ResizeBuffers     four sizes with the panel and list drawing
+#  35. panel and ResizeBuffers     five sizes with the panel, list and settings row drawing (large
+#                                  text): the bar stays at the bottom centre, all of it on screen
 #  36. fault inside the panel      game state put back, nothing leaked, mouse and keys back to the game
 #  37. [panel] mode=display        drawn, but nothing taken from the game
 #  38. panel input                 clicks, pass-through, hotkeys, Insert, wheel, ClearInputMouse after
@@ -490,10 +492,10 @@ try {
     # --- music panel ------------------------------------------------------------------------------
     # 25. [panel] and [keys]: good values are taken, bad ones refused with a reason; the mod runs on.
     $panelIniRoot = Join-Path $work 'lad-ini-panel'
-    Write-Ini (Join-Path $panelIniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=3', '[panel]', 'language=zh-TW', 'text_size=huge', 'mode=sometimes', 'source=other_app', 'colour=red', '[keys]', 'next=F2', 'jump=F3') 'utf8'
+    Write-Ini (Join-Path $panelIniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=3', '[panel]', 'language=zh-TW', 'text_size=huge', 'mode=sometimes', 'source=other_app', 'colour=red', 'corner=middle', '[keys]', 'next=F2', 'jump=F3') 'utf8'
     $run = Invoke-Run '25. settings.ini with [panel] and [keys] values' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $panelIniRoot
     $log = Read-Log $run.Log
-    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, display or on') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2, marker for 3 s') -and ($run.Lines -match '^marker: found').Count -eq 1)
+    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, display or on') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('"corner=middle" is not bottom-centre, top-left, top-right, bottom-left or bottom-right') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2, marker for 3 s') -and ($run.Lines -match '^marker: found').Count -eq 1)
 
     # 27-32. Screenshots: English and the draft Chinese at each text size.
     foreach ($language in 'en', 'zh-TW') {
@@ -519,7 +521,9 @@ try {
     # 35. ResizeBuffers while the panel and its list are drawn.
     # The generated songs (Chinese, Japanese, Korean, CJK Extension B, a long title) and one file
     # that cannot be played.
-    Invoke-PanelRun 'panel and ResizeBuffers' 'resize' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LIST = 'open'; RACING_MASTER_MOD_LANG = 'en' } @() $songsWithUnplayable | Out-Null
+    # Large text with the list and the settings row open: at the small sizes the list gives up rows
+    # so that the whole panel stays on screen (R3).
+    Invoke-PanelRun 'panel and ResizeBuffers' 'resize' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LIST = 'open'; RACING_MASTER_MOD_SETTINGS_ROW = 'open'; RACING_MASTER_MOD_TEXT_SIZE = 'large'; RACING_MASTER_MOD_LANG = 'en' } @() $songsWithUnplayable | Out-Null
 
     # 36. A fault inside the panel, between its two state swaps.
     $panelRun = Invoke-PanelRun 'panel fault' 'fault' '' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_TEST_PANEL_FAULT = '60' } @()

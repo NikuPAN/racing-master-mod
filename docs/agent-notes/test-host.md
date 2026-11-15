@@ -61,9 +61,16 @@ code 1 for both "no marker" and "forwarding failed"; the review showed what it d
    buffer 0 presented with `DO_NOT_SEQUENCE`. The panel draws on that present too (by design).
    Pixel checks: over 90 % of the panel's pixels drawn, text pixels present, **zero** pixels
    changed outside the panel windows (2 px tolerance for antialiased edges). The clear colour is
-   read from the bottom-left corner, which the top-right panel never covers.
+   read from the bottom-left corner, which the panel never covers in the screenshot runs (bottom
+   centre by default; the corner is chosen only in the input run, which takes no screenshot).
+   The layout file also gives `display W H`, the panel's own window as `bar x y w h` (also counted
+   as a window) and `corner`; B1-B3 (shots), R3 (resize) and I23 (input) check the place.
 8. **The list scrolls under the wheel test**: the input script scrolls it back before using
    row and remove-button positions (only the visible rows have widget centres).
+   **At the bottom of the screen (the default since 0.3.1) the panel grows upward**, and ImGui
+   sizes an auto-sized window one frame late, so after opening the list or the settings row the
+   widgets move once more: scripts pump a few frames (`Pump(host, 4)`) before reading positions.
+   Without it run 40's E7 clicked beside the checkbox (2026-11-15).
 9. **The panel drives the real music engine.** The script generates five quiet 20 s tone WAVs
    (neutral names in Chinese, Japanese, Korean, a character outside the basic plane, one long
    title) and copies them into each panel run's `RacingMasterMod\music` folder, which the engine

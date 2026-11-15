@@ -13,6 +13,17 @@ enum UiMode : unsigned {
     UiModeOn = 2,        // the full panel (default)
 };
 
+// Where the panel sits ([panel] corner). The numbers are what the panel stores; bottom centre was
+// added in 0.3.1 as 4 so the four corners keep their old numbers.
+enum UiCorner : unsigned {
+    UiCornerTopLeft = 0,
+    UiCornerTopRight = 1,
+    UiCornerBottomLeft = 2,
+    UiCornerBottomRight = 3,
+    UiCornerBottomCentre = 4,   // the default since 0.3.1 (the owner's choice: top-right covered the game's diamond counter)
+    UiCornerCount = 5,
+};
+
 // The in-game panel's settings: the [panel] and [keys] sections.
 struct UiSettings {
     unsigned mode = UiModeOn;
@@ -20,7 +31,7 @@ struct UiSettings {
     unsigned textSize = 1;            // 0 small, 1 medium, 2 large; never pixels
     bool pauseWhenUnfocused = false;  // pause the music while the game is not the active app
     unsigned source = 0;              // 0 = the player's own files, 1 = another app's media session
-    unsigned corner = 1;              // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right
+    unsigned corner = UiCornerBottomCentre;   // a UiCorner
     bool mediaKeys = true;            // react to the keyboard's own media keys (local files only)
     // The key names as typed; the panel parses them and logs a refused one with the accepted names.
     char keys[UiKeyCount][32] = {"Insert", "F5", "F6", "F7", "F8", "F9"};

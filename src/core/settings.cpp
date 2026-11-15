@@ -73,7 +73,9 @@ enum class Section { Mod, Panel, Keys, Music, Other };
 void ApplyPanelKey(const char* key, const char* value, const char* path8, UiSettings* ui) {
     static const char* const kLanguages[] = {"auto", "en", "zh-TW"};
     static const char* const kSizes[] = {"small", "medium", "large"};
-    static const char* const kCorners[] = {"top-left", "top-right", "bottom-left", "bottom-right"};
+    // In UiCorner order. "bottom-center" is accepted too.
+    static const char* const kCorners[UiCornerCount] = {"top-left", "top-right", "bottom-left", "bottom-right",
+                                                        "bottom-centre"};
     static const char* const kModes[] = {"off", "display", "on"};
     static const char* const kSources[] = {"my_files", "other_app"};
     if (_stricmp(key, "mode") == 0) {
@@ -116,12 +118,15 @@ void ApplyPanelKey(const char* key, const char* value, const char* path8, UiSett
                 value, path8);
         }
     } else if (_stricmp(key, "corner") == 0) {
-        const int index = MatchWord(value, kCorners, 4);
+        int index = MatchWord(value, kCorners, UiCornerCount);
+        if (index < 0 && _stricmp(value, "bottom-center") == 0) {
+            index = UiCornerBottomCentre;
+        }
         if (index >= 0) {
             ui->corner = static_cast<unsigned>(index);
         } else {
-            Log("settings: \"corner=%s\" is not top-left, top-right, bottom-left or bottom-right (in %s); using "
-                "top-right",
+            Log("settings: \"corner=%s\" is not bottom-centre, top-left, top-right, bottom-left or bottom-right (in %s); "
+                "using bottom-centre",
                 value, path8);
         }
     } else {

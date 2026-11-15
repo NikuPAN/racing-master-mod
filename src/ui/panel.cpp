@@ -649,9 +649,51 @@ void ControlsOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, 
     (void)width;
 }
 
-void SongList(const music::Snapshot& snapshot, const PanelFrameInfo& info) {
+// The gap between the panel and the edges of the screen it sits against.
+float ScreenMargin() {
+    return ImFloor(U() * 16.0f);
+}
+
+// True when the panel sits at the bottom of the screen: the song list and the settings row then
+// open above the bar, so the bar stays where it is.
+bool AtBottom() {
+    return g_settings.corner == UiCornerBottomLeft || g_settings.corner == UiCornerBottomRight ||
+           g_settings.corner == UiCornerBottomCentre;
+}
+
+// How tall the song list was on the last frame it was drawn (0: not drawn then), so the next
+// frame can tell how much of the panel's height the rest needs.
+float g_lastListHeight = 0.0f;
+bool g_listDrawnThisFrame = false;
+
+// The number of song rows to show: up to 8, fewer when the whole panel would not fit on the
+// screen otherwise (a small game window, large text, the settings row open as well). Measured from
+// the previous frame: the panel's height then, less the list's own height, is what the rest needs.
+int ListRowsThatFit(int count, float rowStep, const PanelFrameInfo& info) {
+    int rows = count < 8 ? count : 8;
+    if (g_lastListHeight <= 0.0f) {
+        return rows;
+    }
+    // The content's own height, not the window's: ImGui clamps an auto-sized window to the screen,
+    // which would hide by how much the content is too tall.
+    const ImGuiWindow* window = ImGui::GetCurrentWindow();
+    const float rest = window->ContentSizeIdeal.y + window->WindowPadding.y * 2.0f - g_lastListHeight;
+    const float available = info.displayHeight - ScreenMargin() * 2.0f - rest - ImGui::GetStyle().WindowPadding.y;
+    const int fit = static_cast<int>(available / rowStep);
+    const int least = count < 2 ? count : 2;
+    if (fit < rows) {
+        rows = fit > least ? fit : least;
+    }
+    return rows;
+}
+
+// `above`: the list opens above the bar (the panel sits at the bottom), so the divider goes
+// between the list and the bar, below the list.
+void SongList(const music::Snapshot& snapshot, const PanelFrameInfo& info, bool above) {
     const Strings& s = S();
-    ImGui::Separator();
+    if (!above) {
+        ImGui::Separator();
+    }
     // The file window belongs to the game's top-level window, so it stays above the game and
     // gives the focus back when it closes; Windows keeps the game from taking input meanwhile
     // (the hints say so). In exclusive full screen it would minimise the game, so it is not
@@ -694,12 +736,17 @@ void SongList(const music::Snapshot& snapshot, const PanelFrameInfo& info) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         ImGui::TextWrapped("%s", s.listEmpty);
         ImGui::PopStyleColor();
+        if (above) {
+            ImGui::Separator();
+        }
         return;
     }
     const float rowHeight = ImGui::GetFrameHeight();
-    const int visibleRows = count < 8 ? count : 8;
     const ImGuiStyle& style = ImGui::GetStyle();
+    const int visibleRows = ListRowsThatFit(count, rowHeight + style.ItemSpacing.y, info);
     const float childHeight = visibleRows * (rowHeight + style.ItemSpacing.y) + style.WindowPadding.y;
+    g_lastListHeight = childHeight;
+    g_listDrawnThisFrame = true;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(style.WindowPadding.x * 0.5f, style.WindowPadding.y * 0.5f));
     ImGui::BeginChild("##songs", ImVec2(0.0f, childHeight), ImGuiChildFlags_Borders);
     const float removeWidth = rowHeight;
@@ -776,6 +823,9 @@ void SongList(const music::Snapshot& snapshot, const PanelFrameInfo& info) {
     }
     ImGui::EndChild();
     ImGui::PopStyleVar();
+    if (above) {
+        ImGui::Separator();
+    }
 }
 
 bool ChoiceCombo(const char* id, const char* const* items, int count, unsigned* value, const char* testPrefix) {
@@ -801,9 +851,33 @@ bool ChoiceCombo(const char* id, const char* const* items, int count, unsigned* 
     return changed;
 }
 
-void SettingsRow() {
+// Where the panel sits. Bottom centre (the default) is listed first; the stored value is a UiCorner.
+void PositionChoice() {
     const Strings& s = S();
-    ImGui::Separator();
+    static const unsigned kShownOrder[UiCornerCount] = {UiCornerBottomCentre, UiCornerTopLeft, UiCornerTopRight,
+                                                        UiCornerBottomLeft, UiCornerBottomRight};
+    const char* names[UiCornerCount] = {s.positionBottomCentre, s.positionTopLeft, s.positionTopRight,
+                                        s.positionBottomLeft, s.positionBottomRight};
+    unsigned shown = 0;
+    for (unsigned i = 0; i < UiCornerCount; ++i) {
+        if (kShownOrder[i] == g_settings.corner) shown = i;
+    }
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(s.position);
+    ImGui::SameLine();
+    if (ChoiceCombo("##position", names, UiCornerCount, &shown, "position_item")) {
+        g_settings.corner = kShownOrder[shown];
+        SaveSettings();
+    }
+    Mark("position");
+}
+
+// `above`: the row opens above the bar (the panel sits at the bottom), with the divider below it.
+void SettingsRow(bool above) {
+    const Strings& s = S();
+    if (!above) {
+        ImGui::Separator();
+    }
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(s.language);
     ImGui::SameLine();
@@ -822,6 +896,7 @@ void SettingsRow() {
         SaveSettings();
     }
     Mark("text_size");
+    PositionChoice();
     char label[160];
     snprintf(label, sizeof(label), "%s##pause", s.pauseWhenUnfocused);
     if (ImGui::Checkbox(label, &g_settings.pauseWhenUnfocused)) {
@@ -847,6 +922,9 @@ void SettingsRow() {
         ImGui::InputText("##test_field", g_testText, sizeof(g_testText));
         Mark("test_field");
     }
+    if (above) {
+        ImGui::Separator();
+    }
 }
 
 void MutedWrapped(const char* text) {
@@ -858,14 +936,16 @@ void MutedWrapped(const char* text) {
     ImGui::PopStyleColor();
 }
 
-// Window position for the chosen corner. `pivot` makes the window grow away from the corner.
+// Window position for the chosen place (UiCorner). `pivot` makes the window grow away from the
+// edges it sits against; bottom centre grows up and to both sides equally.
 void PlaceInCorner(const PanelFrameInfo& info, ImVec2* pos, ImVec2* pivot) {
-    const float margin = ImFloor(U() * 16.0f);
-    const bool right = g_settings.corner == 1 || g_settings.corner == 3;
-    const bool bottom = g_settings.corner >= 2;
-    pos->x = right ? info.displayWidth - margin : margin;
+    const float margin = ScreenMargin();
+    const bool right = g_settings.corner == UiCornerTopRight || g_settings.corner == UiCornerBottomRight;
+    const bool centre = g_settings.corner == UiCornerBottomCentre;
+    const bool bottom = AtBottom();
+    pos->x = centre ? ImFloor(info.displayWidth * 0.5f) : (right ? info.displayWidth - margin : margin);
     pos->y = bottom ? info.displayHeight - margin : margin;
-    pivot->x = right ? 1.0f : 0.0f;
+    pivot->x = centre ? 0.5f : (right ? 1.0f : 0.0f);
     pivot->y = bottom ? 1.0f : 0.0f;
 }
 
@@ -888,9 +968,20 @@ void DrawBar(const PanelFrameInfo& info) {
     }
     const float inner = width - style.WindowPadding.x * 2.0f;
     const bool myFiles = g_settings.source == SourceMyFiles;
+    // At the bottom of the screen the settings row and the song list open above the bar, in the
+    // mirror order (the list next to the bar), so the bar itself never moves.
+    const bool above = AtBottom();
+    g_listDrawnThisFrame = false;
+    if (above && g_settingsOpen) {
+        SettingsRow(true);
+    }
     char nowPlaying[768];
     if (myFiles) {
         const music::Snapshot& snapshot = CurrentSnapshot();
+        const bool list = g_listOpen && !info.displayOnly;
+        if (above && list) {
+            SongList(snapshot, info, true);
+        }
         if (snapshot.tracks.empty()) {
             strcpy_s(nowPlaying, s.noSongsYet);
         } else if (snapshot.currentIndex >= 0 && snapshot.currentIndex < static_cast<int>(snapshot.tracks.size())) {
@@ -903,8 +994,8 @@ void DrawBar(const PanelFrameInfo& info) {
         TimeRowMyFiles(snapshot, inner, info.displayOnly);
         char message[512];
         MutedWrapped(Utf8(snapshot.message, message, sizeof(message)));
-        if (g_listOpen && !info.displayOnly) {
-            SongList(snapshot, info);
+        if (!above && list) {
+            SongList(snapshot, info, false);
         }
     } else {
         const remote::Snapshot snapshot = other_app::GetSnapshot();
@@ -932,8 +1023,11 @@ void DrawBar(const PanelFrameInfo& info) {
         }
         MutedWrapped(message);
     }
-    if (g_settingsOpen) {
-        SettingsRow();
+    if (!above && g_settingsOpen) {
+        SettingsRow(false);
+    }
+    if (!g_listDrawnThisFrame) {
+        g_lastListHeight = 0.0f;   // the next list starts from 8 rows and is measured again
     }
     ImGui::End();
 }
@@ -1100,8 +1194,8 @@ int PanelAppendTestState(char* buffer, int size) {
     for (const music::TrackInfo& track : snapshot.tracks) {
         unplayable += track.supported ? 0 : 1;
     }
-    int extra = snprintf(buffer + n, static_cast<size_t>(size - n), "position %d\nunplayable %d\n",
-                         static_cast<int>(snapshot.positionSeconds), unplayable);
+    int extra = snprintf(buffer + n, static_cast<size_t>(size - n), "position %d\nunplayable %d\ncorner %u\n",
+                         static_cast<int>(snapshot.positionSeconds), unplayable, g_settings.corner);
     if (g_settings.source == SourceOtherApp && extra > 0 && n + extra < size) {
         const remote::Snapshot other = other_app::GetSnapshot();
         const RemoteView view = ViewOf(other);

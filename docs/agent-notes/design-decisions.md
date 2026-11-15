@@ -35,6 +35,8 @@ The owner's choices, made with the trade-offs in front of them:
     not a fixed behaviour.
 12. **Opus is in version 1** (files saved from YouTube are often Opus), alongside MP3, FLAC,
     WAV, OGG Vorbis and M4A/AAC.
+13. **The panel's default place is the bottom centre** (2026-11-15, after the first game run of
+    0.3.0: top-right covered the game's diamond counter). The four corners stay selectable.
 
 Conditions I attached and the owner accepted by choosing option 2:
 

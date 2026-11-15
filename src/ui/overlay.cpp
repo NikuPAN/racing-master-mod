@@ -419,13 +419,17 @@ void WriteTestLayout(bool drawn, float sx, float sy) {
     used += PanelAppendTestState(text + used, static_cast<int>(sizeof(text)) - used);
     if (drawn) {
         ImGuiContext& g = *ImGui::GetCurrentContext();
+        used += snprintf(text + used, sizeof(text) - static_cast<size_t>(used), "display %d %d\n",
+                         static_cast<int>(g.IO.DisplaySize.x), static_cast<int>(g.IO.DisplaySize.y));
         for (ImGuiWindow* window : g.Windows) {
             if (!window->Active || window->Hidden || (window->Flags & ImGuiWindowFlags_ChildWindow)) {
                 continue;
             }
-            used += snprintf(text + used, sizeof(text) - static_cast<size_t>(used), "window %d %d %d %d\n",
-                             static_cast<int>(window->Pos.x), static_cast<int>(window->Pos.y),
-                             static_cast<int>(window->Size.x + 0.5f), static_cast<int>(window->Size.y + 0.5f));
+            // "bar": the panel's own window (the bar, with the list and settings row when open).
+            used += snprintf(text + used, sizeof(text) - static_cast<size_t>(used), "%s %d %d %d %d\n",
+                             strstr(window->Name, "###rmm_panel") ? "bar" : "window", static_cast<int>(window->Pos.x),
+                             static_cast<int>(window->Pos.y), static_cast<int>(window->Size.x + 0.5f),
+                             static_cast<int>(window->Size.y + 0.5f));
         }
         for (int i = 0; i < kMaxPanelRects; ++i) {
             const PanelRect r = UnpackRect(Shared().rects[i].load());

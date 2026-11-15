@@ -746,6 +746,9 @@ struct LayoutFile {
     std::map<std::string, POINT> items;
     std::vector<RECT> windows;   // back-buffer pixels
     std::vector<RECT> hits;      // client coordinates
+    RECT bar = {};               // the panel's own window (back-buffer pixels), when drawn
+    bool hasBar = false;
+    int displayWidth = 0, displayHeight = 0;   // the back buffer, when drawn
     bool ok = false;
     int Int(const char* key, int fallback = -999) const {
         auto it = values.find(key);
@@ -797,11 +800,17 @@ LayoutFile ReadLayout() {
             if (sscanf_s(rest.c_str(), "%63s %d %d", name, static_cast<unsigned>(sizeof(name)), &x, &y) == 3) {
                 layout.items[name] = POINT{x, y};
             }
-        } else if (key == "window" || key == "hit") {
+        } else if (key == "window" || key == "bar" || key == "hit") {
             int x = 0, y = 0, w = 0, h = 0;
             if (sscanf_s(rest.c_str(), "%d %d %d %d", &x, &y, &w, &h) == 4) {
-                (key == "window" ? layout.windows : layout.hits).push_back(RECT{x, y, x + w, y + h});
+                (key == "hit" ? layout.hits : layout.windows).push_back(RECT{x, y, x + w, y + h});
+                if (key == "bar") {
+                    layout.bar = RECT{x, y, x + w, y + h};
+                    layout.hasBar = true;
+                }
             }
+        } else if (key == "display") {
+            sscanf_s(rest.c_str(), "%d %d", &layout.displayWidth, &layout.displayHeight);
         } else {
             layout.values[key] = rest;
         }
@@ -1045,6 +1054,36 @@ bool SongsReady(const LayoutFile& l) {
     return l.Int("tracks") >= kPanelSongs && l.Int("scanning") == 0;
 }
 
+// The default place since 0.3.1: the bar's centre within 3 px of the back buffer's centre, its
+// bottom edge above the bottom by no more than 64 px (the margin is 16 units).
+bool BarAtBottomCentre(const LayoutFile& l) {
+    if (!l.hasBar || l.displayWidth <= 0) return false;
+    const LONG centre = (l.bar.left + l.bar.right) / 2;
+    const LONG gap = l.displayHeight - l.bar.bottom;
+    return std::abs(centre - l.displayWidth / 2) <= 3 && gap > 0 && gap <= 64;
+}
+
+bool BarAtTopRight(const LayoutFile& l) {
+    if (!l.hasBar || l.displayWidth <= 0) return false;
+    const LONG right = l.displayWidth - l.bar.right;
+    return right > 0 && right <= 64 && l.bar.top > 0 && l.bar.top <= 64;
+}
+
+// Every window of the panel (the bar with its list and settings row, drop-downs) inside the back buffer.
+bool PanelOnScreen(const LayoutFile& l) {
+    if (l.windows.empty() || l.displayWidth <= 0) return false;
+    for (const RECT& w : l.windows) {
+        if (w.left < 0 || w.top < 0 || w.right > l.displayWidth || w.bottom > l.displayHeight) return false;
+    }
+    return true;
+}
+
+void PrintBar(const char* when) {
+    const LayoutFile l = ReadLayout();
+    printf("  bar %s: %ld,%ld to %ld,%ld in a %dx%d back buffer\n", when, l.bar.left, l.bar.top, l.bar.right, l.bar.bottom,
+           l.displayWidth, l.displayHeight);
+}
+
 bool ModLogContains(const char* text);   // media mode section below
 
 // Presents frames until the mod's log contains `text` or the time runs out.
@@ -1069,9 +1108,21 @@ void ScriptShots(Host& host, const std::string& prefix) {
     if (!ready) return;
     MoveAway(host);
     CheckShot("S1 bar", Shoot(host, (prefix + "-bar").c_str()), true);
+    PrintBar("alone");
+    Check("B1 with no saved place the bar sits at the bottom centre, fully on screen",
+          BarAtBottomCentre(ReadLayout()) && PanelOnScreen(ReadLayout()));
+    const LayoutFile barAlone = ReadLayout();
+    const POINT listButton = Item("list");
 
     Click(host, Item("list"));
     Check("S2 Show list opens the list", WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 1 && l.Has("row0"); }));
+    Pump(host, 4);
+    PrintBar("with the list");
+    const LayoutFile withList = ReadLayout();
+    Check("B2 the list opens above the bar: the bar's buttons stay where they were and the songs are above them",
+          BarAtBottomCentre(withList) && PanelOnScreen(withList) && withList.bar.bottom == barAlone.bar.bottom &&
+              std::abs(Item("list").y - listButton.y) <= 1 && Item("row0").y < listButton.y &&
+              withList.bar.top < barAlone.bar.top);
     // Runs whose music folder holds a file that cannot be played (tools\run-host-test.ps1 puts
     // one there for the screenshot and resize runs). The engine finds out when it tries to play
     // it: the first click marks it (and the engine moves on), the list then draws it in that
@@ -1103,6 +1154,9 @@ void ScriptShots(Host& host, const std::string& prefix) {
           WaitLayout(host, [](const LayoutFile& l) { return l.Int("settings") == 1 && l.Int("list") == 0 && l.Has("language"); }));
     MoveAway(host);
     CheckShot("S3 settings row", Shoot(host, (prefix + "-settings").c_str()), true);
+    Check("B3 the settings row opens above the bar too, with the place to choose, fully on screen",
+          BarAtBottomCentre(ReadLayout()) && PanelOnScreen(ReadLayout()) && ReadLayout().Has("position") &&
+              Item("language").y < Item("list").y && std::abs(Item("list").y - listButton.y) <= 1);
     Click(host, Item("settings"));
 
     Click(host, Item("source_other_app"));
@@ -1125,7 +1179,7 @@ void ScriptResize(Host& host) {
         host, [](const LayoutFile& l) { return l.Int("drawn") == 1 && l.Has("row0") && SongsReady(l); }, 10000);
     Check("R0 the panel and its list are drawn", ready);
     if (!ready) return;
-    const UINT sizes[4][2] = {{1920, 1080}, {3840, 2160}, {1280, 720}, {2558, 1360}};
+    const UINT sizes[5][2] = {{1920, 1080}, {3840, 2160}, {1280, 720}, {1024, 576}, {2558, 1360}};
     for (const auto& size : sizes) {
         Pump(host, 2);
         ReleaseBackBuffer(host);
@@ -1143,6 +1197,13 @@ void ScriptResize(Host& host) {
         snprintf(name, sizeof(name), "R2 at %ux%u", size[0], size[1]);
         CheckShot(name, result, true);
         Check("R2 the screenshot has the new size", result.width == size[0] && result.height == size[1]);
+        PrintBar("after the resize");
+        snprintf(name, sizeof(name),
+                 "R3 at %ux%u the bar sits at the bottom centre and the panel, with its list and settings row, is fully "
+                 "on screen",
+                 size[0], size[1]);
+        const LayoutFile placed = ReadLayout();
+        Check(name, BarAtBottomCentre(placed) && PanelOnScreen(placed) && placed.displayWidth == static_cast<int>(size[0]));
     }
 }
 
@@ -1299,6 +1360,7 @@ void ScriptInput(Host& host) {
     WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 1 && l.Has("list"); });
     Click(host, Item("list"));
     ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 1 && l.Has("row3"); });
+    Pump(host, 4);   // the list opens upward at the bottom; its rows settle a frame later
     Check("I10 Show list opens the list", ok);
     int wheels = g_gotWheel.load();
     Wheel(host, Item("row0"), -1);
@@ -1349,6 +1411,7 @@ void ScriptInput(Host& host) {
     Click(host, Item("list"));
     Click(host, Item("settings"));
     ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("settings") == 1 && l.Has("language"); });
+    Pump(host, 4);   // the panel grows upward at the bottom; its contents settle a frame later
     Click(host, Item("language"));
     ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Has("language_item2"); });
     Click(host, Item("language_item2"));
@@ -1361,6 +1424,29 @@ void ScriptInput(Host& host) {
     WaitLayout(host, [](const LayoutFile& l) { return l.Has("language_item1"); });
     Click(host, Item("language_item1"));
     WaitLayout(host, [](const LayoutFile& l) { return l.Int("language") == 1; });
+
+    // Where the panel sits: bottom centre by default, the four corners to choose from, saved.
+    long savesBefore = ReadLayout().Int("saves");
+    Click(host, Item("position"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Has("position_item2"); });
+    Click(host, Item("position_item2"));   // listed: bottom centre, top left, top right, bottom left, bottom right
+    ok = ok && WaitLayout(host, [&](const LayoutFile& l) {
+        return l.Int("corner") == 1 && l.Int("saves") > savesBefore && BarAtTopRight(l) && PanelOnScreen(l);
+    });
+    PrintBar("at the top right");
+    std::string placeIni = ReadWholeFile(ModFolder() + L"\\settings.ini");
+    Check("I23 choosing Top right in the settings row moves the panel there and saves corner=top-right",
+          ok && placeIni.find("corner=top-right") != std::string::npos);
+    savesBefore = ReadLayout().Int("saves");
+    Click(host, Item("position"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Has("position_item0"); });
+    Click(host, Item("position_item0"));
+    ok = ok && WaitLayout(host, [&](const LayoutFile& l) {
+        return l.Int("corner") == 4 && l.Int("saves") > savesBefore && BarAtBottomCentre(l) && PanelOnScreen(l);
+    });
+    placeIni = ReadWholeFile(ModFolder() + L"\\settings.ini");
+    Check("I23 ... and Bottom centre moves it back and saves corner=bottom-centre",
+          ok && placeIni.find("corner=bottom-centre") != std::string::npos);
 
     // A click outside closes an open drop-down, and reaches the game.
     Click(host, Item("text_size"));
@@ -1479,6 +1565,7 @@ void ScriptIntegrated(Host& host) {
           WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 1 && l.Int("drawn") == 1 && l.Has("list"); }));
     Click(host, Item("list"));
     Check("E1 Show list lists the songs", WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 1 && l.Has("row3"); }));
+    Pump(host, 4);   // the list opens upward at the bottom; its rows settle a frame later
 
     Click(host, Item("row1"));
     ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("index") == 1 && l.Int("state") == 1; });
@@ -1516,6 +1603,9 @@ void ScriptIntegrated(Host& host) {
 
     Click(host, Item("settings"));
     ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("settings") == 1 && l.Has("pause"); });
+    // At the bottom of the screen the panel grows upward: ImGui sizes an auto-sized window one
+    // frame late, so its contents settle a frame or two after the row opens.
+    Pump(host, 4);
     Click(host, Item("pause"));
     ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Int("pause") == 1 && l.Int("state") == 1; });
     PostMessageW(host.window, WM_ACTIVATEAPP, FALSE, 0);

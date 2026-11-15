@@ -13,27 +13,31 @@ namespace {
 
 // The latest values to save, packed into one word so the frame thread hands them over with a
 // single atomic store. Bit 31 = "something to save".
-//   bits 0-1 language, 2-3 text size, 4 pause when unfocused, 5 source
+//   bits 0-1 language, 2-3 text size, 4 pause when unfocused, 5 source, 6-8 corner
 std::atomic<uint32_t> g_pending{0};
 constexpr uint32_t kPendingFlag = 0x80000000u;
 HANDLE g_wake = nullptr;
 volatile LONG g_written = 0;
 
-constexpr int kKeyCount = 4;
-const char* const kKeys[kKeyCount] = {"language", "text_size", "pause_when_unfocused", "source"};
+constexpr int kKeyCount = 5;
+const char* const kKeys[kKeyCount] = {"language", "text_size", "pause_when_unfocused", "source", "corner"};
 
 uint32_t Pack(const UiSettings& s) {
     return kPendingFlag | (s.language & 3u) | ((s.textSize & 3u) << 2) | (s.pauseWhenUnfocused ? 0x10u : 0u) |
-           ((s.source & 1u) << 5);
+           ((s.source & 1u) << 5) | ((s.corner & 7u) << 6);
 }
 
 void ValueWords(uint32_t packed, char values[kKeyCount][16]) {
     static const char* const kLanguages[] = {"auto", "en", "zh-TW", "auto"};
     static const char* const kSizes[] = {"small", "medium", "large", "medium"};
+    // UiCorner order; the reader's words (settings.cpp).
+    static const char* const kCorners[8] = {"top-left",      "top-right",     "bottom-left",   "bottom-right",
+                                            "bottom-centre", "bottom-centre", "bottom-centre", "bottom-centre"};
     strcpy_s(values[0], 16, kLanguages[packed & 3u]);
     strcpy_s(values[1], 16, kSizes[(packed >> 2) & 3u]);
     strcpy_s(values[2], 16, (packed & 0x10u) ? "1" : "0");
     strcpy_s(values[3], 16, (packed & 0x20u) ? "other_app" : "my_files");
+    strcpy_s(values[4], 16, kCorners[(packed >> 6) & 7u]);
 }
 
 struct Line {
@@ -88,7 +92,7 @@ void AppendKey(char* out, int outSize, int* used, int key, const char values[kKe
     Append(out, outSize, used, text, n);
 }
 
-// Rewrites `text` (the file as UTF-8) into `out` with the four [panel] keys set. Every other line
+// Rewrites `text` (the file as UTF-8) into `out` with the five [panel] keys set. Every other line
 // is copied as it was, with its own line ending; added lines use CR LF.
 void MergePanelKeys(const char* text, uint32_t packed, char* out, int outSize) {
     char values[kKeyCount][16];

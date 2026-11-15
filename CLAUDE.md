@@ -161,7 +161,9 @@ language=auto        ; auto | en | zh-TW    (auto: Windows UI language zh-TW, zh
 text_size=medium     ; small | medium | large  (never pixels)
 pause_when_unfocused=0
 source=my_files      ; my_files | other_app
-corner=top-right     ; top-left | top-right | bottom-left | bottom-right
+corner=bottom-centre ; bottom-centre (default since 0.3.1; bottom-center also read) | top-left | top-right
+                     ; | bottom-left | bottom-right. Stored as UiCorner (settings.h): the corners 0-3 as in
+                     ; 0.3.0, bottom centre 4. At the bottom the list and settings row open above the bar.
 [keys]
 panel=Insert         ; the owner's choices; [Ctrl+][Shift+][Alt+]Name, or none
 stop=F5
@@ -172,8 +174,8 @@ loop=F9
 media_keys=1         ; the keyboard's media keys, only while "My files" is the source
 ```
 
-The panel writes `language`, `text_size`, `pause_when_unfocused` and `source` back to the
-per-user `settings.ini` when the player changes them (`src/ui/ui_settings.cpp`: own thread, every
+The panel writes `language`, `text_size`, `pause_when_unfocused`, `source` and (since 0.3.1)
+`corner` back to the per-user `settings.ini` when the player changes them (`src/ui/ui_settings.cpp`: own thread, every
 other line kept, written to `settings.ini.new` and swapped in). It never writes the ini beside the DLL.
 The engine's I/O thread rewrites `[music]` in the same file, so **both writers hold
 `SettingsFileLock`** (`src/core/settings_file_lock.h`) from reading the file until the new copy is

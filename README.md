@@ -40,7 +40,7 @@ Planned, in this order:
    Windows asks for administrator permission because the folder is under Program Files.
 3. Start the game the way you always do.
 
-If it works, a white square with a dark centre appears in the top-left corner of the game window for 20 seconds, and a short note in the top-right corner says which key opens the music panel.
+If it works, a white square with a dark centre appears in the top-left corner of the game window for 20 seconds, and a short note at the bottom centre says which key opens the music panel.
 
 ### Remove
 
@@ -48,7 +48,7 @@ Close the game and delete `version.dll` from that folder. Nothing else in the ga
 
 ### The music panel
 
-Press **Insert** to show or hide the panel. It sits in the top-right corner as a compact bar: where the music comes from and what is playing, the buttons, the volume and the time line. **Show list** drops the song list down. Clicks on the panel stay on the panel; clicks anywhere else go to the game as usual, so you can keep driving with the panel open.
+Press **Insert** to show or hide the panel. It sits at the bottom centre of the screen as a compact bar: where the music comes from and what is playing, the buttons, the volume and the time line. **Show list** opens the song list above the bar. The panel can sit in any of the four corners instead (in **Settings**). Clicks on the panel stay on the panel; clicks anywhere else go to the game as usual, so you can keep driving with the panel open.
 
 Keys that work while racing, with the panel open or closed:
 
@@ -68,7 +68,7 @@ Two sources, chosen with the two buttons at the left of the bar:
 - **My files**: your own songs, played inside the game. Use **Add files** or **Add folder** in the list, or copy songs into the music folder (below). Click a song to play it; the cross at the end of a row takes it off the list (the file stays on your computer). The list, the volume and what repeats are remembered for next time. Nothing starts playing by itself when the game starts.
 - **Other app**: controls whatever Windows reports as playing music, for example Spotify or a browser. The panel shows what that app allows; buttons it does not allow are greyed out, and resting the pointer on one says why. **Not yet tried in the game.** The game runs with administrator rights, and whether Windows lets it see and control other apps from there is still unknown.
 
-**Settings** in the bar opens a row with the language (follow Windows, English or Traditional Chinese), the text size, and whether your own songs pause while the game is not the active window.
+**Settings** in the bar opens a row with the language (follow Windows, English or Traditional Chinese), the text size, where the panel sits (bottom centre or one of the four corners), and whether your own songs pause while the game is not the active window.
 
 When you use **Add files** or **Add folder**, a normal Windows file window opens over the game, and the game does not react to keys or the mouse until you close it. In exclusive full screen these two buttons are greyed out, because the file window would minimise the game; use the music folder instead, or switch the game to windowed or borderless.
 
@@ -121,8 +121,8 @@ text_size=medium
 pause_when_unfocused=0
 ; my_files or other_app
 source=my_files
-; top-left, top-right, bottom-left or bottom-right
-corner=top-right
+; bottom-centre (default), top-left, top-right, bottom-left or bottom-right
+corner=bottom-centre
 
 [keys]
 ; a key name such as Insert, F7 or Home, with Ctrl+, Shift+ or Alt+ in front if you like; none = no key
@@ -136,7 +136,7 @@ loop=F9
 media_keys=1
 ```
 
-`mode=display` is meant for a first careful try: the panel is drawn but takes no clicks or keys, and the game window is left alone. The panel writes its own changes (language, text size, pausing, source) back into this file, and the music player keeps its own `[music]` section there; leave both as they are.
+`mode=display` is meant for a first careful try: the panel is drawn but takes no clicks or keys, and the game window is left alone. The panel writes its own changes (language, text size, pausing, source, position) back into this file, and the music player keeps its own `[music]` section there; leave both as they are.
 
 A file named `racing-master-mod.ini` next to `version.dll` is read as well and overrides it. Save either file as UTF-8 (with or without a byte order mark) or as the UTF-16 that Notepad calls "Unicode". If a `[mod]` value cannot be read, the mod switches itself off and the log says which line and what to write; a `[panel]` or `[keys]` value that cannot be read keeps its default, and the log says why.
 
@@ -203,7 +203,7 @@ The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vor
    因為資料夾在 Program Files 底下，Windows 會跳出系統管理員權限的確認。
 3. 照平常的方式開遊戲。
 
-成功的話，遊戲視窗左上角會出現一個中間是深色的白色方塊，20 秒後消失；右上角也會跳出一行小提示，告訴你按哪個鍵打開音樂面板。
+成功的話，遊戲視窗左上角會出現一個中間是深色的白色方塊，20 秒後消失；畫面下方中間也會跳出一行小提示，告訴你按哪個鍵打開音樂面板。
 
 ### 移除
 
@@ -211,7 +211,7 @@ The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vor
 
 ### 音樂面板
 
-按 **Insert** 打開或收起面板。面板是右上角的一條小工具列，上面有音樂來源、正在播的歌、各個按鈕、音量和進度條；按「顯示清單」會把歌單拉出來。點在面板上的滑鼠只會操作面板，點在其他地方就照常交給遊戲，所以面板開著也能繼續開車。
+按 **Insert** 打開或收起面板。面板是畫面下方中間的一條小工具列，上面有音樂來源、正在播的歌、各個按鈕、音量和進度條；按「顯示清單」，歌單會在工具列上方展開。想把面板放到四個角落也可以，在「設定」裡改。點在面板上的滑鼠只會操作面板，點在其他地方就照常交給遊戲，所以面板開著也能繼續開車。
 
 比賽中可以用的按鍵，面板開著或收起來都有效：
 
@@ -231,7 +231,7 @@ The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vor
 - **我的檔案**：在遊戲裡播你自己的歌。在歌單裡按「加入檔案」或「加入資料夾」，或是把歌直接複製到下面說的音樂資料夾。點一首歌就開始播；每一列最後面的叉叉會把那首歌從清單拿掉，檔案本身還留在電腦裡。歌單、音量和重複方式下次開遊戲都還在。遊戲開起來時不會自己開始放歌。
 - **其他程式**：控制 Windows 認為正在放音樂的程式，例如 Spotify 或瀏覽器。面板只會開放那個程式允許的操作，不允許的按鈕會變灰，滑鼠停在上面就會說明原因。**這部分還沒在遊戲裡試過。** 遊戲是用系統管理員權限執行的，Windows 會不會讓它看到、控制其他程式，目前還不知道。
 
-工具列上的「設定」會打開一列選項：語言（跟隨 Windows、English 或繁體中文）、文字大小，以及遊戲不在最前面時，自己的歌要不要暫停。
+工具列上的「設定」會打開一列選項：語言（跟隨 Windows、English 或繁體中文）、文字大小、面板位置（下方中間或四個角落），以及遊戲不在最前面時，自己的歌要不要暫停。
 
 按「加入檔案」或「加入資料夾」時，遊戲上面會開一個一般的 Windows 檔案視窗，關掉它之前，遊戲不會回應鍵盤和滑鼠。遊戲在獨佔全螢幕模式時，這兩個按鈕會變灰，因為檔案視窗會讓遊戲縮到最小；這時請改用音樂資料夾，或把遊戲切成視窗或無邊框模式。
 
@@ -284,8 +284,8 @@ text_size=medium
 pause_when_unfocused=0
 ; my_files（我的檔案）或 other_app（其他程式）
 source=my_files
-; top-left、top-right、bottom-left 或 bottom-right
-corner=top-right
+; bottom-centre（下方中間，預設）、top-left、top-right、bottom-left 或 bottom-right
+corner=bottom-centre
 
 [keys]
 ; 按鍵名稱，例如 Insert、F7、Home，前面可以加 Ctrl+、Shift+ 或 Alt+；none = 不設按鍵
@@ -299,7 +299,7 @@ loop=F9
 media_keys=1
 ```
 
-`mode=display` 適合第一次小心試用：面板會畫出來，但不接受滑鼠和按鍵，也完全不碰遊戲視窗。面板會把你在面板裡改的設定（語言、文字大小、暫停、音樂來源）寫回這個檔案，音樂播放器也會在裡面保留自己的 `[music]` 段落；這兩部分請不要手動改。
+`mode=display` 適合第一次小心試用：面板會畫出來，但不接受滑鼠和按鍵，也完全不碰遊戲視窗。面板會把你在面板裡改的設定（語言、文字大小、暫停、音樂來源、面板位置）寫回這個檔案，音樂播放器也會在裡面保留自己的 `[music]` 段落；這兩部分請不要手動改。
 
 放在 `version.dll` 旁邊、檔名 `racing-master-mod.ini` 的檔案也會讀，而且以它的設定為準。兩個檔案都可以存成 UTF-8（有沒有 BOM 都行）或記事本裡叫「Unicode」的 UTF-16。`[mod]` 裡的設定值如果看不懂，模組會自己關掉，紀錄檔會寫出是哪一行、該怎麼改；`[panel]` 或 `[keys]` 裡看不懂的值則會用預設值，紀錄檔同樣會說明原因。
 

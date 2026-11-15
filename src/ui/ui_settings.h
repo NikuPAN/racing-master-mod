@@ -3,8 +3,9 @@
 #include "../core/settings.h"
 
 // Writes the values the player changes in the panel (language, text size, "pause music when the
-// game is not in focus", and the chosen source) back into the per-user settings.ini, so they
-// hold for the next session. Only those four keys under [panel] are touched; every other line of
+// game is not in focus", the chosen source and where the panel sits) back into the per-user
+// settings.ini, so they hold for the next session. Only those five keys under [panel] are touched
+// (language, text_size, pause_when_unfocused, source, corner); every other line of
 // the file is kept as it was, comments included. The file is written by a small thread of its
 // own, never by the thread that presents frames, and the hand-off takes no lock.
 //

@@ -89,6 +89,12 @@ struct Strings {
     const char* textLarge;
     const char* pauseWhenUnfocused;
     const char* pauseWhenUnfocusedHint;
+    const char* position;                // where the panel sits on the screen
+    const char* positionBottomCentre;
+    const char* positionTopLeft;
+    const char* positionTopRight;
+    const char* positionBottomLeft;
+    const char* positionBottomRight;
     const char* keysLine;                // six %s: panel, stop, previous, play or pause, next, repeat
     const char* keyNone;                 // an action without a key
 
@@ -105,7 +111,7 @@ inline const Strings kStringsEnglish = {
     "No songs yet",
     "Unknown title",
     "Settings",
-    "Language, text size and when to pause.",
+    "Language, text size, where the panel sits and when to pause.",
     "Hide",
     "Hide this panel. Press %s to show it again.",
 
@@ -170,6 +176,12 @@ inline const Strings kStringsEnglish = {
     "Pause music when the game is not in focus",
     "Your own songs pause when you switch to another window and carry on when you come back to the game. "
     "Music in another app is not paused.",
+    "Position",
+    "Bottom centre",
+    "Top left",
+    "Top right",
+    "Bottom left",
+    "Bottom right",
     "Keys while racing: %s shows or hides this panel, %s stops, %s plays the previous song, %s plays or pauses, "
     "%s plays the next song, %s changes what repeats.",
     "no key",
@@ -187,7 +199,7 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "還沒有歌曲",
     "未知標題",
     "設定",
-    "語言、文字大小和何時暫停。",
+    "語言、文字大小、面板位置和何時暫停。",   // DRAFT; "面板位置" added in 0.3.1
     "隱藏",
     "隱藏這個面板。按 %s 可以再顯示。",
 
@@ -248,6 +260,12 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "大",
     "遊戲不在前景時暫停音樂",
     "切換到其他視窗時，你自己的歌曲會暫停，回到遊戲就繼續。其他程式的音樂不會暫停。",
+    "位置",          // DRAFT (0.3.1), for the owner to review
+    "下方中間",      // DRAFT (0.3.1)
+    "左上",          // DRAFT (0.3.1)
+    "右上",          // DRAFT (0.3.1)
+    "左下",          // DRAFT (0.3.1)
+    "右下",          // DRAFT (0.3.1)
     "比賽中的按鍵：%s 顯示或隱藏面板，%s 停止，%s 上一首，%s 播放或暫停，%s 下一首，%s 切換重複方式。",
     "沒有按鍵",
 

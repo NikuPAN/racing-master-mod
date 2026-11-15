@@ -31,7 +31,13 @@ one consumer for the input queue).
 
 - **Settings row behind a "Settings" button** at the end of row 1 (and "Hide" next to it), so the
   bar stays three rows. The owner listed a settings row without saying when it shows.
-- **Corner: top-right** by default (`[panel] corner=`).
+- **Place: bottom centre** by default since 0.3.1 (the owner's decision, 2026-11-15: top-right
+  covered the game's diamond counter). The four corners stay selectable, in the settings row
+  ("Position", added in 0.3.1, bottom centre listed first) and as `[panel] corner=`. At the bottom
+  (centre or a bottom corner) the song list and the settings row open above the bar in mirror
+  order, so the bar never moves. The list shows up to 8 rows and fewer when the whole panel would
+  not fit on the screen (`ListRowsThatFit`, measured from the previous frame's content height);
+  run 35 checks five sizes down to 1024x576 with large text, list and settings row open.
 - **Add files / Add folder greyed** with the reason while a file window is already open and in
   exclusive full screen (the full-screen reason names the music folder). Added at integration.
 - **Short notices** in the corner when the panel is closed: for 10 s after start "Music panel:
