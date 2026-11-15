@@ -362,6 +362,9 @@ const char* RemoteMessageLine(const remote::Snapshot& snapshot, char* buffer, in
     const char* text = RemoteMessageText(g_language, id);
     char app[128];
     Utf8(snapshot.messageApp, app, sizeof(app));
+    if (!app[0]) {
+        strcpy_s(app, S().sourceOtherApp);   // an app with no readable name (remote/app_names.h)
+    }
     int used = 0;
     for (const char* p = text; *p && used < size - 1;) {
         if (strncmp(p, "{app}", 5) == 0) {

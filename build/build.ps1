@@ -235,7 +235,8 @@ $loaderSources = @(
     'src\core\game_close.cpp',
     'src\core\present_probe.cpp',
     'src\core\worker.cpp',
-    'src\remote\remote.cpp'
+    'src\remote\remote.cpp',
+    'src\remote\app_names.cpp'
 )
 # The music engine (src\music). The worker starts it and the panel calls it.
 $musicSources = @(
@@ -373,7 +374,8 @@ Invoke-Tool $link @('/nologo', "/OUT:$(Join-Path $out 'bystander.exe')", '/SUBSY
 # musictest.exe links the very same engine objects that go into version.dll and runs them without
 # a sound device (see tools\testhost\musictest.cpp). Same flags as the mod, so the STL is built the
 # same way on both sides. Media Foundation is imported normally here: a test program on this PC.
-# One file per area of the engine; each registers its own cases (see musictest.h).
+# One file per area of the engine; each registers its own cases (see musictest.h). It also links
+# the media remote's app names (src\remote\app_names.cpp: plain functions, no Windows media calls).
 $musicTestSources = @(
     'tools\testhost\musictest.cpp',
     'tools\testhost\musictest_fixtures.cpp',
@@ -385,13 +387,14 @@ $musicTestSources = @(
     'tools\testhost\musictest_opus.cpp',
     'tools\testhost\musictest_store.cpp',
     'tools\testhost\musictest_engine.cpp',
-    'tools\testhost\musictest_picker.cpp'
+    'tools\testhost\musictest_picker.cpp',
+    'tools\testhost\musictest_appnames.cpp'
 )
 $musicTestObjects = Build-Objects $musicTestSources ($musicIncludes + @("/I$(Join-Path $root 'src')", "/I$(Join-Path $vorbisDir 'include')"))
 $engineObjects = $musicObjects
 Invoke-Tool $link (@('/nologo', "/OUT:$(Join-Path $out 'musictest.exe')", '/SUBSYSTEM:CONSOLE', '/DEBUG',
     "/PDB:$(Join-Path $obj 'musictest.pdb')", '/OPT:REF', 'kernel32.lib', 'user32.lib') + $musicLibs +
-    $musicTestObjects + @((Join-Path $obj 'log.obj')) + $engineObjects + @($miniaudioObject, $stbObject, $xiphLib, $vorbisLib))
+    $musicTestObjects + @((Join-Path $obj 'log.obj'), (Join-Path $obj 'app_names.obj')) + $engineObjects + @($miniaudioObject, $stbObject, $xiphLib, $vorbisLib))
 
 Write-Host ''
 Write-Host "Built: $dll"

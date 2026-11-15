@@ -20,7 +20,9 @@ not wired into the worker yet). It sets `RACING_MASTER_MOD_TEST_HOST=1` for itse
 mistake cannot open WASAPI or show the file dialog. One file per area, each registering its cases
 with `MT_TEST(order, ...)`: `musictest_text` (helpers, crash-safe save), `_logic` (50 table rows,
 sweep, named cases), `_miniaudio`, `_vorbis`, `_mf`, `_opus` (decoders at source level, refusals),
-`_store` (playlist.tsv, settings merge), `_engine` (the real player thread), `_picker`.
+`_store` (playlist.tsv, settings merge), `_engine` (the real player thread), `_picker`, and
+`_appnames` (0.3.2: the media remote's app names from `src\remote\app_names.cpp`, cases 800-801,
+which link that one object; no media session is read).
 
 **Fixtures are generated each run**, all our own content (a 0.25-amplitude sine per track:
 A 440, B 660, C 880, G 500 Hz), in a folder named with Traditional and Simplified Chinese, a

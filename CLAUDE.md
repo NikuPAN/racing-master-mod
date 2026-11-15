@@ -239,7 +239,9 @@ full paths of `racing-master-mod.ini` beside the DLL and the per-user `settings.
   threads, the block written by the worker).
 - `src/remote/` — remote control of other music apps through Windows media sessions.
   `remote.h` is the panel's interface (plain types; `Snapshot` with a `Message` id for
-  translation); `remote.cpp` is the only file that includes the WinRT ABI headers. See
+  translation); `remote.cpp` is the only file that includes the WinRT ABI headers;
+  `app_names.cpp` turns Windows' app ids into the names the panel shows (also linked into
+  `musictest.exe`, cases 800-801). See
   `docs/agent-notes/media-remote-design.md`.
 - `src/music/` — the music engine (`docs/agent-notes/music-engine.md`): `player.h` is the
   public interface the panel codes against, `picker.h` the file dialogs, `player.cpp` the threads

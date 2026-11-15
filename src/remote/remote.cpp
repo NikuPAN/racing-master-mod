@@ -22,6 +22,8 @@
 
 #include "remote.h"
 
+#include "app_names.h"
+
 #include "../core/log.h"
 #include "../core/worker.h"
 
@@ -939,8 +941,10 @@ Reading Engine::ReadThroughFreshManager(const std::wstring& id) {
     return reading;
 }
 
-// Start menu lookup of the friendly name ("Chrome" -> "Google Chrome"); for an id Windows does not
-// know (a player that uses its file name), a tidied version of the id. Cached per id.
+// The name the panel shows for an app (app_names.h): the table of common players first, then
+// Windows' registered name for the id (Start menu), then the program file's own description, then
+// the id tidied. Never the raw id, never a browser profile; empty when nothing readable is left.
+// Cached per id.
 std::wstring Engine::AppName(const std::wstring& id) {
     for (const auto& entry : names_) {
         if (entry.first == id) {
@@ -948,38 +952,22 @@ std::wstring Engine::AppName(const std::wstring& id) {
         }
     }
     std::wstring name;
-    if (g_api.SHCreateItemInKnownFolder) {
-        IShellItem* item = nullptr;
-        if (SUCCEEDED(g_api.SHCreateItemInKnownFolder(FOLDERID_AppsFolder, KF_FLAG_DONT_VERIFY, id.c_str(),
-                                                      __uuidof(IShellItem), reinterpret_cast<void**>(&item))) &&
-            item) {
-            PWSTR display = nullptr;
-            if (SUCCEEDED(item->GetDisplayName(SIGDN_NORMALDISPLAY, &display)) && display) {
-                name = display;
-                g_api.CoTaskMemFree(display);
+    if (!TableAppName(id, &name)) {
+        std::wstring registered;
+        if (g_api.SHCreateItemInKnownFolder) {
+            IShellItem* item = nullptr;
+            if (SUCCEEDED(g_api.SHCreateItemInKnownFolder(FOLDERID_AppsFolder, KF_FLAG_DONT_VERIFY, id.c_str(),
+                                                          __uuidof(IShellItem), reinterpret_cast<void**>(&item))) &&
+                item) {
+                PWSTR display = nullptr;
+                if (SUCCEEDED(item->GetDisplayName(SIGDN_NORMALDISPLAY, &display)) && display) {
+                    registered = display;
+                    g_api.CoTaskMemFree(display);
+                }
+                item->Release();
             }
-            item->Release();
         }
-    }
-    if (name.empty() || name == id) {
-        name = id;
-        const size_t bang = name.find(L'!');
-        if (bang != std::wstring::npos && bang + 1 < name.size()) {
-            name = name.substr(bang + 1);
-        }
-        const size_t slash = name.find_last_of(L"\\/");
-        if (slash != std::wstring::npos && slash + 1 < name.size()) {
-            name = name.substr(slash + 1);
-        }
-        if (name.size() > 4 && lstrcmpiW(name.c_str() + name.size() - 4, L".exe") == 0) {
-            name.resize(name.size() - 4);
-        }
-        if (!name.empty() && name[0] >= L'a' && name[0] <= L'z') {
-            name[0] = static_cast<wchar_t>(name[0] - (L'a' - L'A'));
-        }
-        if (name.empty()) {
-            name = id;
-        }
+        name = ChooseAppName(id, registered, ProgramDescription(AppPathOf(id)));
     }
     if (names_.size() < 64) {
         names_.emplace_back(id, name);
@@ -1007,8 +995,13 @@ void Engine::SwitchTarget(Session* session, const std::wstring& id) {
         targetName_ = AppName(id);
         repeatMisses_ = 0;
         char id8[kAppIdChars * 3], name8[256];
-        Log("music apps: now controlling %s, shown as \"%s\" (%s)", Utf8(id, id8, sizeof(id8)),
-            Utf8(targetName_, name8, sizeof(name8)), following_ ? "Windows' choice" : "picked in the panel");
+        if (targetName_.empty()) {
+            Log("music apps: now controlling %s, which has no readable name, so the panel shows its song alone (%s)",
+                Utf8(id, id8, sizeof(id8)), following_ ? "Windows' choice" : "picked in the panel");
+        } else {
+            Log("music apps: now controlling %s, shown as \"%s\" (%s)", Utf8(id, id8, sizeof(id8)),
+                Utf8(targetName_, name8, sizeof(name8)), following_ ? "Windows' choice" : "picked in the panel");
+        }
     }
     session->AddRef();
     session_ = session;

@@ -38,6 +38,16 @@ Choices, each with the reason it exists:
   objects go stale, which is the expected failure in an elevated game.
 - **Titles and artists never reach the log** (players paste it into bug reports). App ids and
   names do.
+- **App names are made readable, never shown raw** (0.3.2, `app_names.cpp`). The owner's game run
+  of 2026-11-15 showed "Chrome.UserData.Profile1: <title>"; the profile must never show. Order:
+  a small table of common players and browsers (Chrome, Edge, Firefox's install-folder hashes,
+  Spotify, Apple Music, VLC, foobar2000, Media Player, Windows Media Player, YouTube Music), then
+  Windows' registered name (Start menu; skipped for browser profiles, whose registered name is
+  the profile's shortcut), then the program file's own FileDescription (a full path, or a bare
+  `name.exe` found under App Paths; read through System32's real `version.dll`, nothing from the
+  other process), then the id tidied (`Chrome.UserData.Profile1` -> `Chrome`). A bare hash gives
+  no name: the panel shows the song alone and "Other app" in messages. The test players keep
+  their id (the tests read it back). Musictest cases 800-801.
 - **The developer test's fake players do not exist outside the test host** (0.3.2). A session
   whose app id starts with `RacingMasterMod.TestHost.` is skipped in `ListSessions` and is never
   Windows' choice (`CurrentSessionId`), with one log line the first time. Reason: on 2026-11-15
