@@ -40,7 +40,7 @@ Planned, in this order:
    Windows asks for administrator permission because the folder is under Program Files.
 3. Start the game the way you always do.
 
-If it works, a white square with a dark centre appears in the top-left corner of the game window for 20 seconds, and a short note at the bottom centre says which key opens the music panel.
+If it works, a short note at the bottom centre of the game says which key opens the music panel.
 
 ### Remove
 
@@ -109,8 +109,8 @@ Optional. Create a text file named `settings.ini` in `%LOCALAPPDATA%\RacingMaste
 [mod]
 ; 0 = switched off, 1 = load and write the log only, 2 = full mod (default)
 stage=2
-; how long the white square stays on screen, in seconds (0 to 600)
-marker_seconds=20
+; a white test square in the top-left corner for this many seconds (0 to 600; 0, the default, shows none)
+marker_seconds=0
 
 [panel]
 ; on = the full panel (default); display = shown but cannot be clicked, no keys; off = no panel and no music
@@ -207,7 +207,7 @@ The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vor
    因為資料夾在 Program Files 底下，Windows 會跳出系統管理員權限的確認。
 3. 照平常的方式開遊戲。
 
-成功的話，遊戲視窗左上角會出現一個中間是深色的白色方塊，20 秒後消失；畫面下方中間也會跳出一行小提示，告訴你按哪個鍵打開音樂面板。
+成功的話，畫面下方中間會跳出一行小提示，告訴你按哪個鍵打開音樂面板。
 
 ### 移除
 
@@ -276,8 +276,8 @@ MP3、FLAC、WAV、OGG Vorbis（`.ogg`、`.oga`）、Opus（`.opus`），以及 
 [mod]
 ; 0 = 關閉，1 = 只載入並寫紀錄檔，2 = 完整模組（預設）
 stage=2
-; 白色方塊顯示幾秒（0 到 600）
-marker_seconds=20
+; 左上角顯示白色測試方塊幾秒（0 到 600；預設 0，不顯示）
+marker_seconds=0
 
 [panel]
 ; on = 完整面板（預設）；display = 只顯示，不能點也不能用按鍵；off = 沒有面板，也沒有音樂

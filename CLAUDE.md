@@ -46,8 +46,10 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   next input.
 - **Loader 0.2.0** (inside 0.3.0): forwards the 17 real `version.dll` functions, wakes up only
   inside `g112-Win64-Shipping.exe` (or `testhost.exe` with the test flag), hooks
-  `IDXGISwapChain::Present`/`Present1`, binds to the game's one swap chain, draws a marker square
-  for 20 s and writes `%LOCALAPPDATA%\RacingMasterMod\mod.log`.
+  `IDXGISwapChain::Present`/`Present1`, binds to the game's one swap chain, can draw a marker
+  square (off by default since 0.3.2: `marker_seconds=0`; the owner asked for it gone once the
+  loader had proven itself in three game runs; the host tests that look for it set it explicitly)
+  and writes `%LOCALAPPDATA%\RacingMasterMod\mod.log`.
 - **0.2.0 ran in the real game on 2026-11-14 (23:55-23:58, throwaway account):** steady 60 fps,
   no fault, and the game's own log shows a normal exit request. 0.2.0 logged nothing about window
   changes, so whether the owner's resize / mode-switch / alt-tab steps happened cannot be told
@@ -163,7 +165,7 @@ dumpbin: `link.exe /DUMP /NOLOGO /IMPORTS out\version.dll` (the fetched SDK has 
 
 ## Settings
 
-Two files, both optional, same `[mod]` keys (`stage` 0/1/2, `marker_seconds` 0..600). The music
+Two files, both optional, same `[mod]` keys (`stage` 0/1/2, `marker_seconds` 0..600, default 0). The music
 engine keeps its own `[music]` section in the first one (volume, loop, pause_when_game_unfocused,
 current, position_ms) and rewrites only that section, in UTF-8, keeping the `[mod]` lines; the
 loader skips `[music]` without logging "changed nothing". While a song plays, `current` and

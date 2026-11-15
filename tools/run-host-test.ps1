@@ -256,7 +256,11 @@ function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashta
 $gameFirstFrame = 'first frame: 2558x1360, format 24, buffers 2, swap effect 4, windowed 1, samples 1'
 
 try {
-    # 1. Game layout, mod active.
+    # 1. Game layout, mod active. Runs 1-3 look for the marker square, which is off by default since
+    # 0.3.2 (the owner's decision), so they ask for it.
+    foreach ($markerRoot in @('lad-active', 'lad-fault', 'lad-legacy')) {
+        Write-Ini (Join-Path $work "$markerRoot\RacingMasterMod\settings.ini") @('[mod]', 'marker_seconds=20') 'utf8'
+    }
     $run = Invoke-Run '1. game layout, mod active (T1-T6)' (Join-Path $work 'testhost.exe') @('game', $work, '8') $flag (Join-Path $work 'lad-active')
     $log = Read-Log $run.Log
     Record 'game layout: host checks T1-T6 pass' ($run.Exit -eq 0)
@@ -529,7 +533,7 @@ try {
     Write-Ini (Join-Path $musicIniRoot 'RacingMasterMod\settings.ini') @('[music]', 'volume=60', 'loop=all') 'utf8'
     $run = Invoke-Run '24. settings.ini with only a [music] section' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $musicIniRoot
     $log = Read-Log $run.Log
-    Record 'ini with only [music]: no "changed nothing" line, mod on' ($log.Contains('settings: read') -and -not $log.Contains('changed nothing') -and ($run.Lines -match '^marker: found').Count -eq 1)
+    Record 'ini with only [music]: no "changed nothing" line, mod on' ($log.Contains('settings: read') -and -not $log.Contains('changed nothing') -and $log.Contains('hook: attached to the frame presentation functions'))
 
     # --- music panel ------------------------------------------------------------------------------
     # 25. [panel] and [keys]: good values are taken, bad ones refused with a reason; the mod runs on.
@@ -658,7 +662,7 @@ try {
     $log = Read-Log $run.Log
     $expected = 'settings: found ' + (Join-Path $misplacedDir 'settings.ini') + ' next to version.dll and ignored it; the mod reads ' + (Join-Path $misplacedDir 'racing-master-mod.ini') + ' or ' + (Join-Path $misplacedRoot 'RacingMasterMod\settings.ini') + ', so rename the file to racing-master-mod.ini or move it into that second folder'
     Record 'misplaced settings.ini: one line names it as ignored and gives the full paths of the two files the mod reads' (([regex]::Matches($log, [regex]::Escape($expected))).Count -eq 1)
-    Record 'misplaced settings.ini: its stage=0 was not applied (the mod runs, the marker shows)' (($run.Lines -match '^marker: found').Count -eq 1 -and -not $log.Contains('stage 0: the mod is switched off'))
+    Record 'misplaced settings.ini: its stage=0 was not applied (the mod runs and hooks the frames)' ($log.Contains('hook: attached to the frame presentation functions') -and -not $log.Contains('stage 0: the mod is switched off'))
     Record 'no misplaced-file line when there is none (panel input run)' (-not (Read-Log (Join-Path $work 'lad-panel-panel-input\RacingMasterMod\mod.log')).Contains('next to version.dll and ignored it'))
 
     # 43-44. The panel switches itself off without a fault in the frame code (the marker and the

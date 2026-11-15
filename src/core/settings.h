@@ -43,8 +43,10 @@ struct UiSettings {
 struct Settings {
     // 0 = do nothing, 1 = load and write the log only, 2 = also hook frames and draw the marker.
     unsigned stage = 2;
-    // How long the "mod is alive" square stays on screen, 0 to 600 seconds.
-    unsigned markerSeconds = 20;
+    // How long the "mod is alive" square stays on screen, 0 to 600 seconds. Off by default since
+    // 0.3.2: the owner, after three clean game runs, "please remove the black and white square
+    // rendering as the plugin is proven to work". Kept as a setting for diagnosis.
+    unsigned markerSeconds = 0;
     // [debug] present_probe=1: the present probe (present_probe.h), a diagnostic; off by default.
     bool presentProbe = false;
     UiSettings ui;
