@@ -150,6 +150,7 @@ bool Invariant(const PlaylistState& s) {
         if (s.count == 0 && s.pos != -1) return false;
         if (s.count > 0 && (s.pos < 0 || s.pos >= s.count || s.order[static_cast<size_t>(s.pos)] != s.current)) return false;
         if (!s.nextOrder.empty() && !s.IsPermutation(s.nextOrder)) return false;
+        if (s.previousRoundLast >= s.count) return false;
     }
     if (s.count == 0) return s.current == -1 && s.status == State::Stopped;
     return s.current >= 0 && s.current < s.count && s.failures >= 0 && s.failures < s.count;
@@ -372,8 +373,20 @@ MT_TEST(225, LogicShuffleNamed, "playlist state machine: shuffle, named cases") 
     }
     {
         PlaylistState s = MakeShuffled({2, 0, 3, 1}, 2, Pl, All);
-        const bool ok = s.Previous(false).index == 0 && s.Previous(false).index == 2 && s.Previous(false).index == 1;
-        mt::Check(ok, "Previous goes back through the songs as they were heard (and round to the last)");
+        const bool ok = s.Previous(false).index == 0 && s.Previous(false).index == 2 && s.Previous(false).index == 2;
+        mt::Check(ok, "Previous goes back through the songs as they were heard; before the first song of the first round it "
+                      "starts that song again");
+    }
+    {
+        // Found by the engine test (2026-11-16): Previous right after a new round started went to
+        // the new round's last song. It must go back to the song just heard.
+        PlaylistState s = MakeShuffled({2, 0, 3, 1}, 3, Pl, All);
+        s.SetNextOrder({0, 3, 2, 1});
+        s.TrackEnded();   // into the next round: 0 plays
+        const Step back = s.Previous(false);
+        const Step forward = s.Next();
+        mt::Check(back.index == 1 && forward.index == 0 && s.order == std::vector<int>({1, 0, 3, 2}) && s.pos == 1,
+                  "at the start of a round, Previous goes back to the last song of the round before, and Next returns");
     }
     {
         PlaylistState s = MakeShuffled({2, 0, 3, 1}, 1, Pl, All);   // playing 0; 3 and 1 still to come

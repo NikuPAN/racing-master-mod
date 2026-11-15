@@ -51,6 +51,7 @@ struct PlaylistState {
     int pos = -1;                // shuffle on: where `current` is in `order` (-1 when the list is empty)
     std::vector<int> nextOrder;  // shuffle on: the next round, once the engine has made it; else empty
     bool roundEnded = false;     // shuffle on: a round ended without a next one; the engine makes one
+    int previousRoundLast = -1;  // shuffle on: the last song of the round before this one (for Previous); -1 = none
 
     // ---- shuffle ----
     // Switching on keeps the current song and plays the others after it (a rotation until the
@@ -61,6 +62,7 @@ struct PlaylistState {
         nextOrder.clear();
         pos = -1;
         roundEnded = false;
+        previousRoundLast = -1;
         if (!on || count == 0) return {};
         for (int i = 0; i < count; ++i) order.push_back((current + i) % count);
         pos = 0;
@@ -105,6 +107,7 @@ struct PlaylistState {
             return;
         }
         if (pos + 1 >= count && !nextOrder.empty() && nextOrder[0] == index) {
+            previousRoundLast = current;
             order.swap(nextOrder);
             nextOrder.clear();
             pos = 0;
@@ -113,7 +116,10 @@ struct PlaylistState {
         }
         if (index == current) return;
         const int at = static_cast<int>(std::find(order.begin(), order.end(), index) - order.begin());
-        if (at <= pos) roundEnded = true;   // it went round
+        if (at <= pos) {   // it went round
+            roundEnded = true;
+            previousRoundLast = current;
+        }
         pos = at;
         current = index;
     }
@@ -149,9 +155,19 @@ struct PlaylistState {
         failures = 0;
         if (status != State::Stopped && pastRestartPoint) return StartAt(current);
         if (shuffle) {
-            // Back through this round's order, the songs as they were heard.
+            // Back through this round's order, the songs as they were heard. At the start of a
+            // round, back to the last song of the round before: it is put in front of the current
+            // song, so Next comes back here and it is not played again later in this round. With
+            // no round before, the current song starts again.
             if (pos > 0) return StartAtPos(pos - 1);
-            return StartAtPos(loop == LoopMode::Off ? 0 : count - 1);
+            if (previousRoundLast >= 0 && previousRoundLast < count && previousRoundLast != current) {
+                const int song = previousRoundLast;
+                previousRoundLast = -1;
+                nextOrder.clear();   // the round's last song may have changed
+                order.erase(std::find(order.begin(), order.end(), song));
+                order.insert(order.begin(), song);
+            }
+            return StartAtPos(0);
         }
         if (current > 0) return StartAt(current - 1);
         return StartAt(loop == LoopMode::Off ? 0 : count - 1);
@@ -163,6 +179,7 @@ struct PlaylistState {
             // The chosen song plays next in the round; the songs still to come keep their order.
             // The round's last song may change, so a next round made for the old one is dropped.
             nextOrder.clear();
+            previousRoundLast = -1;
             const int at = static_cast<int>(std::find(order.begin(), order.end(), index) - order.begin());
             order.erase(order.begin() + at);
             if (at < pos) --pos;
@@ -204,6 +221,7 @@ struct PlaylistState {
     Step Inserted(int at, int howMany) {
         if (howMany <= 0 || at < 0 || at > count) return {};
         nextOrder.clear();   // made for the old list; the engine makes it again
+        previousRoundLast = -1;
         if (shuffle) {
             // Indices move up behind the insert; the new songs join the songs still to come (at the
             // end of the round; the engine mixes them in).
@@ -224,6 +242,7 @@ struct PlaylistState {
     Step Removed(int index) {
         if (index < 0 || index >= count) return {};
         nextOrder.clear();
+        previousRoundLast = -1;
         int removedAt = -1;
         if (shuffle) {
             removedAt = static_cast<int>(std::find(order.begin(), order.end(), index) - order.begin());
@@ -271,6 +290,7 @@ struct PlaylistState {
     Step Moved(int from, int to) {
         if (from < 0 || from >= count || to < 0 || to >= count || from == to) return {};
         nextOrder.clear();
+        previousRoundLast = -1;
         if (shuffle) {
             for (int& i : order) {
                 if (i == from) i = to;
@@ -292,6 +312,7 @@ struct PlaylistState {
         nextOrder.clear();
         pos = -1;
         roundEnded = false;
+        previousRoundLast = -1;
         status = State::Stopped;
         return wasStopped ? Step{} : Step{Action::Stop, -1};
     }
@@ -325,6 +346,7 @@ private:
             if (pos + 1 < count) return StartAtPos(pos + 1);
             // Every song of this round has had its turn: on to the next round, or this one again
             // until the engine makes a new one.
+            previousRoundLast = current;
             if (!nextOrder.empty()) {
                 order.swap(nextOrder);
                 nextOrder.clear();

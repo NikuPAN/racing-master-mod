@@ -82,7 +82,7 @@ logic switches to it (loop all plays its first song, loop off stops cued there).
 (an edit dropped it) the round starts again at `order[0]` and `roundEnded` asks the engine for
 a new order keeping the current song. Why a prepared next round: building the new round only
 after wrapping to `order[0]` made every round open with the same song (found 2026-11-16, before
-it shipped). Previous walks back through `order`. Choosing a song moves it to just after the
+it shipped). Previous walks back through `order`; at the start of a round it brings back the last song of the round before (`previousRoundLast`, put in front of the current song so Next returns), and with no round before it restarts the current song (found by engine test 595, 2026-11-16: it used to jump to the new round's last song). Choosing a song moves it to just after the
 current one and starts it, so the rest of the round keeps its order (and drops a prepared next
 round, whose opening song was chosen against the old last song). Removing the playing song
 starts the next one in `order`; added songs join the end of the round; list edits drop the
