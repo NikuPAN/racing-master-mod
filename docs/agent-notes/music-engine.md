@@ -49,7 +49,10 @@ would make that permanent. Musictest case 115 ends a saving process 100 times at
 (the old swap left the file missing after 9 of 100, the single rename after none).
 While a song plays its position is saved every 10 s (`kPositionSaveIntervalMs`, 30 s before
 0.3.1), and a `[music]` save whose values equal the last one handed to a save is skipped
-(`QueueSettingsSave`), so a song that stands still writes nothing. Reason: the owner's game
+(`QueueSettingsSave`), so a song that stands still writes nothing. A `[music]` save that did not
+reach the file (settings.ini held by another program, or a failed write) is reported back by the
+I/O thread (`IoMessage` with `flag`), which clears `haveSaved_`, so the next save writes the same
+values again (musictest case 587; before 0.3.1's fix the values counted as saved). Reason: the owner's game
 closed twice without the mod seeing it (0.3.0, 2026-11-15), and a forced exit loses at most the
 last 10 s of the place in the song. The final save at `Shutdown` runs after the I/O thread has
 stopped (one writer per file). Musictest case 585 checks the periodic save with a 300 ms

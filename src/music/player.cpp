@@ -474,7 +474,12 @@ private:
                 break;
             case CommandKind::FilesFound: AddPaths(c.paths, c.flag, c.text); break;
             case CommandKind::TagsReady: ApplyTags(c.tags); break;
-            case CommandKind::IoMessage: SetMessage(c.text); break;
+            case CommandKind::IoMessage:
+                // flag: a [music] save did not reach the file, so the values last handed to a save
+                // are not on disk; the next save writes them even if nothing changed.
+                if (c.flag) haveSaved_ = false;
+                SetMessage(c.text);
+                break;
             case CommandKind::SaveNow: HandleSaveNow(); break;
             case CommandKind::Nop: break;
             case CommandKind::Shutdown: break;
@@ -1638,6 +1643,7 @@ private:
                             LogSettingsLeftAsIs(error);
                             Command failed;
                             failed.kind = CommandKind::IoMessage;
+                            failed.flag = true;   // not saved: QueueSettingsSave must not skip these values
                             failed.text = FileName(job.path, false) +
                                           L" could not be read just now, so the music settings were not saved into it; "
                                           L"they are saved again at the next change";
@@ -1646,6 +1652,7 @@ private:
                             Log("music: could not save %s (Windows error %lu)", Utf8(FileName(job.path, false)).c_str(), error);
                             Command failed;
                             failed.kind = CommandKind::IoMessage;
+                            failed.flag = job.kind == IoJob::Kind::SaveSettings;
                             failed.text = FileName(job.path, false) + L" could not be saved (Windows error " +
                                           std::to_wstring(error) + L"); it is saved again at the next change";
                             Post(std::move(failed));

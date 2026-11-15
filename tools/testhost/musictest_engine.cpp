@@ -538,6 +538,46 @@ MT_TEST(586, EngineSaveNow, "engine: SaveNow writes the song and its place at on
     mt::Check(testing::GetCounters().settingsSaves == before + 1, "a second SaveNow with nothing changed writes nothing");
 }
 
+// A [music] save that did not reach the file (another program held settings.ini, or the write
+// failed) must not count as saved: the next SaveNow or periodic save writes the same values again,
+// even though nothing changed since. Otherwise the place could stay unsaved until the final save,
+// which a game that ends from its own menu or crashes never makes.
+MT_TEST(587, EngineSaveRetried, "engine: a settings save that could not be written is made again by the next SaveNow") {
+    const Fixtures& f = Files();
+    Session session(mt::NewDir(L"save retried"));
+    const std::wstring path = session.dir + L"\\settings.ini";
+    P().AddFiles({f.a10});
+    testing::WaitForIdleIo(5000);
+    P().PlayIndex(0);
+    testing::Sync(5000);
+    const ULONGLONG until = GetTickCount64() + 800;
+    while (GetTickCount64() < until) {
+        testing::Sync(2000);
+        Sleep(20);
+    }
+    testing::WaitForIdleIo(5000);
+    Render(0.6, nullptr);   // no more audio is pulled after this, so the place stands still
+    // Another program holds settings.ini (no sharing): the engine cannot read it and leaves it as it is.
+    const HANDLE held = CreateFileW(path.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    P().SaveNow();
+    testing::Sync(5000);
+    testing::WaitForIdleIo(5000);
+    if (held != INVALID_HANDLE_VALUE) CloseHandle(held);
+    MusicSettings saved;
+    ReadMusicSection(mt::ReadBytes(path), &saved);
+    mt::Check(held != INVALID_HANDLE_VALUE && saved.positionMs < 500,
+              "while another program holds settings.ini, the place is not written into it", "position_ms=%lld",
+              static_cast<long long>(saved.positionMs));
+    testing::Sync(5000);   // the I/O thread's report of the failed save reaches the player thread
+    P().SaveNow();
+    testing::Sync(5000);
+    testing::WaitForIdleIo(5000);
+    ReadMusicSection(mt::ReadBytes(path), &saved);
+    mt::Check(saved.currentPath == f.a10 && saved.positionMs >= 550 && saved.positionMs <= 650,
+              "once it is free, the next SaveNow writes the place, although nothing changed since", "position_ms=%lld",
+              static_cast<long long>(saved.positionMs));
+}
+
 MT_TEST(590, EngineFolders, "engine: drop-in folder, Add folder, natural order, duplicates") {
     const std::wstring dir = mt::NewDir(L"folders");
     CreateDirectoryW((dir + L"\\music").c_str(), nullptr);
