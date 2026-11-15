@@ -160,6 +160,17 @@ when Visual Studio has the compiler but no
 headers. The build also writes `out\version.pdb` and `out\version.map` for turning a fault
 offset from the log into a source line. **Never ship the PDB next to the DLL.**
 
+**GitHub Actions and releases** (owner's request, 2026-11-15: release the music player and the DLSS
+plugin as separate downloads). `.github/workflows/build.yml` builds with every gate on each push
+and keeps `version.dll` as a 7-day artifact; it does not run the host test (Direct3D output and
+media sessions are not dependable on GitHub's server runners), so the local suite stays the gate
+before every commit. `.github/workflows/release-music.yml` runs on a `music-vX.Y.Z` tag: build,
+refuse if the DLL's FileVersion is not X.Y.Z, zip `version.dll` + `docs/release/INSTALL-music-panel.txt`
+(as INSTALL.txt, both languages) + LICENSE + THIRD_PARTY.md, attach the zip and its SHA-256 to a
+release titled "Music panel X.Y.Z". The DLSS plugin gets its own workflow and `dlss-v` tags when it
+exists. Creating a tag publishes a release: only on the owner's say-so. While the repo is private,
+only collaborators can download releases.
+
 Both scripts run from the repo root. To inspect the DLL's imports by hand use the MSVC linker as
 dumpbin: `link.exe /DUMP /NOLOGO /IMPORTS out\version.dll` (the fetched SDK has no `dumpbin.exe`).
 

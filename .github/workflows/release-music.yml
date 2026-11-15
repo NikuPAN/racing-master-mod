@@ -1,0 +1,69 @@
+# Publishes the music panel as a GitHub Release when a tag like music-v0.3.2 is pushed:
+#   git tag music-v0.3.2 && git push origin music-v0.3.2
+# The DLL's own version (src\loader\version.rc) must match the tag, so a release can never carry
+# a DLL that says something else. The zip holds version.dll, a short install guide in both
+# languages, the licence and the third-party notices.
+#
+# The DLSS plugin gets its own workflow and its own tags (dlss-v...), so the two are downloaded
+# and installed separately.
+
+name: release music panel
+
+on:
+  push:
+    tags: ['music-v*']
+
+permissions:
+  contents: write   # to create the release
+
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: .deps
+          key: deps-${{ hashFiles('build/fetch-deps.ps1') }}
+
+      - name: Build
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File build\build.ps1
+
+      - name: Check the DLL's version against the tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $want = $tag.Substring('music-v'.Length)
+          $have = [Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path 'out\version.dll')).FileVersion
+          if ($have -ne $want) { throw "The tag says $want but version.dll says $have. Bump the version first." }
+          "version=$want" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Pack
+        shell: pwsh
+        run: |
+          $v = '${{ steps.version.outputs.version }}'
+          $dir = "racing-master-music-panel-$v"
+          New-Item -ItemType Directory $dir | Out-Null
+          Copy-Item out\version.dll, LICENSE, THIRD_PARTY.md $dir
+          Copy-Item docs\release\INSTALL-music-panel.txt (Join-Path $dir 'INSTALL.txt')
+          Compress-Archive -Path "$dir\*" -DestinationPath "$dir.zip"
+          (Get-FileHash "$dir.zip" -Algorithm SHA256).Hash.ToLower() + "  $dir.zip" | Out-File "$dir.zip.sha256" -Encoding ascii
+
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = '${{ steps.version.outputs.version }}'
+          $notes = @"
+          Music panel $v for Racing Master (PC).
+
+          Download racing-master-music-panel-$v.zip below, unzip it and follow INSTALL.txt (English and 繁體中文), or the step-by-step guide in the README.
+
+          Use a spare account first: the game does not allow mods and an account can be banned.
+          "@
+          gh release create '${{ github.ref_name }}' "racing-master-music-panel-$v.zip" "racing-master-music-panel-$v.zip.sha256" `
+            --title "Music panel $v" --notes $notes
