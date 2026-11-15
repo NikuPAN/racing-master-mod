@@ -5,7 +5,7 @@ type: reference
 ---
 
 State: N tracks, current index c (-1 exactly when N = 0), status St / Pl / Pa, loop Off / All /
-One, f = failures in a row. Shuffle is always off. Every row below is one or more cases in
+One, f = failures in a row. The 50 rows are with shuffle off; shuffle is below. Every row below is one or more cases in
 `tools/testhost/musictest_logic.cpp` ("row 12: ..."), next to the design brief's invariant sweep
 (273 states x 15 events x 7 arguments).
 
@@ -73,3 +73,16 @@ off, Previous restarts after 3 s, Next/Previous start playback) are encoded here
 **How to apply:** change behaviour by changing the row here, the code in `playlist_logic.h` and
 its case in `musictest_logic.cpp` together. `Moved` exists in the logic but `Player` has no move
 command yet (the panel contract has none).
+
+**Shuffle (0.3.3, the owner's request of 2026-11-15).** With shuffle on the logic walks `order`
+(a permutation, this round's play order; `order[pos] == c`) instead of the list: Next, the end
+of a song, a failed song and `PeekNextOnEnd` take `order[pos + 1]`; at the end of the round loop
+all starts `order[0]` again and loop off stops cued at `order[0]`, both setting `roundEnded` so
+the engine hands over a new order that starts with the current song. Previous walks back
+through `order`. Choosing a song moves it to just after the current one and starts it, so the
+rest of the round keeps its order. Removing the playing song starts the next one in `order`;
+added songs join the end of the round. Switching shuffle off continues the list in order from
+the current song. `Arrived(index)` is the gapless change-over (decided on a copy) and keeps
+`pos` in step. Tested by the shuffle sweep (every order of up to 4 songs, 18 events,
+412,522 checks, including Arrived landing where TrackEnded goes) and the named shuffle cases
+(musictest 215, 225). How the order is made lives in the engine, not here.
