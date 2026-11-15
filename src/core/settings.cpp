@@ -156,7 +156,7 @@ void ApplyPanelKey(const char* key, const char* value, const char* path8, UiSett
 }
 
 void ApplyKeysKey(const char* key, const char* value, const char* path8, UiSettings* ui) {
-    static const char* const kActions[UiKeyCount] = {"panel", "stop", "previous", "play_pause", "next", "loop"};
+    static const char* const kActions[UiKeyCount] = {"panel", "stop", "previous", "play_pause", "next", "loop", "shuffle"};
     const int action = MatchWord(key, kActions, UiKeyCount);
     if (action >= 0) {
         if (strlen(value) < sizeof(ui->keys[action])) {

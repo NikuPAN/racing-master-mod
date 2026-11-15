@@ -26,6 +26,12 @@ and owner-only notes stay in `docs/agent-notes/local/`.
   song measured once with EBU R128 on a background thread, played at -14 LUFS, on by default),
   a volume slider on the compact panel, and the README rewritten short with Chinese first. Suite
   462/462 (2026-11-15). Merged into main only after the owner's game test (the owner's choice).
+- **Shuffle (0.3.3, branch `feature/shuffle`):** fair shuffle for "My files", the owner's choice
+  of 2026-11-15: every song once per round, songs not heard lately first (a song counts as heard
+  after 30 s; `P` lines in playlist.tsv), the same artist never back-to-back, the next round made
+  while the last song plays so rounds never open with the same song. Button after Repeat, F10,
+  `[music] shuffle`. Spotify's Smart Shuffle adds recommended songs; that needs the internet,
+  which this mod never uses. Details: `music-engine-playlist-table.md`, `music-panel.md`.
 - **DLSS (paused):** branches `dlss/capture` and `dlss/plugin`, unmerged. `dlss/plugin` ends in a
   WIP checkpoint (6ff77f9) holding what used to be uncommitted in its old worktree folder.
 - **Version 0.3.1 (branch `fix/0.3.1`, merged into main; test host only)**: the fixes for what the

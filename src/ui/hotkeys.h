@@ -13,8 +13,10 @@
 // Matching: the key must be the one pressed and every modifier a hotkey names must be held.
 // Modifiers it does not name are ignored, so F7 still works while the player holds Shift (turbo).
 
-// The order matches UiKey in src/core/settings.h.
-enum class Command { TogglePanel = 0, Stop, Previous, PlayPause, Next, LoopMode, Count };
+// The order matches UiKey in src/core/settings.h. Shuffle (F10) since 0.3.3: F10 reaches the window
+// as WM_SYSKEYDOWN (the menu key), which the input path treats like any key, so a matched F10
+// never opens the window menu.
+enum class Command { TogglePanel = 0, Stop, Previous, PlayPause, Next, LoopMode, Shuffle, Count };
 constexpr int kCommandCount = static_cast<int>(Command::Count);
 
 struct Hotkey {
@@ -40,5 +42,5 @@ void HotkeyDisplayName(const Hotkey& key, const char* noneWord, char* buffer, in
 // The accepted names, for the log line that explains a refused value.
 const char* HotkeyAcceptedNames();
 
-// The default table (Insert, F5, F6, F7, F8, F9).
+// The default table (Insert, F5, F6, F7, F8, F9, F10).
 HotkeyTable DefaultHotkeys();

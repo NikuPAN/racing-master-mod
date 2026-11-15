@@ -670,7 +670,7 @@ void PanelStart(const UiSettings& settings, bool testHost) {
     }
 
     // Hotkeys: each [keys] value is checked here; a refused one keeps its default and says why.
-    static const char* const kActionNames[kCommandCount] = {"panel", "stop", "previous", "play_pause", "next", "loop"};
+    static const char* const kActionNames[kCommandCount] = {"panel", "stop", "previous", "play_pause", "next", "loop", "shuffle"};
     HotkeyTable* table = new HotkeyTable(DefaultHotkeys());   // published once, never freed
     for (int i = 0; i < kCommandCount; ++i) {
         Hotkey key;
@@ -687,8 +687,8 @@ void PanelStart(const UiSettings& settings, bool testHost) {
         HotkeyDisplayName(table->keys[i], "none", names[i], sizeof(names[i]));
     }
     {
-        Log("panel: keys %s panel, %s stop, %s previous, %s play or pause, %s next, %s repeat; media keys %s",
-            names[0], names[1], names[2], names[3], names[4], names[5], table->mediaKeys ? "on" : "off");
+        Log("panel: keys %s panel, %s stop, %s previous, %s play or pause, %s next, %s repeat, %s shuffle; media keys %s",
+            names[0], names[1], names[2], names[3], names[4], names[5], names[6], table->mediaKeys ? "on" : "off");
     }
     Shared().hotkeys.store(table, std::memory_order_release);
 

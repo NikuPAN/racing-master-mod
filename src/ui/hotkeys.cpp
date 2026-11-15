@@ -185,6 +185,7 @@ HotkeyTable DefaultHotkeys() {
     table.keys[static_cast<int>(Command::PlayPause)].vk = VK_F7;
     table.keys[static_cast<int>(Command::Next)].vk = VK_F8;
     table.keys[static_cast<int>(Command::LoopMode)].vk = VK_F9;
+    table.keys[static_cast<int>(Command::Shuffle)].vk = VK_F10;
     table.mediaKeys = true;
     return table;
 }

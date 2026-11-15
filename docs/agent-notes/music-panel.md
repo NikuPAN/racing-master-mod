@@ -52,6 +52,17 @@ one consumer for the input queue).
   shoots it at all six places and once with the other app (K1-K6, K2 also requires the volume
   slider, K5 its absence); the input run checks the buttons, the volume slider, the save, Insert
   and the setting (I24). Stop, repeat, the source, the list and the settings are not on it.
+- **Shuffle (0.3.3, the owner's request of 2026-11-15):** an icon button (crossed arrows,
+  `Icon::Shuffle`) right after Repeat on the full panel's second row, for "My files" only, lit
+  with `ButtonActive` while on; its hover text says what shuffle does. F10 (`Command::Shuffle`,
+  `[keys] shuffle=`) switches it with the panel open or closed; closed, a short notice says
+  "Shuffle: on/off". With "Other app" the button is not there and F10 shows "Shuffle works with
+  your own songs" even with the panel open (never silent). F10 is the menu key and arrives as
+  `WM_SYSKEYDOWN`; the input path consumes a matched system key, so the window menu never opens
+  (I7 sends it that way). The compact panel has no shuffle button (owner's choice, to stay in the
+  970 px strip). Layout file: `shuffle`. Minimal-mode test run maps it to F19 so the suite never
+  registers a real F10 system-wide. How rounds are made: `music-engine-playlist-table.md`,
+  `src/music/shuffle.h`.
 - **Two windows since 0.3.2** (the owner's decision 6): the bar alone (`###rmm_panel`, always
   three rows, also for "Other app" with nothing playing, so its height never changes), anchored at
   its place, and beside it, away from the screen edge, `###rmm_extras` with the status lines (the

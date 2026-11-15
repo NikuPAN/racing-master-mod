@@ -44,6 +44,8 @@
 - **我的檔案**：播你電腦裡的歌。按「加入檔案」或「加入資料夾」，或者把歌複製到 `%LOCALAPPDATA%\RacingMasterMod\music`，每次開遊戲都會自動加進歌單。
 - **其他程式**：控制 Spotify、瀏覽器這類正在播音樂的程式。按鈕變灰的話，代表那個程式不開放這項操作，滑鼠停在上面會說明原因。
 
+重複按鈕旁邊是**隨機播放**（只用在我的檔案）：每首歌播過一次才會重複，很久沒聽的歌先播，同一個歌手不會連著出現。
+
 ![歌單展開：加入檔案、加入資料夾、清空清單和歌曲數量](docs/screenshots/list.png)
 
 「設定」裡可以換語言、文字大小和面板位置（四個角落、上方中間或下方中間），還有三個開關：
@@ -66,6 +68,7 @@
 | F7 | 播放或暫停 |
 | F8 | 下一首 |
 | F9 | 重複方式：不重複、這一首、整個清單 |
+| F10 | 開關隨機播放 |
 
 鍵盤上的多媒體鍵也可以控制你的歌。
 
@@ -98,6 +101,7 @@ previous=F6
 play_pause=F7
 next=F8
 loop=F9
+shuffle=F10
 ; 1 = 鍵盤的多媒體鍵可以控制你的歌
 media_keys=1
 ```
@@ -152,6 +156,8 @@ The two buttons at the left of the panel choose where the music comes from:
 - **My files**: songs on your computer. Use **Add files** or **Add folder**, or copy songs into `%LOCALAPPDATA%\RacingMasterMod\music` and they are added every time the game starts.
 - **Other app**: controls Spotify, a browser or another app that is playing music. A greyed-out button means that app doesn't allow it; rest the pointer on it to see why.
 
+Next to the repeat button is **shuffle** (My files only): every song plays once before any repeats, songs you haven't heard lately come first, and the same artist never plays twice in a row.
+
 ![The song list open: Add files, Add folder, Clear list and the song count](docs/screenshots/list.png)
 
 **Settings** has the language, the text size and where the panel sits (any corner, top centre or bottom centre), plus three switches:
@@ -174,6 +180,7 @@ Keys you can use while racing, even with the panel hidden:
 | F7 | play or pause |
 | F8 | next song |
 | F9 | repeat: off, this song, the whole list |
+| F10 | shuffle on or off |
 
 Your keyboard's media keys work for your songs too.
 
@@ -206,6 +213,7 @@ previous=F6
 play_pause=F7
 next=F8
 loop=F9
+shuffle=F10
 ; 1 = your keyboard's media keys control your songs
 media_keys=1
 ```

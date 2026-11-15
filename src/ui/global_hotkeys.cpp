@@ -26,7 +26,7 @@ DWORD WINAPI HotkeyThread(LPVOID param) {
     MSG message;
     PeekMessageW(&message, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
 
-    static const char* const kActionNames[kCommandCount] = {"panel", "stop", "previous", "play_pause", "next", "loop"};
+    static const char* const kActionNames[kCommandCount] = {"panel", "stop", "previous", "play_pause", "next", "loop", "shuffle"};
     int registered = 0;
     for (int i = 0; i < kCommandCount; ++i) {
         const Hotkey& key = table->keys[i];

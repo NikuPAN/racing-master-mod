@@ -40,6 +40,11 @@ struct Strings {
     const char* loopHint;
     const char* loopUnknownHint;
     const char* loopUnknownInfo;         // hover text when the app neither says nor allows it
+    const char* shuffleOn;               // 0.3.3: the short notice when F10 switches shuffle on
+    const char* shuffleOff;              // ... and off
+    const char* shuffleOnHint;           // hover text of the shuffle button while it is on
+    const char* shuffleOffHint;          // ... and while it is off
+    const char* shuffleOwnSongs;         // notice: shuffle works on "My files" only
     const char* volumeWord;              // in front of the volume slider (the slider shows the percentage)
     const char* volumeHint;
 
@@ -107,7 +112,7 @@ struct Strings {
     const char* compactPanelHint;
     const char* makeCompact;             // hover text of the full panel's button that makes it one row
     const char* showFullPanel;           // hover text of the compact panel's button that brings the full one back
-    const char* keysLine;                // six %s: panel, stop, previous, play or pause, next, repeat
+    const char* keysLine;                // seven %s: panel, stop, previous, play or pause, next, repeat, shuffle
     const char* keyNone;                 // an action without a key
 
     // Short notices in the corner
@@ -139,6 +144,12 @@ inline const Strings kStringsEnglish = {
     "Click to change what repeats: nothing, this song, or the whole list.",
     "This app does not say what repeats. Click to change it.",
     "This app does not say what repeats.",
+    "Shuffle: on",
+    "Shuffle: off",
+    "Shuffle: on. Every song plays once before any repeats, songs you haven't heard lately come first, and the "
+    "same artist is never played twice in a row. Click to play in list order.",
+    "Shuffle: off. Songs play in list order. Click to shuffle.",
+    "Shuffle works with your own songs (My files).",
     "Volume",
     "Drag to make the music louder or quieter.",
 
@@ -210,7 +221,7 @@ inline const Strings kStringsEnglish = {
     "Make the panel one row (compact panel).",
     "Show the full panel.",
     "Keys while racing: %s shows or hides this panel, %s stops, %s plays the previous song, %s plays or pauses, "
-    "%s plays the next song, %s changes what repeats.",
+    "%s plays the next song, %s changes what repeats, %s turns shuffle on or off.",
     "no key",
 
     "Music panel: press %s to show it.",
@@ -242,6 +253,11 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "按一下切換重複方式：不重複、這一首、整個清單。",
     "這個程式沒有提供重複方式。按一下可以切換。",
     "這個程式沒有提供重複方式。",
+    "隨機播放：開",   // DRAFT (0.3.3)
+    "隨機播放：關",   // DRAFT (0.3.3)
+    "隨機播放：開。每首歌播過一次才會重複，很久沒聽的歌先播，同一個歌手不會連著出現。按一下改回照清單順序播。",   // DRAFT (0.3.3)
+    "隨機播放：關。照清單順序播。按一下開始隨機播放。",   // DRAFT (0.3.3)
+    "隨機播放只用在你自己的歌（我的檔案）。",   // DRAFT (0.3.3)
     "音量",
     "拖曳可以調整音量。",
 
@@ -305,7 +321,7 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "只留一列：上一首、播放、下一首、歌名和時間，適合畫面空間不多的時候。按最右邊的按鈕就能回到完整面板。",   // DRAFT (0.3.2)
     "把面板縮成一列（精簡面板）。",   // DRAFT (0.3.2)
     "顯示完整面板。",                 // DRAFT (0.3.2)
-    "比賽中的按鍵：%s 顯示或隱藏面板，%s 停止，%s 上一首，%s 播放或暫停，%s 下一首，%s 切換重複方式。",
+    "比賽中的按鍵：%s 顯示或隱藏面板，%s 停止，%s 上一首，%s 播放或暫停，%s 下一首，%s 切換重複方式，%s 開關隨機播放。",   // DRAFT (0.3.3: shuffle added)
     "沒有按鍵",
 
     "音樂面板：按 %s 顯示。",

@@ -874,7 +874,9 @@ void PostKey(Host& host, UINT vk, bool down, bool repeat = false) {
     LPARAM l = 1 | (static_cast<LPARAM>(MapVirtualKeyW(vk, MAPVK_VK_TO_VSC)) << 16);
     if (repeat) l |= 1LL << 30;
     if (!down) l |= (1LL << 30) | (1LL << 31);
-    PostMessageW(host.window, down ? WM_KEYDOWN : WM_KEYUP, vk, l);
+    // F10 is the menu key: Windows sends it as a system key, so the test does too.
+    const bool system = vk == VK_F10;
+    PostMessageW(host.window, down ? (system ? WM_SYSKEYDOWN : WM_KEYDOWN) : (system ? WM_SYSKEYUP : WM_KEYUP), vk, l);
 }
 
 void Key(Host& host, UINT vk) {
@@ -1540,9 +1542,9 @@ void ScriptInput(Host& host) {
           ok && g_gotLDown.load() == lDown && g_gotLUp.load() == lUp);
 
     // Hotkeys with the panel open. None of them reaches the game.
-    const UINT keys[5] = {VK_F5, VK_F6, VK_F7, VK_F8, VK_F9};
-    int keyDowns[5], keyUps[5];
-    for (int i = 0; i < 5; ++i) {
+    const UINT keys[6] = {VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_F10};
+    int keyDowns[6], keyUps[6];
+    for (int i = 0; i < 6; ++i) {
         keyDowns[i] = g_gotKeyDown[keys[i]].load();
         keyUps[i] = g_gotKeyUp[keys[i]].load();
     }
@@ -1571,14 +1573,28 @@ void ScriptInput(Host& host) {
     printf("  repeat mode before %d, after two quick F9 presses %d\n", loopBefore, ReadLayout().Int("loop"));
     Check("I22 F9 pressed twice quickly steps what repeats twice",
           reached && ReadLayout().Int("loop") == (loopBefore + 2) % 3);
+    // Shuffle (0.3.3): F10, sent as the system key Windows makes of it, and the button. Ends off,
+    // so the steps below still find the songs in list order.
+    const int shuffleBefore = ReadLayout().Int("shuffle");
+    Key(host, VK_F10);
+    Check("I7 F10 (a system key, as Windows sends it) switches shuffle",
+          WaitLayout(host, [&](const LayoutFile& l) { return l.Int("shuffle") == 1 - shuffleBefore; }));
+    const int shuffleNow = ReadLayout().Int("shuffle");
+    Click(host, Item("shuffle"));
+    Check("I7 the shuffle button switches it back",
+          WaitLayout(host, [&](const LayoutFile& l) { return l.Int("shuffle") == 1 - shuffleNow; }));
+    if (ReadLayout().Int("shuffle") == 1) {
+        Click(host, Item("shuffle"));
+        WaitLayout(host, [](const LayoutFile& l) { return l.Int("shuffle") == 0; });
+    }
     Key(host, VK_F7);   // back to playing, so Stop has something to stop
     Key(host, VK_F5);
     Check("I7 F5 stops", WaitLayout(host, [](const LayoutFile& l) { return l.Int("state") == 0; }));
     bool none = true;
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 6; ++i) {
         none = none && g_gotKeyDown[keys[i]].load() == keyDowns[i] && g_gotKeyUp[keys[i]].load() == keyUps[i];
     }
-    Check("I7 none of F5-F9 reached the game", none);
+    Check("I7 none of F5-F10 reached the game (F10 would have opened the window menu)", none);
 
     // Auto-repeat of a held hotkey is kept from the game and does not act again.
     index = ReadLayout().Int("index");
@@ -2063,6 +2079,10 @@ void ScriptOtherReal(Host& host) {
           WaitForModLog(host, ("\"loop one\" sent to " + id + ": accepted").c_str(), 6000));
     Key(host, VK_F7);
     Check("O5 F7 pauses the other app", WaitLayout(host, [](const LayoutFile& l) { return l.Int("other_playing") == 0; }, 6000));
+    const int shuffleOwn = ReadLayout().Int("shuffle");
+    Key(host, VK_F10);
+    Check("O7 F10 with Other app says shuffle is for your own songs and changes nothing",
+          WaitLayout(host, [](const LayoutFile& l) { return l.Int("toast") == 1; }) && ReadLayout().Int("shuffle") == shuffleOwn);
 
     MoveAway(host);
     CheckShot("O6 the panel showing the other app", Shoot(host, "integrated-other-app"), true);

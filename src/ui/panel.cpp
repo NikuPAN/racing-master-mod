@@ -289,7 +289,8 @@ void FolderChosen(const std::wstring& folder) {
 
 // Expand: arrows pointing out to two corners (the compact panel's way back to the full one).
 // Compact: arrows pointing in from them (the full panel's way to one row).
-enum class Icon { Previous, Play, Pause, Stop, Next, Expand, Compact };
+// Shuffle: two crossing arrows pointing right (0.3.3).
+enum class Icon { Previous, Play, Pause, Stop, Next, Expand, Compact, Shuffle };
 
 void DrawIcon(Icon icon, ImVec2 min, ImVec2 max, ImU32 colour) {
     ImDrawList* draw = ImGui::GetWindowDrawList();
@@ -335,6 +336,18 @@ void DrawIcon(Icon icon, ImVec2 min, ImVec2 max, ImU32 colour) {
             for (const ImVec2* head : {upper, lower}) {
                 draw->AddLine(head[0], head[1], colour, t);
                 draw->AddLine(head[1], head[2], colour, t);
+            }
+            break;
+        }
+        case Icon::Shuffle: {
+            const float t = ImMax(1.5f, s * 0.28f);
+            const float h = ImFloor(s * 0.7f);    // the lines' height above and below the centre
+            const float a = ImFloor(s * 0.55f);   // arrow head size
+            const float right = cx + s - a * 0.4f;
+            draw->AddLine(ImVec2(cx - s, cy + h), ImVec2(right, cy - h), colour, t);
+            draw->AddLine(ImVec2(cx - s, cy - h), ImVec2(right, cy + h), colour, t);
+            for (const float y : {cy - h, cy + h}) {
+                draw->AddTriangleFilled(ImVec2(cx + s, y), ImVec2(cx + s - a, y - a * 0.75f), ImVec2(cx + s - a, y + a * 0.75f), colour);
             }
             break;
         }
@@ -429,11 +442,24 @@ struct Pending {
     }
 };
 Pending g_pendingLoop;      // My files: music::LoopMode
+Pending g_pendingShuffle;   // My files: 1 shuffle on, 0 off
 Pending g_pendingRepeat;    // Other app: remote::Repeat
 Pending g_pendingPlaying;   // Other app: 1 playing, 0 not
 
 music::LoopMode EffectiveLoop(const music::Snapshot& snapshot) {
     return static_cast<music::LoopMode>(g_pendingLoop.Effective(static_cast<int>(snapshot.loop)));
+}
+
+bool EffectiveShuffle(const music::Snapshot& snapshot) {
+    return g_pendingShuffle.Effective(snapshot.shuffle ? 1 : 0) == 1;
+}
+
+// My files: shuffle the other way from what was last asked for, asked for now. Returns it.
+bool ToggleShuffle(const music::Snapshot& snapshot) {
+    const bool on = !EffectiveShuffle(snapshot);
+    g_pendingShuffle.Set(on ? 1 : 0);
+    music::Player::Get().SetShuffle(on);
+    return on;
 }
 
 remote::Repeat EffectiveRepeat(const remote::Snapshot& snapshot) {
@@ -767,6 +793,15 @@ void ControlsMyFiles(const music::Snapshot& snapshot, float width, bool displayO
     if (LoopButton(LoopLabel(EffectiveLoop(snapshot)), !displayOnly, s.loopHint, s.reasonDisplayOnly)) {
         StepLoop(snapshot);
     }
+    ImGui::SameLine();
+    // Shuffle (0.3.3): an icon button, lit while on, its state in the hover text.
+    const bool shuffle = EffectiveShuffle(snapshot);
+    if (shuffle) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+    const bool shufflePressed = IconButton("##shuffle", Icon::Shuffle, !displayOnly, shuffle ? s.shuffleOnHint : s.shuffleOffHint,
+                                           s.reasonDisplayOnly);
+    if (shuffle) ImGui::PopStyleColor();
+    Mark("shuffle");
+    if (shufflePressed) ToggleShuffle(snapshot);
     ImGui::SameLine();
     // Up to 150 units (about 150 px at 1080p with medium text), at the right end of the row, so it
     // reads as a slider rather than a label with a handle squeezed against the edge. The word stands
@@ -1131,7 +1166,7 @@ void SettingsRow() {
         HotkeyDisplayName(g_keys.keys[i], s.keyNone, keys[i], sizeof(keys[i]));
     }
     char line[512];
-    snprintf(line, sizeof(line), s.keysLine, keys[0], keys[1], keys[2], keys[3], keys[4], keys[5]);
+    snprintf(line, sizeof(line), s.keysLine, keys[0], keys[1], keys[2], keys[3], keys[4], keys[5], keys[6]);
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
     ImGui::TextWrapped("%s", line);
     ImGui::PopStyleColor();
@@ -1470,7 +1505,7 @@ void RunMusicCommand(Command command) {
     if (g_settings.source == SourceMyFiles) {
         music::Player& player = music::Player::Get();
         const music::Snapshot& snapshot = CurrentSnapshot();
-        if (snapshot.tracks.empty() && command != Command::LoopMode) {
+        if (snapshot.tracks.empty() && command != Command::LoopMode && command != Command::Shuffle) {
             if (!open) ShowToast(s.reasonNoSongs);
             return;
         }
@@ -1484,8 +1519,19 @@ void RunMusicCommand(Command command) {
                 if (!open) ShowToast(LoopLabel(next));
                 break;
             }
+            case Command::Shuffle: {
+                const bool on = ToggleShuffle(snapshot);
+                if (!open) ShowToast(on ? s.shuffleOn : s.shuffleOff);
+                break;
+            }
             default: break;
         }
+        return;
+    }
+    if (command == Command::Shuffle) {
+        // Shuffle belongs to the player's own songs; another app shuffles in its own window. Said
+        // even with the panel open, where no button would show it.
+        ShowToast(s.shuffleOwnSongs);
         return;
     }
     OtherAppCalls app;
@@ -1541,11 +1587,11 @@ int PanelAppendTestState(char* buffer, int size) {
     const music::Snapshot& snapshot = CurrentSnapshot();
     const int n = snprintf(buffer, static_cast<size_t>(size),
                            "list %d\nsettings %d\nsource %u\nlanguage %u\ntextsize %u\npause %d\nstate %d\nindex %d\n"
-                           "tracks %d\nloop %d\nvolume %d\ntextfield %s\ntoast %d\nwanttext %d\nscanning %d\n",
+                           "tracks %d\nloop %d\nshuffle %d\nvolume %d\ntextfield %s\ntoast %d\nwanttext %d\nscanning %d\n",
                            g_listOpen ? 1 : 0, g_settingsOpen ? 1 : 0, g_settings.source, g_settings.language,
                            g_settings.textSize, g_settings.pauseWhenUnfocused ? 1 : 0, static_cast<int>(snapshot.state),
                            snapshot.currentIndex, static_cast<int>(snapshot.tracks.size()),
-                           static_cast<int>(snapshot.loop), static_cast<int>(snapshot.volume * 100.0f + 0.5f),
+                           static_cast<int>(snapshot.loop), snapshot.shuffle ? 1 : 0, static_cast<int>(snapshot.volume * 100.0f + 0.5f),
                            g_testText[0] ? g_testText : "-", GetTickCount64() < g_toastUntil ? 1 : 0,
                            Shared().wantTextInput.load() ? 1 : 0, snapshot.scanning ? 1 : 0);
     if (n <= 0 || n >= size) {

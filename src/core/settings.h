@@ -3,7 +3,7 @@
 #include <windows.h>
 
 // Keys under [keys], in the order the panel's Command enum uses (src/ui/hotkeys.h).
-enum UiKey { UiKeyPanel = 0, UiKeyStop, UiKeyPrevious, UiKeyPlayPause, UiKeyNext, UiKeyLoop, UiKeyCount };
+enum UiKey { UiKeyPanel = 0, UiKeyStop, UiKeyPrevious, UiKeyPlayPause, UiKeyNext, UiKeyLoop, UiKeyShuffle, UiKeyCount };
 
 // How much of the panel runs ([panel] mode). Value 1 was the old "display" test mode, removed for
 // the public release (the owner: redundant once the mod had proven itself); the other values keep
@@ -42,7 +42,7 @@ struct UiSettings {
     bool compact = false;             // the one-row panel instead of the full one (0.3.2)
     bool mediaKeys = true;            // react to the keyboard's own media keys (local files only)
     // The key names as typed; the panel parses them and logs a refused one with the accepted names.
-    char keys[UiKeyCount][32] = {"Insert", "F5", "F6", "F7", "F8", "F9"};
+    char keys[UiKeyCount][32] = {"Insert", "F5", "F6", "F7", "F8", "F9", "F10"};
 };
 
 struct Settings {

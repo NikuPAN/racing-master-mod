@@ -584,17 +584,17 @@ try {
     Record 'panel fault: the music is paused because nothing can control it any more, and the log says so' ($panelRun.Log.Contains('music: paused, because the panel that controls it has switched off with the rest of the mod'))
 
     # 37b. [panel] mode=keys (minimal mode): the panel is drawn, the keys are global hotkeys, and the
-    # game window is never subclassed. The [keys] are F13-F18 so the test's real global hotkeys cannot
-    # capture the owner's keys (no keyboard has F13-F18). WindowWatched=$false: no window procedure.
-    $panelRun = Invoke-PanelRun 'panel minimal mode' 'shot1' 'panel-en-minimal' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'en' } @('[panel]', 'mode=keys', '[keys]', 'panel=F13', 'stop=F14', 'previous=F15', 'play_pause=F16', 'next=F17', 'loop=F18') $songs $false $false
-    Record 'minimal mode: the panel is drawn, the game window is not subclassed, and the keys are global hotkeys' (($panelRun.Log -match 'panel: minimal mode \(\[panel\] mode=keys\): [1-6] of the keys work as global hotkeys') -and -not $panelRun.Log.Contains('watching the game window for clicks and keys'))
+    # game window is never subclassed. The [keys] are F13-F19 so the test's real global hotkeys cannot
+    # capture the owner's keys (no keyboard has F13-F19; shuffle's default F10 would be a real key). WindowWatched=$false: no window procedure.
+    $panelRun = Invoke-PanelRun 'panel minimal mode' 'shot1' 'panel-en-minimal' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'en' } @('[panel]', 'mode=keys', '[keys]', 'panel=F13', 'stop=F14', 'previous=F15', 'play_pause=F16', 'next=F17', 'loop=F18', 'shuffle=F19') $songs $false $false
+    Record 'minimal mode: the panel is drawn, the game window is not subclassed, and the keys are global hotkeys' (($panelRun.Log -match 'panel: minimal mode \(\[panel\] mode=keys\): [1-7] of the keys work as global hotkeys') -and -not $panelRun.Log.Contains('watching the game window for clicks and keys'))
 
     # 26. Keys chosen in [keys]: taken by the panel; an unknown key name keeps the default and says why.
     $keysRoot = Join-Path $work 'lad-ini-keys'
     Write-Ini (Join-Path $keysRoot 'RacingMasterMod\settings.ini') @('[mod]', '[keys]', 'panel=none', 'next=Ctrl+F2', 'stop=Banana', 'media_keys=0') 'utf8'
     $run = Invoke-Run '26. settings.ini with keys chosen by the player' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $keysRoot
     $log = Read-Log $run.Log
-    Record 'keys: the chosen keys are used, an unknown name keeps the default with a reason' ($log.Contains('panel: keys none panel, F5 stop, F6 previous, F7 play or pause, Ctrl+F2 next, F9 repeat; media keys off') -and $log.Contains('"stop=Banana" under [keys] is not a key name the mod knows; the default stays'))
+    Record 'keys: the chosen keys are used, an unknown name keeps the default with a reason' ($log.Contains('panel: keys none panel, F5 stop, F6 previous, F7 play or pause, Ctrl+F2 next, F9 repeat, F10 shuffle; media keys off') -and $log.Contains('"stop=Banana" under [keys] is not a key name the mod knows; the default stays'))
 
     # 38. Input through the window procedure: clicks, pass-through, hotkeys, Insert and the rest.
     # Its settings.ini has a [panel] that ends in blank lines and a [keys] after it, so both writers'
