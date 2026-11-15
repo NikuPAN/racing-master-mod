@@ -56,8 +56,9 @@ remote::Snapshot& Example() {
             snapshot.artist = L"Example Artist";
         }
         snapshot.hasTimeline = full;
-        snapshot.positionSeconds = full ? 64.0 : 0.0;
-        snapshot.durationSeconds = full ? 215.0 : 0.0;
+        // 24:25 into a 1:12:30 video: the owner's 0.3.0 run showed "1:1..." for that length.
+        snapshot.positionSeconds = full ? 1465.0 : 0.0;
+        snapshot.durationSeconds = full ? 4350.0 : 0.0;
         snapshot.repeat = full ? remote::Repeat::All : remote::Repeat::Unknown;
         const bool any = kind != Kind::ExampleNone;
         // play, pause, stop, next, previous, repeat

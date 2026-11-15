@@ -57,6 +57,14 @@ one consumer for the input queue).
 - **Look** after the owner's preview review: opaque grey-blue fields, a 150-unit volume slider
   with the word in front, a divider between the two source buttons, row texts on the buttons'
   baseline, disabled controls at 40 % opacity.
+- **Time row (0.3.2, the owner's decision 3):** both times get the width of the widest time the
+  current item can show (`TimeWidth`: the shape of the length, h:mm:ss from an hour, measured with
+  every digit, never less than "00:00"), so no time is cut off and the bar does not change size as
+  the song plays. 0.3.0 reserved "00:00" and showed "1:1..." for a 1:12:30 video. The other app's
+  timeline (`TimeLine`) takes a full button-row height and draws a thinner line centred in it, so
+  it shares the times' centre line; 0.3.0 drew a half-height bar at the top of the row. The song
+  list's titles also stop before lengths of an hour or more. Checks T1/T2 read `fit` and `at`
+  lines from the layout file (every screenshot run; the example app plays 24:25 of 1:12:30).
 - The chosen source is remembered in `settings.ini` (`source=`).
 - The Traditional Chinese column of `src/ui/strings.h` is a **draft** for layout only.
 

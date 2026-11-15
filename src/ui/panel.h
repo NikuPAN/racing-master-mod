@@ -43,6 +43,9 @@ unsigned PanelTextSize();   // 0 small, 1 medium, 2 large
 struct PanelTestItem {
     char name[24];
     float x, y;   // centre, back-buffer pixels
+    // Text drawn in a box of fixed width (the times): the width the text needs and the box's
+    // width, back-buffer pixels; both 0 for other items. The text is cut off when text > box.
+    float text, box;
 };
 int PanelTestItems(const PanelTestItem** items);
 int PanelAppendTestState(char* buffer, int size);

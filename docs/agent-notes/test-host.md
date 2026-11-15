@@ -66,7 +66,10 @@ code 1 for both "no marker" and "forwarding failed"; the review showed what it d
    read from the bottom-left corner, which the panel never covers in the screenshot runs (bottom
    centre by default; the corner is chosen only in the input run, which takes no screenshot).
    The layout file also gives `display W H`, the panel's own window as `bar x y w h` (also counted
-   as a window) and `corner`; B1-B3 (shots), R3 (resize) and I23 (input) check the place.
+   as a window) and `corner`; B1-B3 (shots), R3 (resize) and I23 (input) check the place. Since
+   0.3.2 it also has `at <name> <x> <y>` (every widget's centre in back-buffer pixels, a tenth of
+   a pixel) and `fit <name> <text> <box>` (the width a time needs and the width it got): T1/T2
+   check that no time is cut off and that the times and their bar share one centre line.
 8. **The list scrolls under the wheel test**: the input script scrolls it back before using
    row and remove-button positions (only the visible rows have widget centres).
    **At the bottom of the screen (the default since 0.3.1) the panel grows upward**, and ImGui

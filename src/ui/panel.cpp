@@ -91,6 +91,19 @@ void Mark(const char* name) {
     const ImVec2 max = ImGui::GetItemRectMax();
     item.x = (min.x + max.x) * 0.5f;
     item.y = (min.y + max.y) * 0.5f;
+    item.text = 0.0f;
+    item.box = 0.0f;
+}
+
+// Mark for a text drawn in a fixed-width box (TextFit): also the width the text needs and the
+// box's, so the test host can tell whether it was cut off.
+void MarkFit(const char* name, const char* text, float box) {
+    const int before = g_itemCount;
+    Mark(name);
+    if (g_itemCount > before) {
+        g_items[before].text = ImGui::CalcTextSize(text).x;
+        g_items[before].box = box;
+    }
 }
 
 void MarkIndexed(const char* prefix, int index) {
@@ -166,7 +179,8 @@ void FormatTime(double seconds, char* buffer, int size) {
 
 // Text that ends in "..." when it does not fit `width`.
 // Like ImGui::Text after AlignTextToFramePadding, it sits on the same baseline as the buttons
-// beside it: the text is drawn at the line's text offset, not at the top of the line.
+// beside it: the text is drawn at the line's text offset, not at the top of the line. It is an
+// item (its rectangle is the text's own line box), so a Mark after it gives its centre.
 void TextFit(const char* text, float width) {
     const float offset = ImGui::GetCurrentWindow()->DC.CurrLineTextBaseOffset;   // set by AlignTextToFramePadding
     ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -174,8 +188,64 @@ void TextFit(const char* text, float width) {
     const float height = ImGui::GetTextLineHeight();
     const ImVec2 size = ImGui::CalcTextSize(text);
     ImGui::ItemSize(ImVec2(width, height), offset);
-    ImGui::RenderTextEllipsis(ImGui::GetWindowDrawList(), pos, ImVec2(pos.x + width, pos.y + height), pos.x + width,
-                              text, nullptr, &size);
+    const ImRect box(pos, ImVec2(pos.x + width, pos.y + height));
+    ImGui::ItemAdd(box, 0);
+    ImGui::RenderTextEllipsis(ImGui::GetWindowDrawList(), box.Min, box.Max, box.Max.x, text, nullptr, &size);
+}
+
+// The widest a time can be drawn in the shape of `text` ("1:12:30" -> any of "0:00:00" ...
+// "9:99:99"): the font's digits need not all be the same width.
+float ShapeWidth(const char* text) {
+    float widest = 0.0f;
+    char shape[24];
+    for (char digit = '0'; digit <= '9'; ++digit) {
+        size_t i = 0;
+        for (; text[i] && i + 1 < sizeof(shape); ++i) {
+            shape[i] = text[i] >= '0' && text[i] <= '9' ? digit : text[i];
+        }
+        shape[i] = '\0';
+        widest = ImMax(widest, ImGui::CalcTextSize(shape).x);
+    }
+    return widest;
+}
+
+// The width both times of a row get: enough for the longest time this song can show (h:mm:ss
+// once it is an hour or longer), never less than "00:00", so a time is never cut off and the bar
+// beside it does not change size while the song plays. The owner saw "1:1..." for a 1:12:30
+// video in 0.3.0, which reserved "00:00" only.
+float TimeWidth(const char* elapsed, const char* total) {
+    return ImCeil(ImMax(ImMax(ShapeWidth(elapsed), ShapeWidth(total)), ImGui::CalcTextSize("00:00").x)) + 1.0f;
+}
+
+// A time in its reserved box, reported to the test host with its fit.
+void TimeText(const char* name, const char* text, float width) {
+    TextFit(text, width);
+    MarkFit(name, text, width);
+}
+
+// A progress line that cannot be dragged (another app's timeline): as tall as a button row for
+// layout, with the line itself thinner and centred on it, so it sits on the same centre line as
+// the times beside it (0.3.0 drew a half-height bar at the top of the row).
+void TimeLine(float fraction, float width) {
+    const float rowHeight = ImGui::GetFrameHeight();
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const ImRect row(pos, ImVec2(pos.x + width, pos.y + rowHeight));
+    ImGui::ItemSize(row, ImGui::GetStyle().FramePadding.y);
+    if (!ImGui::ItemAdd(row, 0)) {
+        return;
+    }
+    const float thickness = ImMax(2.0f, ImFloor(rowHeight * 0.32f));
+    const float top = ImFloor(row.GetCenter().y - thickness * 0.5f);
+    const ImVec2 min(row.Min.x, top);
+    const ImVec2 max(row.Max.x, top + thickness);
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const float rounding = thickness * 0.5f;
+    draw->AddRectFilled(min, max, ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
+    fraction = fraction < 0.0f ? 0.0f : (fraction > 1.0f ? 1.0f : fraction);
+    if (fraction > 0.0f) {
+        draw->AddRectFilled(min, ImVec2(ImMax(min.x + thickness, min.x + (max.x - min.x) * fraction), max.y),
+                            ImGui::GetColorU32(ImGuiCol_SliderGrab), rounding);
+    }
 }
 
 void ShowToast(const char* text, ULONGLONG milliseconds = 2500) {
@@ -492,14 +562,14 @@ void TimeRowMyFiles(const music::Snapshot& snapshot, float width, bool displayOn
     FormatTime(loaded ? value : -1.0, elapsed, sizeof(elapsed));
     FormatTime(loaded && duration > 0.0 ? duration : -1.0, total, sizeof(total));
 
-    const float timeWidth = ImGui::CalcTextSize("00:00").x;
+    const float timeWidth = TimeWidth(elapsed, total);
     char listLabel[64];
     snprintf(listLabel, sizeof(listLabel), "%s##list", g_listOpen ? s.hideList : s.showList);
     const float listWidth = ImMax(ButtonWidth(s.showList), ButtonWidth(s.hideList));
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
 
     ImGui::AlignTextToFramePadding();
-    TextFit(elapsed, timeWidth);
+    TimeText("elapsed", elapsed, timeWidth);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImMax(width - timeWidth * 2.0f - listWidth - spacing * 3.0f, U() * 40.0f));
     ImGui::BeginDisabled(!canSeek);
@@ -523,7 +593,7 @@ void TimeRowMyFiles(const music::Snapshot& snapshot, float width, bool displayOn
     Tip(s.seekHint, canSeek ? nullptr : reason);
     Mark("seek");
     ImGui::SameLine();
-    TextFit(total, timeWidth);
+    TimeText("total", total, timeWidth);
     ImGui::SameLine();
     ImGui::BeginDisabled(displayOnly);
     if (ImGui::Button(listLabel, ImVec2(listWidth, 0.0f))) {
@@ -543,24 +613,19 @@ void TimeRowOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, f
     }
     if (snapshot.durationSeconds > 0.0) {
         // The app reports a timeline: shown, but another app cannot be moved through from here.
-        const float timeWidth = ImGui::CalcTextSize("00:00").x;
         char elapsed[16], total[16];
         FormatTime(snapshot.positionSeconds, elapsed, sizeof(elapsed));
         FormatTime(snapshot.durationSeconds, total, sizeof(total));
+        const float timeWidth = TimeWidth(elapsed, total);
         ImGui::AlignTextToFramePadding();
-        TextFit(elapsed, timeWidth);
+        TimeText("elapsed", elapsed, timeWidth);
         ImGui::SameLine();
-        float fraction = static_cast<float>(snapshot.positionSeconds / snapshot.durationSeconds);
-        fraction = fraction < 0.0f ? 0.0f : (fraction > 1.0f ? 1.0f : fraction);
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImGui::GetStyleColorVec4(ImGuiCol_SliderGrab));
         const float spacing = ImGui::GetStyle().ItemSpacing.x;
-        ImGui::ProgressBar(fraction, ImVec2(ImMax(width - timeWidth * 2.0f - spacing * 2.0f, U() * 40.0f),
-                                            ImGui::GetFrameHeight() * 0.5f),
-                           "");
-        ImGui::PopStyleColor();
+        TimeLine(static_cast<float>(snapshot.positionSeconds / snapshot.durationSeconds),
+                 ImMax(width - timeWidth * 2.0f - spacing * 2.0f, U() * 40.0f));
         Mark("progress");
         ImGui::SameLine();
-        TextFit(total, timeWidth);
+        TimeText("total", total, timeWidth);
     } else {
         ImGui::AlignTextToFramePadding();
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
@@ -753,7 +818,7 @@ void SongList(const music::Snapshot& snapshot, const PanelFrameInfo& info, bool 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(style.WindowPadding.x * 0.5f, style.WindowPadding.y * 0.5f));
     ImGui::BeginChild("##songs", ImVec2(0.0f, childHeight), ImGuiChildFlags_Borders);
     const float removeWidth = rowHeight;
-    const float timeWidth = ImGui::CalcTextSize("00:00").x;
+    const float listTimeWidth = ImGui::CalcTextSize("00:00").x;
     const float markWidth = ImFloor(rowHeight * 0.7f);
     ImGuiListClipper clipper;
     clipper.Begin(count, rowHeight + style.ItemSpacing.y);
@@ -795,14 +860,15 @@ void SongList(const music::Snapshot& snapshot, const PanelFrameInfo& info, bool 
             TrackLabel(track, label, sizeof(label));
             const float textTop = ImFloor((min.y + max.y - ImGui::GetTextLineHeight()) * 0.5f);
             const ImVec2 labelSize = ImGui::CalcTextSize(label);
-            ImGui::PushStyleColor(ImGuiCol_Text, textColour);
-            ImGui::RenderTextEllipsis(draw, ImVec2(min.x + markWidth, textTop),
-                                      ImVec2(max.x - timeWidth - style.ItemSpacing.x, max.y),
-                                      max.x - timeWidth - style.ItemSpacing.x, label, nullptr, &labelSize);
-            ImGui::PopStyleColor();
             char length[16];
             FormatTime(track.durationSeconds > 0.0 ? track.durationSeconds : -1.0, length, sizeof(length));
             const float lengthWidth = ImGui::CalcTextSize(length).x;
+            // The title stops before the length, also when the length is an hour or more.
+            const float titleEnd = max.x - ImMax(listTimeWidth, lengthWidth) - style.ItemSpacing.x;
+            ImGui::PushStyleColor(ImGuiCol_Text, textColour);
+            ImGui::RenderTextEllipsis(draw, ImVec2(min.x + markWidth, textTop), ImVec2(titleEnd, max.y), titleEnd, label,
+                                      nullptr, &labelSize);
+            ImGui::PopStyleColor();
             draw->AddText(ImVec2(max.x - lengthWidth - style.FramePadding.x * 0.5f, textTop), textColour, length);
 
             ImGui::SameLine();

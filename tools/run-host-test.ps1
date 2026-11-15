@@ -46,9 +46,10 @@
 #  25. [panel] and [keys] values   good values accepted, bad ones refused with a reason, mod keeps running
 #  26. [keys] chosen by the player the panel uses them; an unknown key name keeps the default and says why
 #  27-32. screenshots              English and draft Chinese, small/medium/large text: bar, list,
-#                                  settings row, "Other app"; PNG files with pixel checks; the bar
-#                                  at the bottom centre with the list and settings row above it
-#  33-34. "Other app" variants     an app that allows everything, and no app at all
+#                                  settings row, "Other app" (24:25 of a 1:12:30 video); PNG files
+#                                  with pixel checks; the bar at the bottom centre with the list and
+#                                  settings row above it; no time cut off, times on the bar's line
+#  33-34. "Other app" variants     an app that allows only play and pause, and no app at all
 #  35. panel and ResizeBuffers     five sizes with the panel, list and settings row drawing (large
 #                                  text): the bar stays at the bottom centre, all of it on screen
 #  36. fault inside the panel      game state put back, nothing leaked, mouse and keys back to the game
@@ -540,7 +541,7 @@ try {
             # choosing "Other app" must leave that file alone rather than cut off its end.
             $extra = @()
             if ($language -eq 'en' -and $size -eq 'small') { $extra = @('; ' + ('x' * 17000), '[keys]', 'next=F8') }
-            $panelRun = Invoke-PanelRun "panel screenshots, $language, $size text" 'shots' $prefix @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = $language; RACING_MASTER_MOD_TEXT_SIZE = $size } $extra $songsWithUnplayable
+            $panelRun = Invoke-PanelRun "panel screenshots, $language, $size text" 'shots' $prefix @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = $language; RACING_MASTER_MOD_TEXT_SIZE = $size; RACING_MASTER_MOD_TEST_REMOTE = 'full' } $extra $songsWithUnplayable
             Record "panel screenshots, $language, $size text: the engine said why the file could not be played" ($panelRun.Log.Contains('music: skipped 06 Cannot be played.wav (the file is damaged or is not what its name says)'))
             if ($extra.Count) {
                 $bigIni = [IO.File]::ReadAllText((Join-Path $work 'lad-panel-panel-screenshots-en-small-text\RacingMasterMod\settings.ini'), [Text.Encoding]::UTF8)
@@ -549,8 +550,10 @@ try {
         }
     }
 
-    # 33-34. "Other app": an app that allows everything and reports a timeline, and no app at all.
-    Invoke-PanelRun 'panel, Other app allowing everything' 'shot1' 'panel-en-medium-other-app-full' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_SOURCE = 'other_app'; RACING_MASTER_MOD_TEST_REMOTE = 'full' } @() | Out-Null
+    # 33-34. "Other app": an app that allows only play and pause and reports no timeline (the
+    # screenshot runs above show one that allows everything, 24:25 into a 1:12:30 video), and no
+    # app at all.
+    Invoke-PanelRun 'panel, Other app allowing only play and pause' 'shot1' 'panel-en-medium-other-app-limited' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_SOURCE = 'other_app'; RACING_MASTER_MOD_TEST_REMOTE = 'limited' } @() | Out-Null
     Invoke-PanelRun 'panel, Other app with nothing playing' 'shot1' 'panel-zh-TW-medium-other-app-none' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'zh-TW'; RACING_MASTER_MOD_SOURCE = 'other_app'; RACING_MASTER_MOD_TEST_REMOTE = 'none' } @() | Out-Null
 
     # 35. ResizeBuffers while the panel and its list are drawn.

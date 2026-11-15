@@ -747,6 +747,10 @@ struct LayoutFile {
     std::map<std::string, POINT> items;
     std::vector<RECT> windows;   // back-buffer pixels
     std::vector<RECT> hits;      // client coordinates
+    // "fit <name> <text> <box>": texts in fixed-width boxes (the times), back-buffer pixels.
+    std::map<std::string, std::pair<double, double>> fits;
+    // "at <name> <x> <y>": widget centres in back-buffer pixels, a tenth of a pixel.
+    std::map<std::string, std::pair<double, double>> at;
     RECT bar = {};               // the panel's own window (back-buffer pixels), when drawn
     bool hasBar = false;
     int displayWidth = 0, displayHeight = 0;   // the back buffer, when drawn
@@ -809,6 +813,12 @@ LayoutFile ReadLayout() {
                     layout.bar = RECT{x, y, x + w, y + h};
                     layout.hasBar = true;
                 }
+            }
+        } else if (key == "fit" || key == "at") {
+            char name[64] = "";
+            double a = 0.0, b = 0.0;
+            if (sscanf_s(rest.c_str(), "%63s %lf %lf", name, static_cast<unsigned>(sizeof(name)), &a, &b) == 3) {
+                (key == "fit" ? layout.fits : layout.at)[name] = std::make_pair(a, b);
             }
         } else if (key == "display") {
             sscanf_s(rest.c_str(), "%d %d", &layout.displayWidth, &layout.displayHeight);
@@ -1097,6 +1107,25 @@ bool PanelOnScreen(const LayoutFile& l) {
     return true;
 }
 
+// The time row: both times fit their boxes (none is cut off with "..."), and the elapsed time, the
+// bar (`bar`: "seek" or "progress") and the total share one centre line within 1 px. The owner's
+// 0.3.0 screenshot showed "1:1..." for 1:12:30 and the bar above the numbers' line.
+bool TimeRowOk(const LayoutFile& l, const char* bar) {
+    const auto elapsed = l.fits.find("elapsed"), total = l.fits.find("total");
+    const auto e = l.at.find("elapsed"), t = l.at.find("total"), b = l.at.find(bar);
+    if (elapsed == l.fits.end() || total == l.fits.end() || e == l.at.end() || t == l.at.end() || b == l.at.end()) {
+        printf("  time row: not all of elapsed, total and %s were reported\n", bar);
+        return false;
+    }
+    printf("  time row: elapsed needs %.1f of %.1f px, total %.1f of %.1f px; centre lines: elapsed %.1f, %s %.1f, total "
+           "%.1f\n",
+           elapsed->second.first, elapsed->second.second, total->second.first, total->second.second, e->second.second,
+           bar, b->second.second, t->second.second);
+    const bool fit = elapsed->second.first <= elapsed->second.second + 0.05 && total->second.first <= total->second.second + 0.05;
+    const bool centred = std::abs(e->second.second - b->second.second) <= 1.0 && std::abs(t->second.second - b->second.second) <= 1.0;
+    return fit && centred;
+}
+
 void PrintBar(const char* when) {
     const LayoutFile l = ReadLayout();
     printf("  bar %s: %ld,%ld to %ld,%ld in a %dx%d back buffer\n", when, l.bar.left, l.bar.top, l.bar.right, l.bar.bottom,
@@ -1130,6 +1159,7 @@ void ScriptShots(Host& host, const std::string& prefix) {
     PrintBar("alone");
     Check("B1 with no saved place the bar sits at the bottom centre, fully on screen",
           BarAtBottomCentre(ReadLayout()) && PanelOnScreen(ReadLayout()));
+    Check("T1 My files: both times fit their boxes and share the seek bar's centre line", TimeRowOk(ReadLayout(), "seek"));
     const LayoutFile barAlone = ReadLayout();
     const POINT listButton = Item("list");
 
@@ -1183,6 +1213,9 @@ void ScriptShots(Host& host, const std::string& prefix) {
           WaitLayout(host, [](const LayoutFile& l) { return l.Int("source") == 1 && l.Int("settings") == 0; }));
     MoveAway(host);
     CheckShot("S4 other app", Shoot(host, (prefix + "-other-app").c_str()), true);
+    // The example app of the screenshot runs plays a 1:12:30 video at 24:25 (the owner's case).
+    Check("T2 Other app, 24:25 of 1:12:30: neither time is cut off and both share the progress line's centre",
+          TimeRowOk(ReadLayout(), "progress"));
 }
 
 void ScriptShot1(Host& host, const std::string& name) {
@@ -1191,6 +1224,9 @@ void ScriptShot1(Host& host, const std::string& name) {
     if (!ready) return;
     MoveAway(host);
     CheckShot(("S5 " + name).c_str(), Shoot(host, name.c_str()), true);
+    if (ReadLayout().Has("progress")) {
+        Check("T2 the other app's times fit their boxes and share the progress line's centre", TimeRowOk(ReadLayout(), "progress"));
+    }
 }
 
 void ScriptResize(Host& host) {

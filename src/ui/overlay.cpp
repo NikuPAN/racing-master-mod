@@ -76,7 +76,7 @@ bool g_formatLogged = false;
 bool g_openWithoutDrawLogged = false;
 unsigned g_panelFrames = 0;
 bool g_exclusiveFullscreen = false;
-char g_lastLayout[8192] = "";
+char g_lastLayout[32768] = "";   // test host only
 
 // ---- small helpers -------------------------------------------------------------------------------
 
@@ -414,7 +414,7 @@ void ClearRects() {
 // windows (back-buffer pixels, for the pixel checks) and widget centres (client coordinates, for
 // the messages the test posts). Test host only; never written in the game.
 void WriteTestLayout(bool drawn, float sx, float sy) {
-    static char text[8192];
+    static char text[32768];
     // "thread": the thread doing the frame work (this one); "otherthread": presents of the game's
     // swap chain from another thread, passed on untouched (present_hook.cpp).
     const PresentHookCounters counters = PresentHookGetCounters();
@@ -450,6 +450,17 @@ void WriteTestLayout(bool drawn, float sx, float sy) {
         for (int i = 0; i < count && used < static_cast<int>(sizeof(text)) - 64; ++i) {
             used += snprintf(text + used, sizeof(text) - static_cast<size_t>(used), "item %s %d %d\n", items[i].name,
                              static_cast<int>(items[i].x / sx), static_cast<int>(items[i].y / sy));
+        }
+        // Texts in fixed-width boxes (the times), back-buffer pixels: "fit <name> <text> <box>"; and
+        // every widget's centre in back-buffer pixels with a tenth of a pixel, for the alignment
+        // checks ("at <name> <x> <y>"; the "item" lines above are rounded client coordinates).
+        for (int i = 0; i < count && used < static_cast<int>(sizeof(text)) - 96; ++i) {
+            if (items[i].box > 0.0f) {
+                used += snprintf(text + used, sizeof(text) - static_cast<size_t>(used), "fit %s %.1f %.1f\n",
+                                 items[i].name, items[i].text, items[i].box);
+            }
+            used += snprintf(text + used, sizeof(text) - static_cast<size_t>(used), "at %s %.1f %.1f\n", items[i].name,
+                             items[i].x, items[i].y);
         }
     }
     if (strcmp(text, g_lastLayout) == 0) {
