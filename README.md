@@ -127,6 +127,9 @@ source=my_files
 corner=bottom-centre
 ; 1 = the compact panel (one row); 0 = the full panel
 compact=0
+; 1 (default) = turn the game's own music off when the game starts; 0 = leave it
+; (the game's own music setting is never changed; the panel's Game music button works either way)
+mute_game_music=1
 
 [keys]
 ; a key name such as Insert, F7 or Home, with Ctrl+, Shift+ or Alt+ in front if you like; none = no key
@@ -294,6 +297,9 @@ source=my_files
 corner=bottom-centre
 ; 1 = 精簡面板（一列）；0 = 完整面板
 compact=0
+; 1（預設）= 開遊戲時關掉遊戲本身的音樂；0 = 不動它
+;（不會改動遊戲自己的音樂設定；面板上的「遊戲音樂」按鈕隨時都能用）
+mute_game_music=1
 
 [keys]
 ; 按鍵名稱，例如 Insert、F7、Home，前面可以加 Ctrl+、Shift+ 或 Alt+；none = 不設按鍵

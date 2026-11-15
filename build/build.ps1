@@ -233,6 +233,7 @@ $loaderSources = @(
     'src\core\dxgi_probe.cpp',
     'src\core\present_hook.cpp',
     'src\core\game_close.cpp',
+    'src\core\game_music.cpp',
     'src\core\present_probe.cpp',
     'src\core\worker.cpp',
     'src\remote\remote.cpp',

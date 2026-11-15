@@ -75,6 +75,17 @@ const FLOAT* g_clearColour = kClearColour;
 
 bool g_allPassed = true;
 
+// ---- a stand-in for the game's sound engine --------------------------------------------------------
+// The game exe exports Wwise's AK::SoundEngine::IsInitialized, MuteBackgroundMusic and
+// GetBackgroundMusicMute; the mod looks them up by name in the exe (src/core/game_music.cpp). The
+// test host exports functions of the same names, so the mod takes the same path here. The sound
+// engine "starts" 1.5 s after it is first asked, so the mod's wait is exercised too.
+std::atomic<bool> g_fakeMusicMuted{false};
+std::atomic<int> g_fakeMuteCalls{0};
+std::atomic<ULONGLONG> g_fakeFirstAsked{0};
+// The exported functions themselves are at the end of this file, outside the anonymous namespace
+// (inside it their names would carry an extra part and not match the game's).
+
 void Check(const char* name, bool ok) {
     printf("%s: %s\n", name, ok ? "PASS" : "FAIL");
     if (!ok) g_allPassed = false;
@@ -1990,25 +2001,52 @@ void ScriptIntegrated(Host& host) {
     g_refuseClose = false;
 }
 
-// 0.3.2's additions, end to end: the engine's status line going away by itself, and Clear list
-// with its question.
+// 0.3.2's additions, end to end: the game's music switch through the stand-in sound engine, the
+// engine's status line going away by itself, and Clear list with its question.
 void ScriptExtras(Host& host) {
     bool ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("enabled") == 1; }, 10000);
     Check("X0 the panel is ready and watching the window", ok);
     if (!ok) return;
     Check("X0 the music engine listed the songs from the music folder", WaitLayout(host, SongsReady, 15000));
 
-    // The engine's "Added ... from the music folder" shows when the panel first shows, then goes
-    // (6 s after the panel first drew it).
+    // The setting is on by default: the mod waits for the sound engine, then turns its music off.
+    ok = WaitForModLog(host, "game music: turned off", 8000);
+    Check("G1 with the default setting the mod waits for the game's sound engine and then turns its music off",
+          ok && g_fakeMusicMuted.load() && ModLogContains("game music: waiting for the game's sound engine to start") &&
+              ModLogContains("game music: the game's sound engine offers its music switch"));
+
     Key(host, VK_INSERT);
     const ULONGLONG openedAt = GetTickCount64();
-    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 1 && l.Has("list"); });
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 1 && l.Has("game_music"); });
     Pump(host, 4);
     const bool shownAtFirst = ReadLayout().Int("message") == 1;
-    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Int("message") == 0; }, 9000);
+    Check("G1 the bar shows the game's music as off, and the switch as offered",
+          ok && WaitLayout(host, [](const LayoutFile& l) { return l.Int("gamemusic") == 1 && l.Int("gamemusicoffered") == 1; }));
+
+    // The engine's "Added ... from the music folder" shows when the panel first shows, then goes
+    // (6 s after the panel first drew it).
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("message") == 0; }, 9000);
     printf("  status line shown at first %d, gone after %llu ms\n", shownAtFirst ? 1 : 0, GetTickCount64() - openedAt);
     Check("M1 the engine's status line shows when the panel opens and goes by itself a few seconds later",
           shownAtFirst && ok && GetTickCount64() - openedAt >= 4000);
+
+    Click(host, Item("game_music"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("gamemusic") == 0; });
+    Check("G2 the button turns the game's music on again, at once",
+          ok && WaitForModLog(host, "game music: turned on again", 3000) && !g_fakeMusicMuted.load());
+    Click(host, Item("game_music"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("gamemusic") == 1; });
+    const ULONGLONG offUntil = GetTickCount64() + 3000;
+    while (!g_fakeMusicMuted.load() && GetTickCount64() < offUntil) {
+        PanelFrame(host, 0);
+        Sleep(20);
+    }
+    Check("G2 ... and off again", ok && g_fakeMusicMuted.load());
+
+    // The game turns its music back on by itself: the mod turns it off again within about a second.
+    g_fakeMusicMuted = false;
+    ok = WaitForModLog(host, "game music: the game turned its music on again; the mod set it off again", 4000);
+    Check("G3 when the game turns its music back on, the mod turns it off again and says so", ok && g_fakeMusicMuted.load());
 
     Click(host, Item("list"));
     ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 1 && l.Has("clear_list"); });
@@ -2385,6 +2423,25 @@ int RunMedia(const char* scenario, int seconds, bool forwardingOk, bool standInO
 }
 
 }  // namespace
+
+// The stand-in for the game's sound engine (see g_fakeMusicMuted above): exported under exactly
+// the names the game exe exports, ?IsInitialized@SoundEngine@AK@@YA_NXZ and the other two.
+namespace AK {
+namespace SoundEngine {
+__declspec(dllexport) bool IsInitialized() {
+    ULONGLONG expected = 0;
+    g_fakeFirstAsked.compare_exchange_strong(expected, GetTickCount64());
+    return GetTickCount64() - g_fakeFirstAsked.load() >= 1500;
+}
+__declspec(dllexport) void MuteBackgroundMusic(bool mute) {
+    g_fakeMusicMuted = mute;
+    ++g_fakeMuteCalls;
+}
+__declspec(dllexport) bool GetBackgroundMusicMute() {
+    return g_fakeMusicMuted.load();
+}
+}  // namespace SoundEngine
+}  // namespace AK
 
 int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
