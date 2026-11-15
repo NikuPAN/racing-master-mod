@@ -288,6 +288,18 @@ volatile LONG g_queueDrops = 0;    // commands lost because the queue was full
 HANDLE g_thread = nullptr;
 bool g_testHost = false;
 wchar_t g_testApp[kAppIdChars] = L"";
+// Sessions of the developer test's fake players ("RacingMasterMod.TestHost.FakePlayer.<id>"). Windows
+// shares media sessions with every program on the PC, so a test run beside a game session showed up
+// in the game's panel on 2026-11-15 and the panel followed it. Outside the test host they are never
+// listed, picked or commanded. In the test host they are the point of the test, unless
+// RACING_MASTER_MOD_TEST_HIDE_TEST_PLAYERS=1 asks for the game's behaviour (run 22b).
+constexpr wchar_t kTestPlayerPrefix[] = L"RacingMasterMod.TestHost.";
+bool g_hideTestPlayers = true;
+
+bool IsTestPlayer(const std::wstring& id) {
+    const size_t n = sizeof(kTestPlayerPrefix) / sizeof(kTestPlayerPrefix[0]) - 1;
+    return id.size() >= n && _wcsnicmp(id.c_str(), kTestPlayerPrefix, n) == 0;
+}
 
 void Post(Command command, const wchar_t* appId) {
     if (!g_started || g_asleep) {
@@ -584,6 +596,7 @@ private:
     ULONGLONG resultTick_ = 0;
     unsigned resultSequence_ = 0;
 
+    bool testPlayerLogged_ = false;                               // the test-player line is written once
     std::vector<std::pair<std::wstring, std::wstring>> names_;   // app id -> friendly name
     std::vector<std::wstring> repeatBlocked_;                     // apps that ignored looping twice
 };
@@ -826,6 +839,16 @@ bool Engine::ListSessions(std::vector<App>* apps, std::vector<Session*>* objects
         session->get_SourceAppUserModelId(&id);
         App app;
         app.id = TakeString(id);
+        if (g_hideTestPlayers && IsTestPlayer(app.id)) {
+            if (!testPlayerLogged_) {
+                testPlayerLogged_ = true;
+                char id8[kAppIdChars * 3];
+                Log("music apps: ignoring %s, a silent player of the mod's own developer test, not a music app",
+                    Utf8(app.id, id8, sizeof(id8)));
+            }
+            session->Release();
+            continue;
+        }
         Reading reading;
         if (app.id.empty() || !ReadStatusOf(session, &reading) || reading.status == kClosed) {
             session->Release();
@@ -849,6 +872,9 @@ std::wstring Engine::CurrentSessionId(SessionManager* manager) {
         current->get_SourceAppUserModelId(&text);
         id = TakeString(text);
         current->Release();
+    }
+    if (g_hideTestPlayers && IsTestPlayer(id)) {
+        id.clear();   // never Windows' choice for the panel (see kTestPlayerPrefix)
     }
     return id;
 }
@@ -1719,11 +1745,15 @@ void Remote::Start() {
         return;
     }
     g_testHost = ModIsTestHost();
+    g_hideTestPlayers = !g_testHost;
     if (g_testHost) {
         const DWORD n = GetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_MEDIA_APP", g_testApp, kAppIdChars);
         if (n == 0 || n >= kAppIdChars) {
             g_testApp[0] = L'\0';
         }
+        wchar_t hide[4] = L"";
+        const DWORD h = GetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_HIDE_TEST_PLAYERS", hide, 4);
+        g_hideTestPlayers = h == 1 && hide[0] == L'1';
     }
     Store();   // allocate before any reader can race with the thread
     g_wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);

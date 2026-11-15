@@ -410,6 +410,7 @@ Details and the reasons: `docs/agent-notes/integration.md`.
   `_TEST_FAKE_PLAYER=1` (panel mode publishes the silent fake player) and
   `_TEST_FAKE_PLAYER_ID` (the fake player's app id, new for every run; see the media gotcha below),
   `_TEST_EXIT_AFTER_CLOSE=1` (the host ends its process straight after closing its window),
+  `_TEST_HIDE_TEST_PLAYERS=1` (the remote hides the fake players as it does in the game, run 22b),
   `_TEST_PROBE_SECONDS` (the present probe's block interval) and `_TEST_SMOOTH_MOTION_DLL` (the
   DLL the Smooth Motion check looks for instead of `NvPresent64.dll`). In the test host the mod writes `%LOCALAPPDATA%\RacingMasterMod\test-layout.txt`
   (state, window rectangles, widget centres) whenever it changes; the host reads it to aim its
@@ -433,6 +434,9 @@ Details and the reasons: `docs/agent-notes/integration.md`.
   C++/WinRT: C++/WinRT needs `/EHsc` and adds four static imports. Every combase, shell32 and
   advapi32 function is resolved with `GetProcAddress` on the media thread; calling one directly
   fails the link or the KERNEL32-only gate.
+- **Outside the test host the remote ignores every session whose app id starts with
+  `RacingMasterMod.TestHost.`** (0.3.2): the suite's fake players are visible to every program on
+  the PC, and the owner's in-game panel followed them once. `media-remote-design.md`.
 - **No command may reach a real media session while testing.** In the test host,
   `Engine::Send` (the only function that sends) refuses every app id except
   `RACING_MASTER_MOD_TEST_MEDIA_APP` (the fake player). New command paths go through it. Each

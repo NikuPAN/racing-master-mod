@@ -38,6 +38,12 @@ Choices, each with the reason it exists:
   objects go stale, which is the expected failure in an elevated game.
 - **Titles and artists never reach the log** (players paste it into bug reports). App ids and
   names do.
+- **The developer test's fake players do not exist outside the test host** (0.3.2). A session
+  whose app id starts with `RacingMasterMod.TestHost.` is skipped in `ListSessions` and is never
+  Windows' choice (`CurrentSessionId`), with one log line the first time. Reason: on 2026-11-15
+  a suite ran while the owner played and the in-game panel followed the suite's fake players
+  (Windows shares sessions with every program). In the test host they stay visible (they are
+  what the tests command) unless `RACING_MASTER_MOD_TEST_HIDE_TEST_PLAYERS=1` (run 22b).
 - **The snapshot carries a message id** (`Message`) and the app it names, besides the English
   `message`, so the panel writes the Traditional Chinese line itself. The English wording of
   each id is listed in `remote.h`.

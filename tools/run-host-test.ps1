@@ -33,6 +33,8 @@
 #  21. lifecycle   the game's Shutdown (sleep, wake), a media thread that stops answering, the
 #                  freshness check, and rebuild mode (the fallback when change notices stop)
 #  22. media, flag unset: the mod stays dormant, no log folder, nothing sent
+#  22b. test player hidden     as in the game: a RacingMasterMod.TestHost. session is never listed,
+#                  followed or commanded (RACING_MASTER_MOD_TEST_HIDE_TEST_PLAYERS=1)
 #
 # Music engine (src\music):
 #  23. musictest.exe               silent: decoding, playlist logic, gapless, persistence, picker.
@@ -486,6 +488,14 @@ try {
     $run = Invoke-Media '22. media mode, flag unset: mod must stay dormant' 'basic' 'play;pause;quit' 'lad-media-dormant' @{} $false 4
     Record 'media dormant: the fake player was published, no log folder, nothing received' ((@($run.Lines -match '^fake player published at start: yes').Count -eq 1) -and -not (Test-Path (Join-Path $run.LogRoot 'RacingMasterMod')) -and $run.Received -eq 'nothing')
 
+    # 22b. The game's view of a test player: outside the test host the mod never lists, follows or
+    # commands a session whose app id starts with RacingMasterMod.TestHost. (on 2026-11-15 the
+    # owner's panel switched to a suite's fake players). RACING_MASTER_MOD_TEST_HIDE_TEST_PLAYERS=1
+    # gives the test host that behaviour; the script still picks the fake player and tries to play.
+    $run = Invoke-Media '22b. media remote: the test player hidden as in the game' 'basic' 'play;read;quit' 'lad-media-hidden' @{ RACING_MASTER_MOD_TEST_HIDE_TEST_PLAYERS = '1' } $true 30
+    $appsLine = [regex]::Match($run.Text, 'music apps: Windows answered in \d+ ms; [^\r\n]*').Value
+    Record 'media hidden: the log says once that the test player is ignored, and it is not among the apps found' ($run.Exit -eq 0 -and ([regex]::Matches($run.Text, 'music apps: ignoring ' + [regex]::Escape($run.Id) + ', a silent player of the mod''s own developer test')).Count -eq 1 -and $appsLine -and -not $appsLine.Contains($run.Id))
+    Record 'media hidden: the picked test player never appears, play finds no app, nothing reaches it' ($run.Text.Contains('the test player did not appear') -and $run.Text -match 'step 1 "play": no session' -and $run.Text.Contains('step 2 "read": state: waiting for the app;') -and $run.Received -eq 'nothing')
 
     # --- music engine ---------------------------------------------------------------------------------
     # 23. The engine's own test program: no sound device (manual and null output only), no window,

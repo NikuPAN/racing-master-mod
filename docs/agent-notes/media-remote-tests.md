@@ -24,7 +24,9 @@ are tested only against a silent fake player inside `testhost.exe`.
   (the DLL exports nothing for it) and the script logs `music apps test: finished`, which the
   host waits for.
 - `tools/run-host-test.ps1` runs 15-22: basic, ignore-pause, no-repeat, vanish, late, guard,
-  lifecycle, and media mode with the flag unset. Every command line in the log must name that
+  lifecycle, and media mode with the flag unset; 22b hides the fake player as the game does
+  (`RACING_MASTER_MOD_TEST_HIDE_TEST_PLAYERS=1`): it is not listed, the pick waits for it in vain
+  and play reaches nothing. Every command line in the log must name that
   run's own fake player, and no fake title may appear in the log. Before each run the script waits
   (at most 10 s, then a plain NOTE) until no other run's fake player is listed.
 - Run 41 (end to end) drives the same fake player from the panel: the host publishes it in panel
