@@ -8,6 +8,28 @@
 
 An unofficial, free mod for the PC version of **Racing Master** (巔峰極速, NetEase) that adds an in-game **music panel**: play your own songs while you race, or control Spotify, a browser or another music app, without leaving the game. It is a fan project and has no connection to NetEase, Codemasters or NVIDIA.
 
+### What this mod does to your game — and what it never does
+
+The whole mod is open source, so every line below can be checked in the code.
+
+**What it does**
+
+- Adds one file, `version.dll`, to the game folder. Removing it is just deleting that file.
+- Draws the music panel on top of the game, at the same point in Windows that the Steam, Discord and OBS overlays use.
+- In the clickable mode, it sits in front of the game window's messages so it can see your clicks and key presses on the panel, and passes every other message straight to the game untouched. (The lighter "minimal" mode skips this and uses global hotkeys instead.)
+- Plays your music from its own threads through Windows' normal sound output.
+- Reads and writes only its own files, in `%LOCALAPPDATA%\RacingMasterMod` (your song list, settings and log).
+
+**What it never does**
+
+- Change, move or delete any game file.
+- Read or write the game's memory.
+- Send anything over the internet — it never phones home and never auto-updates.
+- Change how your car drives, your lap times, or anything that affects a race.
+- Hide itself from, or interfere with, the anti-cheat.
+
+None of this makes the mod officially allowed — please read the next part — but it is the whole of what the mod touches.
+
 ### Before you start: please read
 
 - **This is not allowed by the game, and your account could be banned.** Racing Master is an online game with anti-cheat. The mod puts an extra file into the game folder that the game loads. The mod does not change how the game plays, your car, the network or any game file, but the anti-cheat cannot tell that, and NetEase can treat any added file as breaking its terms of use.
@@ -181,6 +203,29 @@ The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vor
 
 <!-- DRAFT 0.3.2：以下到「移除」為止整段改寫，待作者審閱 -->
 《**巔峰極速**》（Racing Master，網易）PC 版的非官方免費模組，在遊戲裡加一個**音樂面板**：比賽時可以放自己的歌，也可以控制 Spotify、瀏覽器或其他播放器，不用切出遊戲。這是玩家自己做的專案，跟網易、Codemasters、NVIDIA 都沒有關係。
+
+### 這個模組會對遊戲做什麼，又絕對不會做什麼
+<!-- DRAFT 0.3.2：整段中文待作者審閱 -->
+
+整個模組都是開源的，下面每一條都能在程式碼裡查證。
+
+**會做的**
+
+- 在遊戲資料夾放一個檔案 `version.dll`，移除就是把它刪掉。
+- 把音樂面板畫在遊戲畫面上，用的是 Steam、Discord、OBS 這類遊戲內介面同一個繪製位置。
+- 在可點擊的模式下，它會擋在遊戲視窗訊息的前面，才能看到你在面板上的點擊和按鍵，其他訊息一律原樣交還遊戲。（較輕量的「精簡」模式不這麼做，改用全域快速鍵。）
+- 用自己的執行緒，透過 Windows 的一般音訊輸出播你的音樂。
+- 只讀寫自己的檔案，位置在 `%LOCALAPPDATA%\RacingMasterMod`（你的歌單、設定和紀錄檔）。
+
+**絕對不會做的**
+
+- 更動、搬移或刪除任何遊戲檔案。
+- 讀取或寫入遊戲的記憶體。
+- 透過網路傳送任何東西，不會回傳、也不會自動更新。
+- 改變車子的操控、你的單圈成績，或任何影響比賽的東西。
+- 躲避反作弊，或干擾反作弊。
+
+這些都不代表遊戲官方允許這個模組（請看下一段），但這就是模組會碰到的全部範圍。
 
 ### 開始之前，請先看完這段
 
