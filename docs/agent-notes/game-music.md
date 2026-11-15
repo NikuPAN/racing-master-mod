@@ -5,7 +5,11 @@ type: decision
 ---
 
 The owner asked (2026-11-15) for a one-click button that mutes the game's own music, and a
-setting that mutes it whenever the mod loads, on by default.
+setting that mutes it whenever the mod loads. The setting defaults **off**: later the same day,
+weighing ban risk for a wider release, the owner chose to keep the mod's footprint on the game as
+small as possible, and this Wwise call is the only thing that calls into the game's own code. So
+out of the box the mod resolves the function pointers (reading the exe's export table, no call) but
+mutes nothing until the player turns it on.
 
 **How:** the game plays its sound through Audiokinetic Wwise, and `g112-Win64-Shipping.exe`
 exports Wwise's own functions by name. `src/core/game_music.cpp` looks up three of them with
@@ -16,7 +20,7 @@ The worker waits for `IsInitialized`, applies what is wanted, and about once a s
 again if something changed it back (logged; the first five times, then every 50th). Calls run
 under a fault guard: a fault switches the feature off for the session with one log line.
 
-- `[panel] mute_game_music` (default 1): turn the game's music off at start. Written by the panel
+- `[panel] mute_game_music` (default 0): turn the game's music off at start. Written by the panel
   writer like the other `[panel]` keys. Only with `mode=on`; display mode calls nothing in the game.
 - The bar's **Game music: on/off** button changes it for this session only (the owner's choice);
   the start setting is separate, in the settings row.

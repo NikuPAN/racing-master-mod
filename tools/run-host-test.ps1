@@ -606,7 +606,7 @@ try {
     $inputIni = [IO.File]::ReadAllText((Join-Path $work 'lad-panel-panel-input\RacingMasterMod\settings.ini'), [Text.Encoding]::UTF8)
     Record 'panel input: settings.ini keeps the panel''s and the music engine''s values side by side' ($inputIni.Contains('marker_seconds=0') -and $inputIni.Contains('[panel]') -and $inputIni.Contains('language=en') -and $inputIni.Contains('source=my_files') -and $inputIni.Contains('[music]') -and $inputIni -match 'volume=\d+')
     $inputBytes = [IO.File]::ReadAllBytes((Join-Path $work 'lad-panel-panel-input\RacingMasterMod\settings.ini'))
-    $joins = '^\[mod\]\r\nmarker_seconds=0\r\n\r\n\[panel\]\r\nmode=on\r\nlanguage=en\r\ntext_size=\w+\r\npause_when_unfocused=\d\r\nsource=my_files\r\ncorner=bottom-centre\r\ncompact=0\r\nmute_game_music=1\r\n\r\n\[keys\]\r\npanel=Insert\r\n\r\n\[music\]\r\n(\w+=[^\r\n]*\r\n)+$'
+    $joins = '^\[mod\]\r\nmarker_seconds=0\r\n\r\n\[panel\]\r\nmode=on\r\nlanguage=en\r\ntext_size=\w+\r\npause_when_unfocused=\d\r\nsource=my_files\r\ncorner=bottom-centre\r\ncompact=0\r\nmute_game_music=0\r\n\r\n\[keys\]\r\npanel=Insert\r\n\r\n\[music\]\r\n(\w+=[^\r\n]*\r\n)+$'
     Record 'panel input: after both writers, one blank line between sections, the panel''s new keys right after its last line, CR LF only, no BOM' ($inputIni -match $joins -and -not ($inputIni -match '[^\r]\n|\r[^\n]') -and -not ($inputBytes.Length -ge 3 -and $inputBytes[0] -eq 0xEF -and $inputBytes[1] -eq 0xBB -and $inputBytes[2] -eq 0xBF))
     if (-not ($inputIni -match $joins)) { Write-Host "    settings.ini of the input run:"; Write-Host ($inputIni -replace "`r", '\r' -replace "`n", "\n`n") }
     Record 'panel input: the worker logged the music player start with the full path of the music folder' ($panelRun.Log.Contains('music: the player for your own songs has started; songs copied into ' + (Join-Path $work 'lad-panel-panel-input\RacingMasterMod\music') + ' are added at every start'))
@@ -643,7 +643,9 @@ try {
     # 40b. 0.3.2's additions: the game's music switch (through the host's stand-in for the game's
     # sound engine, exported under Wwise's names), the engine's status line going by itself, and
     # Clear list with its question. No [mod] lines: the marker stays off by default.
-    $panelRun = Invoke-PanelRun '40b. the game music switch, the passing status line and Clear list' 'extras' '' @{ RACING_MASTER_MOD_LANG = 'en' } @() (Join-Path $fixtures 'music')
+    # mute_game_music=1 explicitly: the product default is off (smallest footprint), so this run asks
+    # for the mute-at-start path to be exercised.
+    $panelRun = Invoke-PanelRun '40b. the game music switch, the passing status line and Clear list' 'extras' '' @{ RACING_MASTER_MOD_LANG = 'en' } @('[panel]', 'mute_game_music=1') (Join-Path $fixtures 'music')
     Record 'extras: the marker is off by default since 0.3.2' ($panelRun.Log.Contains('settings: stage 2, marker for 0 s'))
     Record 'extras: the game''s music switch was found by name and used from the worker (logged once each)' ($panelRun.Log.Contains('game music: the game''s sound engine offers its music switch') -and ([regex]::Matches($panelRun.Log, 'game music: waiting for the game''s sound engine')).Count -eq 1)
 

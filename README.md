@@ -76,7 +76,7 @@ Two sources, chosen with the two buttons at the left of the bar:
 
 When you use **Add files** or **Add folder**, a normal Windows file window opens over the game, and the game does not react to keys or the mouse until you close it. In exclusive full screen these two buttons are greyed out, because the file window would minimise the game; use the music folder instead, or switch the game to windowed or borderless.
 
-**Game music** in the bar switches the game's own music off or on for this session; engine sounds, effects and voices keep playing. By default the mod switches the game's music off every time the game starts (`mute_game_music` in the settings file, or **Turn the game's music off when the game starts** in **Settings**). The game's own music setting is never changed. If a game update removes what this needs, the button is greyed out and says so; use the music switch in the game's sound settings instead.
+**Game music** in the bar switches the game's own music off or on for this session; engine sounds, effects and voices keep playing. You can also have the mod switch the game's music off every time the game starts (`mute_game_music=1` in the settings file, or **Turn the game's music off when the game starts** in **Settings**); this is off by default, so out of the box the mod calls nothing in the game until you press the button. The game's own music setting is never changed. If a game update removes what this needs, the button is greyed out and says so; use the music switch in the game's sound settings instead.
 
 ### The music folder
 
@@ -129,9 +129,9 @@ source=my_files
 corner=bottom-centre
 ; 1 = the compact panel (one row); 0 = the full panel
 compact=0
-; 1 (default) = turn the game's own music off when the game starts; 0 = leave it
+; 1 = turn the game's own music off when the game starts; 0 (default) = leave it
 ; (the game's own music setting is never changed; the panel's Game music button works either way)
-mute_game_music=1
+mute_game_music=0
 
 [keys]
 ; a key name such as Insert, F7 or Home, with Ctrl+, Shift+ or Alt+ in front if you like; none = no key
@@ -250,7 +250,7 @@ The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vor
 
 按「加入檔案」或「加入資料夾」時，遊戲上面會開一個一般的 Windows 檔案視窗，關掉它之前，遊戲不會回應鍵盤和滑鼠。遊戲在獨佔全螢幕模式時，這兩個按鈕會變灰，因為檔案視窗會讓遊戲縮到最小；這時請改用音樂資料夾，或把遊戲切成視窗或無邊框模式。
 
-工具列上的「**遊戲音樂**」可以在這次遊戲中關掉或打開遊戲本身的音樂，引擎聲、音效和語音照常播放。模組預設每次開遊戲都會把遊戲音樂關掉（設定檔的 `mute_game_music`，或「設定」裡的「開遊戲時關掉遊戲音樂」）。遊戲自己的音樂設定不會被改動。如果遊戲更新後這個功能不能用了，按鈕會變灰並說明原因，這時請改用遊戲聲音設定裡的音樂開關。<!-- DRAFT 0.3.2 -->
+工具列上的「**遊戲音樂**」可以在這次遊戲中關掉或打開遊戲本身的音樂，引擎聲、音效和語音照常播放。你也可以讓模組每次開遊戲就把遊戲音樂關掉（設定檔的 `mute_game_music=1`，或「設定」裡的「開遊戲時關掉遊戲音樂」）；這項預設是關的，所以不特別設定的話，模組在你按下按鈕之前不會去碰遊戲。遊戲自己的音樂設定不會被改動。如果遊戲更新後這個功能不能用了，按鈕會變灰並說明原因，這時請改用遊戲聲音設定裡的音樂開關。<!-- DRAFT 0.3.2 -->
 
 ### 音樂資料夾
 
@@ -303,9 +303,9 @@ source=my_files
 corner=bottom-centre
 ; 1 = 精簡面板（一列）；0 = 完整面板
 compact=0
-; 1（預設）= 開遊戲時關掉遊戲本身的音樂；0 = 不動它
+; 1 = 開遊戲時關掉遊戲本身的音樂；0（預設）= 不動它
 ;（不會改動遊戲自己的音樂設定；面板上的「遊戲音樂」按鈕隨時都能用）
-mute_game_music=1
+mute_game_music=0
 
 [keys]
 ; 按鍵名稱，例如 Insert、F7、Home，前面可以加 Ctrl+、Shift+ 或 Alt+；none = 不設按鍵
