@@ -54,7 +54,7 @@
 5. **把檔案放進去。**把解壓縮出來的 `version.dll` 拖進 `Win64` 資料夾。因為這是程式資料夾，Windows 會問你要不要給權限，按「**繼續**」。如果 Windows 說已經有同名檔案（舊版的這個模組），選「**取代目的地中的檔案**」。
 6. **照平常一樣開遊戲。**過幾秒，畫面下方會出現一行小提示，說音樂面板準備好了。按 **Insert** 就能打開。
 
-只想聽自己的歌的話，按面板上的「**遊戲音樂**」按鈕，或在遊戲自己的聲音設定裡把音樂關掉。
+只想聽自己的歌的話，在遊戲自己的聲音設定裡把音樂關小或關掉。
 
 ### 移除
 
@@ -100,7 +100,6 @@
 
 按「加入檔案」或「加入資料夾」時，遊戲上面會開一個一般的 Windows 檔案視窗，關掉它之前，遊戲不會回應鍵盤和滑鼠。遊戲在獨佔全螢幕模式時，這兩個按鈕會變灰，因為檔案視窗會讓遊戲縮到最小；這時請改用音樂資料夾，或把遊戲切成視窗或無邊框模式。
 
-工具列上的「**遊戲音樂**」可以在這次遊戲中關掉或打開遊戲本身的音樂，引擎聲、音效和語音照常播放。你也可以讓模組每次開遊戲就把遊戲音樂關掉（設定檔的 `mute_game_music=1`，或「設定」裡的「開遊戲時關掉遊戲音樂」）；這項預設是關的，所以不特別設定的話，模組在你按下按鈕之前不會去碰遊戲。遊戲自己的音樂設定不會被改動。如果遊戲更新後這個功能不能用了，按鈕會變灰並說明原因，這時請改用遊戲聲音設定裡的音樂開關。<!-- DRAFT 0.3.2 -->
 
 ### 音樂資料夾
 
@@ -154,9 +153,6 @@ source=my_files
 corner=bottom-centre
 ; 1 = 精簡面板（一列）；0 = 完整面板
 compact=0
-; 1 = 開遊戲時關掉遊戲本身的音樂；0（預設）= 不動它
-;（不會改動遊戲自己的音樂設定；面板上的「遊戲音樂」按鈕隨時都能用）
-mute_game_music=0
 
 [keys]
 ; 按鍵名稱，例如 Insert、F7、Home，前面可以加 Ctrl+、Shift+ 或 Alt+；none = 不設按鍵
@@ -180,7 +176,6 @@ media_keys=1
 - 模組只會在 `g112-Win64-Shipping.exe` 裡面啟動。萬一被別的程式讀到，它只做轉交，其他什麼都不做。
 - 要在畫面上畫東西，它會掛在 Direct3D 把畫好的一幀送上螢幕的那個函式上。Steam、Discord、OBS 的遊戲內介面也是掛在同一個地方。為了接收面板的滑鼠和按鍵，它會看著遊戲視窗收到的訊息，不是給面板的就原樣交回遊戲。
 - 音樂由模組自己的執行緒播放，走 Windows 的預設音訊輸出；你在 Windows 換了預設裝置，它也會跟著換。
-- 「遊戲音樂」按鈕是透過遊戲自己公開提供的函式，呼叫遊戲的音效引擎（Wwise）。<!-- DRAFT 0.3.2 -->
 - 不修改任何遊戲檔案，也不改寫遊戲的記憶體。
 
 ### 從原始碼編譯
@@ -250,7 +245,7 @@ None of this makes the mod officially allowed — please read the next part — 
 5. **Copy the file in.** Drag `version.dll` from the unzipped folder into the `Win64` folder. Windows asks for permission because it is a program folder: click **Continue**. If Windows says a file with that name already exists (an older version of this mod), choose **Replace the file**.
 6. **Start the game** the way you always do. After a few seconds a short note at the bottom of the screen says the music panel is ready. Press **Insert** to open it.
 
-To hear only your own music, use the panel's **Game music** button, or switch off the music in the game's own sound settings.
+To hear only your own music, turn down or switch off the music in the game's own sound settings.
 
 ### Remove
 
@@ -295,8 +290,6 @@ Two sources, chosen with the two buttons at the left of the bar:
 **Settings** in the bar opens a row with the language (follow Windows, English or Traditional Chinese), the text size, where the panel sits (six places along the top and bottom edges), and whether your own songs pause while the game is not the active window.
 
 When you use **Add files** or **Add folder**, a normal Windows file window opens over the game, and the game does not react to keys or the mouse until you close it. In exclusive full screen these two buttons are greyed out, because the file window would minimise the game; use the music folder instead, or switch the game to windowed or borderless.
-
-**Game music** in the bar switches the game's own music off or on for this session; engine sounds, effects and voices keep playing. You can also have the mod switch the game's music off every time the game starts (`mute_game_music=1` in the settings file, or **Turn the game's music off when the game starts** in **Settings**); this is off by default, so out of the box the mod calls nothing in the game until you press the button. The game's own music setting is never changed. If a game update removes what this needs, the button is greyed out and says so; use the music switch in the game's sound settings instead.
 
 ### The music folder
 
@@ -350,9 +343,6 @@ source=my_files
 corner=bottom-centre
 ; 1 = the compact panel (one row); 0 = the full panel
 compact=0
-; 1 = turn the game's own music off when the game starts; 0 (default) = leave it
-; (the game's own music setting is never changed; the panel's Game music button works either way)
-mute_game_music=0
 
 [keys]
 ; a key name such as Insert, F7 or Home, with Ctrl+, Shift+ or Alt+ in front if you like; none = no key
@@ -376,7 +366,6 @@ A file named `racing-master-mod.ini` next to `version.dll` is read as well and o
 - The mod only wakes up inside `g112-Win64-Shipping.exe`. In any other program that happens to load it, it does nothing but forward.
 - To draw, it attaches to the function Direct3D uses to show a finished frame. Steam, Discord and OBS overlays attach in the same place. To see the panel's clicks and keys, it watches the game window's messages and passes everything not meant for the panel on to the game.
 - The music plays from the mod's own threads through Windows' default sound output, and follows it when you switch the default device.
-- For the **Game music** button it calls the game's own sound engine (Wwise) through a function the game itself makes public by name.
 - No game file is edited and no game memory is patched.
 
 ### Build from source

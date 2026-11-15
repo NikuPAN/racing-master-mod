@@ -149,11 +149,6 @@ void ApplyPanelKey(const char* key, const char* value, const char* path8, UiSett
         if (!ParseSwitch(value, &ui->compact)) {
             Log("settings: \"compact=%s\" is not 0 or 1 (in %s); the panel shows in full", value, path8);
         }
-    } else if (_stricmp(key, "mute_game_music") == 0) {
-        if (!ParseSwitch(value, &ui->muteGameMusic)) {
-            Log("settings: \"mute_game_music=%s\" is not 0 or 1 (in %s); the game's music is left as it is",
-                value, path8);
-        }
     } else {
         Log("settings: unknown key \"%s\" under [panel] is ignored (in %s)", key, path8);
     }

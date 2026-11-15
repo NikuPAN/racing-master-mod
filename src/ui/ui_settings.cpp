@@ -13,21 +13,18 @@ namespace {
 
 // The latest values to save, packed into one word so the frame thread hands them over with a
 // single atomic store. Bit 31 = "something to save".
-//   bits 0-1 language, 2-3 text size, 4 pause when unfocused, 5 source, 6-8 corner, 9 compact,
-//   10 mute the game's music at start
+//   bits 0-1 language, 2-3 text size, 4 pause when unfocused, 5 source, 6-8 corner, 9 compact
 std::atomic<uint32_t> g_pending{0};
 constexpr uint32_t kPendingFlag = 0x80000000u;
 HANDLE g_wake = nullptr;
 volatile LONG g_written = 0;
 
-constexpr int kKeyCount = 7;
-const char* const kKeys[kKeyCount] = {"language", "text_size", "pause_when_unfocused", "source",
-                                      "corner",   "compact",   "mute_game_music"};
+constexpr int kKeyCount = 6;
+const char* const kKeys[kKeyCount] = {"language", "text_size", "pause_when_unfocused", "source", "corner", "compact"};
 
 uint32_t Pack(const UiSettings& s) {
     return kPendingFlag | (s.language & 3u) | ((s.textSize & 3u) << 2) | (s.pauseWhenUnfocused ? 0x10u : 0u) |
-           ((s.source & 1u) << 5) | ((s.corner & 7u) << 6) | (s.compact ? 0x200u : 0u) |
-           (s.muteGameMusic ? 0x400u : 0u);
+           ((s.source & 1u) << 5) | ((s.corner & 7u) << 6) | (s.compact ? 0x200u : 0u);
 }
 
 void ValueWords(uint32_t packed, char values[kKeyCount][16]) {
@@ -42,7 +39,6 @@ void ValueWords(uint32_t packed, char values[kKeyCount][16]) {
     strcpy_s(values[3], 16, (packed & 0x20u) ? "other_app" : "my_files");
     strcpy_s(values[4], 16, kCorners[(packed >> 6) & 7u]);
     strcpy_s(values[5], 16, (packed & 0x200u) ? "1" : "0");
-    strcpy_s(values[6], 16, (packed & 0x400u) ? "1" : "0");
 }
 
 struct Line {

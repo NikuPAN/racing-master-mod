@@ -1,7 +1,6 @@
 #include "worker.h"
 
 #include "game_close.h"
-#include "game_music.h"
 #include "log.h"
 #include "present_hook.h"
 #include "present_probe.h"
@@ -372,7 +371,6 @@ void WatchFrames(bool musicStarted) {
             continue;   // only the game window is still watched, for the final save
         }
         windowLog.Tick();
-        game_music::Tick();
         if (tick % 4 != 0) {
             continue;
         }
@@ -470,10 +468,6 @@ bool StartMusicParts(const UiSettings& ui) {
         folder8[0] ? folder8 : "(no folder: LOCALAPPDATA is not set)");
     if (ui.source == 1) {
         other_app::Start();   // "Other app" was the player's last choice
-    }
-    if (ui.mode == UiModeOn) {
-        // Display mode stays the careful first try: it calls nothing in the game.
-        game_music::Start(ui.muteGameMusic);
     }
     return true;
 }

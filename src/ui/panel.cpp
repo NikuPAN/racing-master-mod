@@ -21,7 +21,6 @@
 #include "ui_common.h"
 #include "ui_settings.h"
 
-#include "../core/game_music.h"
 #include "../core/log.h"
 
 #include "imgui_internal.h"
@@ -746,25 +745,6 @@ void TransportMyFiles(const music::Snapshot& snapshot, bool displayOnly, bool wi
     Mark("next");
 }
 
-// The game's own music, off or on for this session (0.3.2; src/core/game_music.h). Shown for both
-// sources; greyed with the reason when this game version does not offer it or the call failed.
-void GameMusicButton(bool displayOnly) {
-    const Strings& s = S();
-    const game_music::State state = game_music::GetState();
-    const bool offered = state.availability == game_music::Availability::Looking ||
-                         state.availability == game_music::Availability::Ready;
-    const float width = ImMax(ButtonWidth(s.gameMusicOn), ButtonWidth(s.gameMusicOff));
-    ImGui::BeginDisabled(displayOnly || !offered);
-    const bool pressed = ImGui::Button(
-        (std::string(state.muted ? s.gameMusicOff : s.gameMusicOn) + "##game_music").c_str(), ImVec2(width, 0.0f));
-    ImGui::EndDisabled();
-    Tip(s.gameMusicHint, displayOnly ? s.reasonDisplayOnly : (offered ? nullptr : s.reasonGameMusicUnavailable));
-    Mark("game_music");
-    if (pressed && offered && !displayOnly) {
-        game_music::Request(!state.muted);
-    }
-}
-
 void ControlsMyFiles(const music::Snapshot& snapshot, float width, bool displayOnly) {
     const Strings& s = S();
     music::Player& player = music::Player::Get();
@@ -774,16 +754,18 @@ void ControlsMyFiles(const music::Snapshot& snapshot, float width, bool displayO
         StepLoop(snapshot);
     }
     ImGui::SameLine();
-    GameMusicButton(displayOnly);
-    ImGui::SameLine();
-    // A fixed width (150 units, about 150 px at 1080p with medium text), at the right end of the
-    // row, so it reads as a slider rather than a label with a handle squeezed against the edge.
-    // The word stands in front; only the percentage is inside, so the handle never covers the word.
-    const float sliderWidth = ImFloor(U() * 150.0f);
+    // Up to 150 units (about 150 px at 1080p with medium text), at the right end of the row, so it
+    // reads as a slider rather than a label with a handle squeezed against the edge. The word stands
+    // in front; only the percentage is inside, so the handle never covers the word. When the buttons
+    // before it leave less room (longer labels, larger text), the slider shrinks to fit rather than
+    // being pushed off the panel's edge.
     const float labelWidth = ImGui::CalcTextSize(s.volumeWord).x + ImGui::GetStyle().ItemSpacing.x;
     const float left = width - (ImGui::GetCursorPosX() - ImGui::GetStyle().WindowPadding.x);
+    float sliderWidth = ImFloor(U() * 150.0f);
     if (left > sliderWidth + labelWidth) {
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + left - sliderWidth - labelWidth);
+    } else {
+        sliderWidth = ImMax(ImFloor(left - labelWidth), ImFloor(U() * 40.0f));
     }
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(s.volumeWord);
@@ -842,8 +824,6 @@ void ControlsOtherApp(const remote::Snapshot& snapshot, const RemoteView& view, 
     if (LoopButton(RepeatLabel(repeat), canRepeat, repeatHint, reason)) {
         app.StepRepeat(snapshot);
     }
-    ImGui::SameLine();
-    GameMusicButton(displayOnly);
     // No volume here: another app's volume is set in that app.
     (void)width;
 }
@@ -1131,18 +1111,6 @@ void SettingsRow() {
     }
     Tip(s.compactPanelHint);
     Mark("compact_setting");
-    char muteLabel[160];
-    snprintf(muteLabel, sizeof(muteLabel), "%s##mute_game_music", s.muteGameMusicAtStart);
-    const game_music::Availability availability = game_music::GetState().availability;
-    const bool offered = availability == game_music::Availability::Looking ||
-                         availability == game_music::Availability::Ready;
-    ImGui::BeginDisabled(!offered);
-    if (ImGui::Checkbox(muteLabel, &g_settings.muteGameMusic)) {
-        SaveSettings();   // takes effect at the next start; the bar's button acts now
-    }
-    ImGui::EndDisabled();
-    Tip(s.muteGameMusicAtStartHint, offered ? nullptr : s.reasonGameMusicUnavailable);
-    Mark("mute_game_music");
 
     char keys[kCommandCount][32];
     for (int i = 0; i < kCommandCount; ++i) {
@@ -1569,16 +1537,12 @@ int PanelAppendTestState(char* buffer, int size) {
         unplayable += track.supported ? 0 : 1;
     }
     // "message": whether the engine's status line is showing (it goes a few seconds after it
-    // changed); "clearask": whether Clear list is asking; "gamemusic": what the mod keeps for the
-    // game's music (1 = off) and whether the game offers the switch (game_music.h).
-    const game_music::State gameMusic = game_music::GetState();
+    // changed); "clearask": whether Clear list is asking.
     int extra = snprintf(buffer + n, static_cast<size_t>(size - n),
-                         "position %d\nunplayable %d\ncorner %u\nmessage %d\ncompact %d\nclearask %d\n"
-                         "gamemusic %d\ngamemusicoffered %d\n",
+                         "position %d\nunplayable %d\ncorner %u\nmessage %d\ncompact %d\nclearask %d\n",
                          static_cast<int>(snapshot.positionSeconds), unplayable, g_settings.corner,
                          !snapshot.message.empty() && GetTickCount64() < g_engineMessageUntil ? 1 : 0,
-                         g_settings.compact ? 1 : 0, g_clearConfirmCount >= 0 ? 1 : 0, gameMusic.muted ? 1 : 0,
-                         gameMusic.availability == game_music::Availability::Ready ? 1 : 0);
+                         g_settings.compact ? 1 : 0, g_clearConfirmCount >= 0 ? 1 : 0);
     if (g_settings.source == SourceOtherApp && extra > 0 && n + extra < size) {
         const remote::Snapshot other = other_app::GetSnapshot();
         const RemoteView view = ViewOf(other);

@@ -20,4 +20,3 @@ One fact per file. Machine-specific notes live in `local/` (gitignored).
 - [music-engine-open-items.md](music-engine-open-items.md) — what the engine still needs after integration and what stays unverified until an in-game run
 - [present-probe.md](present-probe.md) — the [debug] present_probe diagnostic for the NVIDIA Smooth Motion blink, its log block, and what each finding would mean
 - [integration.md](integration.md) — how 0.3.0 wires the panel, the engine and the media remote into version.dll, and why
-- [game-music.md](game-music.md) — the Game music button and mute_game_music: Wwise's own MuteBackgroundMusic, looked up by name in the game exe; why not the save file or the audio session; what only the game can confirm

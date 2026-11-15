@@ -40,12 +40,6 @@ struct UiSettings {
     unsigned source = 0;              // 0 = the player's own files, 1 = another app's media session
     unsigned corner = UiCornerBottomCentre;   // a UiCorner
     bool compact = false;             // the one-row panel instead of the full one (0.3.2)
-    // Mute the game's own music when it starts (0.3.2). Default OFF since the owner chose to keep
-    // the mod's footprint on the game as small as possible: the Wwise mute is the only thing that
-    // calls into the game's own code, so it stays idle until the player turns it on (the bar's
-    // button, or this setting). For the session only; the game's own music setting is never written
-    // (src/core/game_music.h).
-    bool muteGameMusic = false;
     bool mediaKeys = true;            // react to the keyboard's own media keys (local files only)
     // The key names as typed; the panel parses them and logs a refused one with the accepted names.
     char keys[UiKeyCount][32] = {"Insert", "F5", "F6", "F7", "F8", "F9"};
