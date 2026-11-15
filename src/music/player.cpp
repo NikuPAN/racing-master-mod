@@ -54,7 +54,9 @@ constexpr int kMaxScanDepth = 8;
 constexpr unsigned kGateTimeoutMs = 100;
 constexpr unsigned kListSaveDelayMs = 2000;
 constexpr unsigned kSettingsSaveDelayMs = 500;
-constexpr unsigned kPositionSaveIntervalMs = 30000;
+// While a song plays, its position is saved this often (only when it moved), so a game that ends
+// without the mod seeing it close loses at most this much of the place in the song.
+constexpr unsigned kPositionSaveIntervalMs = 10000;
 constexpr unsigned kPausedDeviceIdleMs = 60000;
 constexpr unsigned kStoppedDeviceIdleMs = 5000;
 constexpr unsigned kWatchdogMs = 3000;
@@ -89,6 +91,11 @@ std::string Utf8(const std::wstring& text) {
 
 uint64_t FileTimeValue(const FILETIME& time) {
     return (static_cast<uint64_t>(time.dwHighDateTime) << 32) | time.dwLowDateTime;
+}
+
+bool SameSettings(const MusicSettings& a, const MusicSettings& b) {
+    return a.volumePercent == b.volumePercent && a.loop == b.loop && a.pauseWhenGameUnfocused == b.pauseWhenGameUnfocused &&
+           a.currentPath == b.currentPath && a.positionMs == b.positionMs;
 }
 
 // ---- commands -------------------------------------------------------------------------------------
@@ -204,6 +211,7 @@ public:
         mode_ = config.output;
         silent_ = config.silentDevice;
         dataDirOverride_ = config.dataDir ? config.dataDir : L"";
+        positionSaveMs_ = config.positionSaveMs ? config.positionSaveMs : kPositionSaveIntervalMs;
     }
 
     void Start() {
@@ -356,7 +364,7 @@ public:
     void SimulateDeviceLoss() { output_.SimulateDeviceLoss(); }
     testing::Counters GetCounters() const {
         return {output_.Consumed(), output_.Produced(), output_.Callbacks(), output_.Underruns(), output_.SampleRate(),
-                output_.DeviceStarted(), opens_.load(), deviceRestarts_.load()};
+                output_.DeviceStarted(), opens_.load(), deviceRestarts_.load(), settingsSaves_.load()};
     }
 
 private:
@@ -1181,19 +1189,30 @@ private:
             job.content = FormatPlaylist(Stored());
             PostIo(std::move(job));
         }
-        if (logic_.status == State::Playing && now - lastPositionSave_ >= kPositionSaveIntervalMs) {
+        if (logic_.status == State::Playing && now - lastPositionSave_ >= positionSaveMs_) {
             lastPositionSave_ = now;
             RememberPosition();
             MarkSettingsDirty();
         }
         if (settingsDirty_ && now - settingsDirtyAt_ >= kSettingsSaveDelayMs && !settingsPath_.empty()) {
             settingsDirty_ = false;
-            IoJob job;
-            job.kind = IoJob::Kind::SaveSettings;
-            job.path = settingsPath_;
-            job.settings = CurrentSettings();
-            PostIo(std::move(job));
+            QueueSettingsSave();
         }
+    }
+
+    // Hands the [music] values to the I/O thread, unless they are what was saved last (a song
+    // that stands still, or a change that was undone, is not written again).
+    void QueueSettingsSave() {
+        MusicSettings settings = CurrentSettings();
+        if (haveSaved_ && SameSettings(settings, lastSaved_)) return;
+        lastSaved_ = settings;
+        haveSaved_ = true;
+        settingsSaves_.fetch_add(1);
+        IoJob job;
+        job.kind = IoJob::Kind::SaveSettings;
+        job.path = settingsPath_;
+        job.settings = std::move(settings);
+        PostIo(std::move(job));
     }
 
     void MarkListDirty() {
@@ -1392,10 +1411,12 @@ private:
         listDirty_ = false;
         settingsDirty_ = false;
         lastPositionSave_ = GetTickCount64();
+        haveSaved_ = false;
         lastDeviceAttempt_ = 0;
         deviceIdleSince_ = 0;
         opens_.store(0);
         deviceRestarts_.store(0);
+        settingsSaves_.store(0);
         AcquireSRWLockExclusive(&viewLock_);
         view_.message.clear();
         ++view_.messageSerial;
@@ -1510,7 +1531,10 @@ private:
             Log("music: the playlist could not be saved (Windows error %lu)", error);
         }
         bool leftAsIs = false;
-        if (!SaveSettings(settingsPath_, CurrentSettings(), &error, &leftAsIs)) {
+        lastSaved_ = CurrentSettings();
+        haveSaved_ = true;
+        settingsSaves_.fetch_add(1);
+        if (!SaveSettings(settingsPath_, lastSaved_, &error, &leftAsIs)) {
             if (leftAsIs) {
                 LogSettingsLeftAsIs(error);
             } else {
@@ -1807,8 +1831,12 @@ private:
     bool settingsDirty_ = false;
     ULONGLONG settingsDirtyAt_ = 0;
     ULONGLONG lastPositionSave_ = 0;
+    unsigned positionSaveMs_ = kPositionSaveIntervalMs;
+    MusicSettings lastSaved_;   // the [music] values last handed to a save (valid once haveSaved_)
+    bool haveSaved_ = false;
     std::atomic<uint32_t> opens_{0};
     std::atomic<uint32_t> deviceRestarts_{0};
+    std::atomic<uint32_t> settingsSaves_{0};
 };
 
 // Created on first use and never destroyed: nothing may run at process exit (the game can end

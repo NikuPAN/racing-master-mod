@@ -5,6 +5,7 @@
 #include "musictest.h"
 
 #include "music/player.h"
+#include "music/playlist_store.h"
 #include "music/testing.h"
 
 #include <windows.h>
@@ -450,6 +451,53 @@ MT_TEST(580, EnginePersistence, "engine: list, cued track and position survive a
     P().Play();
     const double resumed = Snap().positionSeconds;
     mt::Check(std::fabs(resumed - 0.3) < 0.1, "Play continues where it was left", "%.3f s", resumed);
+}
+
+// The game can end without the mod seeing it close (a forced exit, a crash). While a song plays,
+// its place is saved every 10 s, and only when it moved; here every 300 ms, so the case is quick.
+MT_TEST(585, EnginePositionSaves, "engine: the playing position is saved regularly, only when it changed") {
+    const Fixtures& f = Files();
+    const std::wstring dir = mt::NewDir(L"position saves");
+    testing::Config config;
+    config.output = OutputMode::Manual;
+    config.dataDir = dir.c_str();
+    config.positionSaveMs = 300;
+    testing::Configure(config);
+    P().Start();
+    P().AddFiles({f.a10});
+    testing::WaitForIdleIo(5000);
+    P().Play();
+    testing::Sync(5000);
+    Render(1.0, nullptr);
+    // The interval runs on the clock; the position comes from the audio rendered so far.
+    auto waitAndSettle = [](unsigned ms) {
+        const ULONGLONG until = GetTickCount64() + ms;
+        while (GetTickCount64() < until) {
+            testing::Sync(2000);
+            Sleep(20);
+        }
+        testing::WaitForIdleIo(5000);
+    };
+    waitAndSettle(1200);
+    MusicSettings saved;
+    ReadMusicSection(mt::ReadBytes(dir + L"\\settings.ini"), &saved);
+    mt::Check(saved.currentPath == f.a10 && saved.positionMs >= 900 && saved.positionMs <= 1100,
+              "while a song plays, the song and its place reach settings.ini without a stop or a close",
+              "position_ms=%lld", static_cast<long long>(saved.positionMs));
+
+    // Playing, but no audio pulled: the place does not move, so nothing is written again.
+    const uint32_t before = testing::GetCounters().settingsSaves;
+    waitAndSettle(1200);
+    mt::Check(testing::GetCounters().settingsSaves == before, "a place that did not move is not saved again",
+              "%u saves before, %u after", before, testing::GetCounters().settingsSaves);
+
+    Render(0.5, nullptr);
+    waitAndSettle(1200);
+    ReadMusicSection(mt::ReadBytes(dir + L"\\settings.ini"), &saved);
+    mt::Check(testing::GetCounters().settingsSaves == before + 1 && saved.positionMs >= 1400 && saved.positionMs <= 1600,
+              "once it moves, the next interval saves it, once", "%u saves after, position_ms=%lld",
+              testing::GetCounters().settingsSaves, static_cast<long long>(saved.positionMs));
+    P().Shutdown();
 }
 
 MT_TEST(590, EngineFolders, "engine: drop-in folder, Add folder, natural order, duplicates") {

@@ -134,7 +134,8 @@ dumpbin: `link.exe /DUMP /NOLOGO /IMPORTS out\version.dll` (the fetched SDK has 
 Two files, both optional, same `[mod]` keys (`stage` 0/1/2, `marker_seconds` 0..600). The music
 engine keeps its own `[music]` section in the first one (volume, loop, pause_when_game_unfocused,
 current, position_ms) and rewrites only that section, in UTF-8, keeping the `[mod]` lines; the
-loader skips `[music]` without logging "changed nothing".
+loader skips `[music]` without logging "changed nothing". While a song plays, `current` and
+`position_ms` are saved every 10 s, and only when they changed (`music-engine.md`).
 
 1. `%LOCALAPPDATA%\RacingMasterMod\settings.ini` (no administrator rights, survives game updates)
 2. `racing-master-mod.ini` next to `version.dll` (overrides 1 when present)

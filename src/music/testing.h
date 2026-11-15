@@ -16,6 +16,7 @@ struct Config {
     OutputMode output = OutputMode::Wasapi;
     bool silentDevice = false;         // real device, zero output (developer switch, never in automated runs)
     const wchar_t* dataDir = nullptr;  // overrides %LOCALAPPDATA%\RacingMasterMod
+    unsigned positionSaveMs = 0;       // how often the playing position is saved; 0 = the engine's 10 s
 };
 void Configure(const Config& config);
 
@@ -44,6 +45,7 @@ struct Counters {
     bool deviceStarted;
     uint32_t opens;          // source opens since Start (successful or not)
     uint32_t deviceRestarts; // watchdog restarts since Start
+    uint32_t settingsSaves;  // [music] saves handed to the I/O thread or done at shutdown, since Start
 };
 Counters GetCounters();
 
