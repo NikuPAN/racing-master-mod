@@ -1,8 +1,8 @@
 #include <winver.h>
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 0, 3, 1, 0
-PRODUCTVERSION 0, 3, 1, 0
+FILEVERSION 0, 3, 2, 0
+PRODUCTVERSION 0, 3, 2, 0
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_DLL
 BEGIN
@@ -12,8 +12,8 @@ BEGIN
         BEGIN
             VALUE "FileDescription", "Racing Master Mod: in-game music panel (unofficial fan project, not from NetEase or Microsoft)"
             VALUE "ProductName", "Racing Master Mod"
-            VALUE "FileVersion", "0.3.1"
-            VALUE "ProductVersion", "0.3.1"
+            VALUE "FileVersion", "0.3.2"
+            VALUE "ProductVersion", "0.3.2"
             VALUE "OriginalFilename", "version.dll"
             VALUE "LegalCopyright", "MIT licence"
         END

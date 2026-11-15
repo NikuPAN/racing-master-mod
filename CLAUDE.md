@@ -8,6 +8,14 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ## Current state (2026-11-15)
 
+- **Version 0.3.2 on branch `panel/0.3.2` (not merged, test host only)**: the owner's decisions
+  after the 0.3.0 game run of 15:40 (`design-decisions.md` 14-16): six places, each flush with the
+  screen edges (top centre added); a compact one-row panel (`[panel] compact=`); the panel as two
+  windows so the bar never moves; times never cut off and centred on the bar's line; other apps
+  by a readable name (`src/remote/app_names.cpp`; "Chrome", never "Chrome.UserData.Profile1");
+  the test's fake media players ignored outside the test host, and `tools\run-host-test.ps1`
+  refusing to start while the game runs (the owner's panel had followed a suite's fake players).
+  Details: `music-panel.md`, `media-remote-design.md`, `test-host.md` item 15.
 - **Version 0.3.1 on branch `fix/0.3.1` (not merged, test host only)**: the fixes for what the
   owner's 0.3.0 game runs of 2026-11-15 showed. The final music save at a normal close (window
   procedure passes the close to the worker, bounded 0.5 s wait after `WM_DESTROY`) and a save of
@@ -124,7 +132,7 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build\build.ps1          # out\version.dll, testhost.exe, bystander.exe, musictest.exe
-powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 46 hidden runs, 387 checks, exit 0 = pass (about 2-3 min)
+powershell -ExecutionPolicy Bypass -File tools\run-host-test.ps1  # 48 hidden runs, 424 checks, exit 0 = pass (about 4 min)
 ```
 
 The test script refuses to start while the game runs (exit code 3): its fake media players are

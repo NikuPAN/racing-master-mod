@@ -16,7 +16,7 @@
 
 namespace {
 
-constexpr char kVersion[] = "0.3.1 (music panel, music player, control of other music apps)";
+constexpr char kVersion[] = "0.3.2 (music panel, music player, control of other music apps)";
 
 HMODULE g_self = nullptr;
 bool g_testHost = false;

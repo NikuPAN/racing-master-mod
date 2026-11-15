@@ -8,9 +8,9 @@
 
 An unofficial, free, open-source mod for the PC version of **Racing Master** (巔峰極速, NetEase). It is a fan project and has no connection to NetEase, Codemasters or NVIDIA.
 
-### Status: version 0.3.1, the music panel, not yet tried in the game
+### Status: version 0.3.2, the music panel, not yet tried in the game
 
-Version 0.3.0 added an in-game **music panel**: play your own songs over the game, or control the music another app is playing, without leaving the race. It has run in the game on a test account. Version 0.3.1 fixes what that run showed: the song and the place in it are now saved when you close the game (and every 10 seconds while a song plays), and the panel now sits at the bottom centre, where it should no longer cover the game's diamond counter. With NVIDIA Smooth Motion switched on the panel blinked in that run; 0.3.1 should say so in the log, and turning Smooth Motion off for this game kept it steady. 0.3.1 itself has been checked only in a test program on the developer's PC, not yet in the real game. The loader underneath it has run in the game three times (0.1.0, 0.2.0 and 0.3.0).
+Version 0.3.0 added an in-game **music panel**: play your own songs over the game, or control the music another app is playing, without leaving the race. It has run in the game on a test account. Version 0.3.1 fixes what that run showed: the song and the place in it are now saved when you close the game (and every 10 seconds while a song plays), and the panel now sits at the bottom centre, where it should no longer cover the game's diamond counter. With NVIDIA Smooth Motion switched on the panel blinked in that run; 0.3.1 should say so in the log, and turning Smooth Motion off for this game kept it steady. Version 0.3.2 adds what that run asked for: six places for the panel, each right against the edge of the screen, a compact one-row panel for tight spaces, times that are never cut off, other apps shown by their plain names ("Chrome", not a browser profile), and a bar that stays put when the song list opens. 0.3.1 and 0.3.2 have been checked only in a test program on the developer's PC, not yet in the real game. The loader underneath has run in the game three times (0.1.0, 0.2.0 and 0.3.0).
 
 Planned, in this order:
 
@@ -175,9 +175,9 @@ The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vor
 
 《**巔峰極速**》（Racing Master，網易）PC 版的非官方免費開源模組。這是玩家自己做的專案，與網易、Codemasters、NVIDIA 都沒有關係。
 
-### 目前進度：0.3.1 版音樂面板，還沒在遊戲裡實測
+### 目前進度：0.3.2 版音樂面板，還沒在遊戲裡實測
 
-0.3.0 版多了一個**遊戲內音樂面板**：比賽中不用切出遊戲，就能播自己的歌，或是控制其他程式正在放的音樂。它已經用測試帳號在遊戲裡跑過一次。0.3.1 版修正了那次發現的問題：關掉遊戲時會記住正在播的歌和播到哪裡（播歌時每 10 秒也會存一次）；面板改放在畫面下方中間，應該不會再擋住遊戲的鑽石數。那次開著 NVIDIA Smooth Motion 時面板會閃，0.3.1 版應該會在紀錄檔寫明；替這個遊戲關掉 Smooth Motion 後就沒有再閃。0.3.1 版本身目前只在開發者電腦上的測試程式裡檢查過，還沒有在真正的遊戲裡跑過。底下的載入器已經在遊戲裡跑過三次（0.1.0、0.2.0 和 0.3.0 版）。
+0.3.0 版多了一個**遊戲內音樂面板**：比賽中不用切出遊戲，就能播自己的歌，或是控制其他程式正在放的音樂。它已經用測試帳號在遊戲裡跑過一次。0.3.1 版修正了那次發現的問題：關掉遊戲時會記住正在播的歌和播到哪裡（播歌時每 10 秒也會存一次）；面板改放在畫面下方中間，應該不會再擋住遊戲的鑽石數。那次開著 NVIDIA Smooth Motion 時面板會閃，0.3.1 版應該會在紀錄檔寫明；替這個遊戲關掉 Smooth Motion 後就沒有再閃。0.3.2 版再加上那次試玩後想要的功能：面板有六個位置可選，每個都貼齊畫面邊緣；空間不夠時可以用只有一列的精簡面板；時間不會再被截掉；其他程式只顯示簡單的名稱（例如「Chrome」，不會出現瀏覽器的使用者設定檔）；展開歌單時工具列不會跟著跳動。<!-- DRAFT 0.3.2：這句待作者審閱 -->0.3.1 和 0.3.2 版目前只在開發者電腦上的測試程式裡檢查過，還沒有在真正的遊戲裡跑過。底下的載入器已經在遊戲裡跑過三次（0.1.0、0.2.0 和 0.3.0 版）。
 
 接下來的順序：
 

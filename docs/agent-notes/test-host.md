@@ -4,7 +4,7 @@ description: How tools/run-host-test.ps1 and testhost.exe check the loader and t
 type: reference
 ---
 
-`tools\run-host-test.ps1` runs 46 hidden programs (45-46 since 0.3.1: two threads presenting at
+`tools\run-host-test.ps1` runs 48 hidden programs (22b and 34b since 0.3.2; 45-46 since 0.3.1: two threads presenting at
 once, the "game" one with its pipeline state bound and checked around every present while the
 mod must draw only on it, and the present probe; runs 1-14 the loader, runs 15-22 the media
 remote (see `media-remote-tests.md`), run 23 the music engine's `musictest.exe` with one check
