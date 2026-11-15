@@ -272,13 +272,15 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
         unsigned number = 0;
         const bool isNumber = ParseNumber(value, &number);
         if (_stricmp(key, "stage") == 0) {
+            // 0 = off, 1 = on. 2 is still read as on: it meant the full mod before the old
+            // loader-only stage 1 was removed for the public release, and older files hold it.
             if (isNumber && number <= 2) {
-                settings->stage = number;
+                settings->stage = number == 0 ? 0u : 1u;
             } else {
                 // Keep reading so that every bad value in the file is reported in one go.
                 settings->stage = 0;
-                Log("settings: \"stage=%s\" is not 0, 1 or 2 (in %s); the mod stays off. Under the [mod] line write "
-                    "stage=2 for the full mod or stage=0 to switch it off.",
+                Log("settings: \"stage=%s\" is not 0 or 1 (in %s); the mod stays off. Under the [mod] line write "
+                    "stage=1 to switch the mod on or stage=0 to switch it off.",
                     value, path8);
             }
         } else {

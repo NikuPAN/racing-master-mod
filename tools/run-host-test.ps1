@@ -306,7 +306,7 @@ try {
     Write-Ini (Join-Path $iniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'stage=-1') 'utf16'
     $run = Invoke-Run '8. settings.ini in UTF-16, stage=-1 (T13)' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $iniRoot
     $log = Read-Log $run.Log
-    Record 'bad ini: stage=-1 refused with a reason, mod off' ($log.Contains('"stage=-1" is not 0, 1 or 2') -and ($run.Lines -match '^marker: not found').Count -eq 1)
+    Record 'bad ini: stage=-1 refused with a reason, mod off' ($log.Contains('"stage=-1" is not 0 or 1') -and ($run.Lines -match '^marker: not found').Count -eq 1)
     $archived = @(Get-ChildItem (Join-Path $iniRoot 'RacingMasterMod') -Filter 'mod.*.log' | Where-Object { $_.Name -match '^mod\.\d{8}-\d{6}\.log$' })
     Record 'log of the previous run archived under a dated name' ($archived.Count -eq 1)
 
@@ -319,7 +319,7 @@ try {
     Write-Ini (Join-Path $overrideDir 'racing-master-mod.ini') @('[mod]', 'stage = 2 ; beside the DLL') 'utf8'
     $run = Invoke-Run '9. racing-master-mod.ini beside the DLL overrides settings.ini' (Join-Path $overrideDir 'testhost.exe') @('quick', $work, '1') $flag $overrideRoot
     $log = Read-Log $run.Log
-    Record 'ini beside the DLL wins: its stage=2 overrides settings.ini stage=0, so the mod runs' ($log.Contains('settings: stage 2') -and -not $log.Contains('stage 0: the mod is switched off') -and ($run.Lines -match '^marker: found').Count -eq 1)
+    Record 'ini beside the DLL wins: its stage=2 (read as on) overrides settings.ini stage=0, so the mod runs' ($log.Contains('settings: stage 1') -and -not $log.Contains('stage 0: the mod is switched off') -and ($run.Lines -match '^marker: found').Count -eq 1)
 
     # 10. Folder whose name has Chinese characters (U+904A U+6232).
     $cjkDir = Join-Path $work ([string][char]0x904A + [string][char]0x6232)
@@ -542,7 +542,7 @@ try {
     Write-Ini (Join-Path $panelIniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'stage=2', '[panel]', 'language=zh-TW', 'text_size=huge', 'mode=sometimes', 'source=other_app', 'colour=red', 'corner=middle', 'compact=2', '[keys]', 'next=F2', 'jump=F3') 'utf8'
     $run = Invoke-Run '25. settings.ini with [panel] and [keys] values' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $panelIniRoot
     $log = Read-Log $run.Log
-    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, on or keys') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('"corner=middle" is not top-left, top-centre, top-right, bottom-left, bottom-centre or bottom-right') -and $log.Contains('"compact=2" is not 0 or 1') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2') -and ($run.Lines -match '^marker: found').Count -eq 1)
+    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, on or keys') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('"corner=middle" is not top-left, top-centre, top-right, bottom-left, bottom-centre or bottom-right') -and $log.Contains('"compact=2" is not 0 or 1') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 1') -and ($run.Lines -match '^marker: found').Count -eq 1)
 
     # 27-32. Screenshots: English and the draft Chinese at each text size.
     foreach ($language in 'en', 'zh-TW') {
@@ -644,7 +644,7 @@ try {
     # 40b. 0.3.2's additions: the engine's status line going by itself, and Clear list with its
     # question. No [mod] lines: no product marker.
     $panelRun = Invoke-PanelRun '40b. the passing status line and Clear list' 'extras' '' @{ RACING_MASTER_MOD_LANG = 'en' } @() (Join-Path $fixtures 'music')
-    Record 'extras: the loader ran (stage 2) with no product marker' ($panelRun.Log.Contains('settings: stage 2') -and -not ($panelRun.Lines -match '^marker: found'))
+    Record 'extras: the loader ran (stage 1) with no product marker' ($panelRun.Log.Contains('settings: stage 1') -and -not ($panelRun.Lines -match '^marker: found'))
 
     # 41. End to end, "Other app": the real media remote, started by the worker because "Other app"
     # was the last choice, controlling the host's silent fake player through Windows. For a few

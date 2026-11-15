@@ -495,14 +495,6 @@ DWORD WINAPI ModThread(LPVOID) {
         remote::StartTestScriptIfAsked();
     }
 
-    if (settings.stage == 1) {
-        Log("stage 1: loaded only; frames are not hooked");
-        for (unsigned minutes = 1;; ++minutes) {
-            Sleep(60000);
-            Log("still running after %u min", minutes);
-        }
-    }
-
     // Wait until the game has its window before touching Direct3D. Poll four times a second,
     // once a second after two minutes.
     WindowSearch search = {GetCurrentProcessId(), !g_testHost, nullptr};

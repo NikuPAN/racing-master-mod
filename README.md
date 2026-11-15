@@ -132,8 +132,8 @@ MP3、FLAC、WAV、OGG Vorbis（`.ogg`、`.oga`）、Opus（`.opus`），以及 
 
 ```ini
 [mod]
-; 0 = 關閉，1 = 只載入並寫紀錄檔，2 = 完整模組（預設）
-stage=2
+; 1 = 開啟（預設），0 = 關閉
+stage=1
 ; 左上角顯示白色測試方塊幾秒（0 到 600；預設 0，不顯示）
 marker_seconds=0
 
@@ -322,8 +322,8 @@ Optional. Create a text file named `settings.ini` in `%LOCALAPPDATA%\RacingMaste
 
 ```ini
 [mod]
-; 0 = switched off, 1 = load and write the log only, 2 = full mod (default)
-stage=2
+; 1 = on (default), 0 = switched off
+stage=1
 ; a white test square in the top-left corner for this many seconds (0 to 600; 0, the default, shows none)
 marker_seconds=0
 

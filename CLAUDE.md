@@ -182,7 +182,7 @@ dumpbin: `link.exe /DUMP /NOLOGO /IMPORTS out\version.dll` (the fetched SDK has 
 
 ## Settings
 
-Two files, both optional, same `[mod]` keys (`stage` 0/1/2, `marker_seconds` 0..600, default 0). The music
+Two files, both optional, same `[mod]` key (`stage`: 0 off, 1 on, the default; an older file's 2 is read as on; the loader-only stage and `marker_seconds` were removed for the public release). The music
 engine keeps its own `[music]` section in the first one (volume, loop, pause_when_game_unfocused,
 current, position_ms) and rewrites only that section, in UTF-8, keeping the `[mod]` lines; the
 loader skips `[music]` without logging "changed nothing". While a song plays, `current` and
@@ -195,7 +195,7 @@ The reader (`src/core/settings.cpp`) accepts UTF-8 with or without a byte order 
 UTF-16 with one in **either byte order** (all five encodings Windows Notepad offers), CR LF, LF
 or CR-only line endings, `;`/`#` comments, digits-only numbers. Keys before the first `[heading]`
 count as `[mod]`, so a file that is just `stage=0` works. A missing file means defaults. A file
-that is present but unreadable, or a `stage` that is not 0, 1 or 2, switches the mod **off** with
+that is present but unreadable, or a `stage` that is not 0 or 1 (2 is read as 1), switches the mod **off** with
 a log line that quotes the value (fail-closed). A file whose lines were all ignored (only a
 heading other than `[mod]`, no `key=value` lines) is applied as empty but gets a log line saying
 so and naming `[mod]`; it does not switch the mod off. `GetPrivateProfile*` is not used: it
@@ -206,8 +206,8 @@ it never switches the mod off):
 
 ```ini
 [panel]
-mode=on              ; off | display | on   (display: drawn and always open, cannot be clicked, no keys,
-                     ;                       the game window is not touched - for the staged first game run)
+mode=on              ; off | on | keys   (keys: drawn, F5-F9 as global hotkeys, not clickable, the game
+                     ;                     window procedure is never replaced - the smallest footprint)
 language=auto        ; auto | en | zh-TW    (auto: Windows UI language zh-TW, zh-HK or zh-MO -> Chinese)
 text_size=medium     ; small | medium | large  (never pixels)
 pause_when_unfocused=0
