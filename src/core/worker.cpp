@@ -383,7 +383,7 @@ void WatchFrames(bool musicStarted) {
         }
         if (!otherThreadLogged && counters.otherThreadPresents != 0) {
             otherThreadLogged = true;
-            Log("the game's frames also arrive from a second thread (%llu so far); the mod draws the panel and the marker "
+            Log("the game's frames also arrive from a second thread (%llu so far); the mod draws the panel "
                 "only on the thread that showed the game's frames first and passes the others on untouched, because "
                 "drawing from two threads could disturb the game's own drawing. NVIDIA Smooth Motion and similar "
                 "driver features do this.",
@@ -397,7 +397,7 @@ void WatchFrames(bool musicStarted) {
         if (!concurrentLogged && counters.concurrentSkips != 0) {
             concurrentLogged = true;
             Log("frames were shown from two threads at the same moment (%llu so far); each one that arrived while "
-                "another was being drawn was passed on without the panel and the marker, so the mod's drawing never "
+                "another was being drawn was passed on without the panel, so the mod's drawing never "
                 "runs twice at once.",
                 counters.concurrentSkips);
         }
