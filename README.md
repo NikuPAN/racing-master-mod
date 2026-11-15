@@ -6,45 +6,47 @@
 
 ## English
 
-An unofficial, free, open-source mod for the PC version of **Racing Master** (巔峰極速, NetEase). It is a fan project and has no connection to NetEase, Codemasters or NVIDIA.
+An unofficial, free mod for the PC version of **Racing Master** (巔峰極速, NetEase) that adds an in-game **music panel**: play your own songs while you race, or control Spotify, a browser or another music app, without leaving the game. It is a fan project and has no connection to NetEase, Codemasters or NVIDIA.
 
-### Status: version 0.3.2, the music panel, not yet tried in the game
+### Before you start: please read
 
-Version 0.3.0 added an in-game **music panel**: play your own songs over the game, or control the music another app is playing, without leaving the race. It has run in the game on a test account. Version 0.3.1 fixes what that run showed: the song and the place in it are now saved when you close the game (and every 10 seconds while a song plays), and the panel now sits at the bottom centre, where it should no longer cover the game's diamond counter. With NVIDIA Smooth Motion switched on the panel blinked in that run; 0.3.1 should say so in the log, and turning Smooth Motion off for this game kept it steady. Version 0.3.2 adds what that run asked for: six places for the panel, each right against the edge of the screen, a compact one-row panel for tight spaces, times that are never cut off, other apps shown by their plain names ("Chrome", not a browser profile), and a bar that stays put when the song list opens. 0.3.1 and 0.3.2 have been checked only in a test program on the developer's PC, not yet in the real game. The loader underneath has run in the game three times (0.1.0, 0.2.0 and 0.3.0).
+- **This is not allowed by the game, and your account could be banned.** Racing Master is an online game with anti-cheat. The mod puts an extra file into the game folder that the game loads. The mod does not change how the game plays, your car, the network or any game file, but the anti-cheat cannot tell that, and NetEase can treat any added file as breaking its terms of use.
+- **Try every new version on a spare account first,** never on the account you care about. A ban can arrive days or weeks after you used the mod, so "nothing happened" today does not mean it is safe.
+- **You use it at your own risk.** The mod comes without any guarantee (see the MIT licence). If something goes wrong with your game, your PC or your account, the authors are not responsible.
+- **A game update can stop it working.** If that happens, remove it (below) until a new version is out.
+- The mod will never try to hide from the anti-cheat. If the game blocks it, that is the end of it.
 
-Planned, in this order:
+### What you need
 
-1. **Loader**: confirm the game starts and stays online with the DLL present.
-2. **In-game music panel** (this release): your own songs, or remote control of Spotify, a browser or another player.
-3. **DLSS 4.5**: replace the game's anti-aliasing with NVIDIA DLSS through NVIDIA's official SDK.
-4. **DLSS 5**: once NVIDIA releases it for more graphics cards.
+- Windows 10 or 11 (64-bit)
+- Racing Master for PC (tested with the Hong Kong, Macau and Taiwan client)
 
-### Read this before you use it
+### Install, step by step
 
-- **You can lose your account.** Racing Master is an online game with anti-cheat. This mod loads a DLL into the game. It does not change gameplay, physics, network traffic or any game file, but the anti-cheat cannot know that, and NetEase may treat any third-party DLL as a violation of its terms.
-- **A clean test does not prove it is safe.** Bans in online games are often issued days or weeks later.
-- **Test on an account you are willing to lose.** Never try a new version on your main account first.
-- This project will never include or support a way to hide from the anti-cheat. If the game blocks the mod, the mod stops there.
+1. **Download.** On this project's GitHub page, open **Releases** (on the right), pick the newest **Music panel** release and download the `.zip` file under **Assets**.
+2. **Unzip.** In your Downloads folder, right-click the `.zip` file and choose **Extract All…**, then **Extract**. A folder opens with `version.dll` in it.
+3. **Close the game** and its launcher completely.
+4. **Find the game folder.** Right-click your Racing Master shortcut, choose **Open file location**, then open `Binaries`, then `Win64`. You are in the right place when you see a file called `g112-Win64-Shipping`. With the normal install this is `C:\Program Files (x86)\g112\Binaries\Win64`.
+5. **Copy the file in.** Drag `version.dll` from the unzipped folder into the `Win64` folder. Windows asks for permission because it is a program folder: click **Continue**. If Windows says a file with that name already exists (an older version of this mod), choose **Replace the file**.
+6. **Start the game** the way you always do. After a few seconds a short note at the bottom of the screen says the music panel is ready. Press **Insert** to open it.
 
-### Requirements
-
-- Windows 10 or 11, 64-bit
-- Racing Master PC (HMT client tested; the game executable is `g112-Win64-Shipping.exe`)
-- For the future DLSS feature: an NVIDIA GeForce RTX graphics card
-
-### Install
-
-1. Close the game and its launcher.
-2. Copy `version.dll` into the folder that contains `g112-Win64-Shipping.exe`. With the default install location that is
-   `C:\Program Files (x86)\g112\Binaries\Win64\`.
-   Windows asks for administrator permission because the folder is under Program Files.
-3. Start the game the way you always do.
-
-If it works, a short note at the bottom centre of the game says which key opens the music panel.
+To hear only your own music, use the panel's **Game music** button, or switch off the music in the game's own sound settings.
 
 ### Remove
 
-Close the game and delete `version.dll` from that folder. Nothing else in the game folder was changed. Your song list and settings stay in `%LOCALAPPDATA%\RacingMasterMod\`; delete that folder too if you want them gone.
+Close the game, open the same `Win64` folder (step 4) and delete `version.dll`. That is all: nothing else in the game folder was changed. Your song list and settings are kept in `%LOCALAPPDATA%\RacingMasterMod\` (paste that into the File Explorer address bar); delete that folder too if you want them gone.
+
+### Something's not right?
+
+- **No note and Insert does nothing:** check the file is called exactly `version.dll` (not `version (1).dll`) and sits next to `g112-Win64-Shipping`. Windows may hide the `.dll` ending; that is fine as long as the name is `version`.
+- **The panel blinks:** NVIDIA Smooth Motion is on for the game. Turn it off for Racing Master in the NVIDIA app.
+- **Anything else:** open `%LOCALAPPDATA%\RacingMasterMod\` and send the file `mod.log` (and the one before it, `mod.<date>-<time>.log`) with your report. It lists your own songs' file names and folder paths (which include your Windows user name), and never what other apps are playing.
+
+### Status
+
+Version 0.3.2. The music panel has run in the game on a test account (0.3.0); 0.3.1 and 0.3.2 fix and add what those runs showed: the song and its place are saved when you close the game, six places for the panel along the screen edges, a compact one-row panel, times that are never cut off, other apps shown by plain names, a Clear list button, and a button for the game's own music. Each version is tried in the game on a spare account before it is released.
+
+A separate DLSS plugin is being investigated. It will be its own download; the music panel does not need it.
 
 ### The music panel
 
@@ -74,7 +76,7 @@ Two sources, chosen with the two buttons at the left of the bar:
 
 When you use **Add files** or **Add folder**, a normal Windows file window opens over the game, and the game does not react to keys or the mouse until you close it. In exclusive full screen these two buttons are greyed out, because the file window would minimise the game; use the music folder instead, or switch the game to windowed or borderless.
 
-To hear only your music, turn down the game's own music with the music volume slider in the game's settings.
+**Game music** in the bar switches the game's own music off or on for this session; engine sounds, effects and voices keep playing. By default the mod switches the game's music off every time the game starts (`mute_game_music` in the settings file, or **Turn the game's music off when the game starts** in **Settings**). The game's own music setting is never changed. If a game update removes what this needs, the button is greyed out and says so; use the music switch in the game's sound settings instead.
 
 ### The music folder
 
@@ -153,6 +155,7 @@ A file named `racing-master-mod.ini` next to `version.dll` is read as well and o
 - The mod only wakes up inside `g112-Win64-Shipping.exe`. In any other program that happens to load it, it does nothing but forward.
 - To draw, it attaches to the function Direct3D uses to show a finished frame. Steam, Discord and OBS overlays attach in the same place. To see the panel's clicks and keys, it watches the game window's messages and passes everything not meant for the panel on to the game.
 - The music plays from the mod's own threads through Windows' default sound output, and follows it when you switch the default device.
+- For the **Game music** button it calls the game's own sound engine (Wwise) through a function the game itself makes public by name.
 - No game file is edited and no game memory is patched.
 
 ### Build from source
@@ -176,45 +179,48 @@ The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vor
 
 ## 繁體中文
 
-《**巔峰極速**》（Racing Master，網易）PC 版的非官方免費開源模組。這是玩家自己做的專案，與網易、Codemasters、NVIDIA 都沒有關係。
+<!-- DRAFT 0.3.2：以下到「移除」為止整段改寫，待作者審閱 -->
+《**巔峰極速**》（Racing Master，網易）PC 版的非官方免費模組，在遊戲裡加一個**音樂面板**：比賽時可以放自己的歌，也可以控制 Spotify、瀏覽器或其他播放器，不用切出遊戲。這是玩家自己做的專案，跟網易、Codemasters、NVIDIA 都沒有關係。
 
-### 目前進度：0.3.2 版音樂面板，還沒在遊戲裡實測
+### 開始之前，請先看完這段
 
-0.3.0 版多了一個**遊戲內音樂面板**：比賽中不用切出遊戲，就能播自己的歌，或是控制其他程式正在放的音樂。它已經用測試帳號在遊戲裡跑過一次。0.3.1 版修正了那次發現的問題：關掉遊戲時會記住正在播的歌和播到哪裡（播歌時每 10 秒也會存一次）；面板改放在畫面下方中間，應該不會再擋住遊戲的鑽石數。那次開著 NVIDIA Smooth Motion 時面板會閃，0.3.1 版應該會在紀錄檔寫明；替這個遊戲關掉 Smooth Motion 後就沒有再閃。0.3.2 版再加上那次試玩後想要的功能：面板有六個位置可選，每個都貼齊畫面邊緣；空間不夠時可以用只有一列的精簡面板；時間不會再被截掉；其他程式只顯示簡單的名稱（例如「Chrome」，不會出現瀏覽器的使用者設定檔）；展開歌單時工具列不會跟著跳動。<!-- DRAFT 0.3.2：這句待作者審閱 -->0.3.1 和 0.3.2 版目前只在開發者電腦上的測試程式裡檢查過，還沒有在真正的遊戲裡跑過。底下的載入器已經在遊戲裡跑過三次（0.1.0、0.2.0 和 0.3.0 版）。
+- **遊戲並不允許這樣做，帳號有可能被封。**《巔峰極速》是有反作弊的連線遊戲，這個模組會在遊戲資料夾放一個遊戲會讀進去的檔案。它不改玩法、不改車、不碰連線，也不改任何遊戲檔案，但反作弊分辨不出這些，網易也可以把任何多出來的檔案都當成違反使用條款。
+- **每個新版本都先用分身帳號試，**不要拿自己在乎的帳號第一個試。封號可能在用過之後幾天、幾週才來，今天沒事不代表安全。
+- **使用風險自負。**這個模組不提供任何保證（見 MIT 授權）。遊戲、電腦或帳號出了問題，作者不負責。
+- **遊戲更新後可能就不能用了。**遇到這種情況，請先照下面的方法移除，等新版本出來再裝。
+- 這個模組永遠不會想辦法躲過反作弊。遊戲要是擋下它，就到此為止。
 
-接下來的順序：
+### 需要什麼
 
-1. **載入器**：確認放了這個 DLL 之後，遊戲能正常開、能正常連線。
-2. **遊戲內音樂面板**（這一版）：播自己的歌，或遙控 Spotify、瀏覽器等播放器。
-3. **DLSS 4.5**：用 NVIDIA 官方 SDK，把遊戲原本的反鋸齒換成 DLSS。
-4. **DLSS 5**：等 NVIDIA 開放給更多顯示卡之後再做。
+- Windows 10 或 11（64 位元）
+- 《巔峰極速》PC 版（在港澳台版上測試過）
 
-### 使用前請先看
+### 安裝步驟
 
-- **帳號有可能被封。**《巔峰極速》是有反作弊的連線遊戲，而這個模組會把一個 DLL 載入遊戲。它不改玩法、不改物理、不碰網路封包，也不改任何遊戲檔案，但反作弊系統分辨不出來，網易也可能把任何第三方 DLL 都當成違反使用條款。
-- **測試沒事不代表安全。** 連線遊戲的封號常常是過了幾天、幾週才下來。
-- **請用被封也不心痛的帳號測試。** 新版本不要第一次就用主帳號試。
-- 這個專案不會加入、也不會支援任何躲避反作弊的手段。遊戲如果擋下模組，那就到此為止。
+1. **下載。**在這個專案的 GitHub 頁面，點右邊的 **Releases**，選最新的 **Music panel** 版本，在 **Assets** 底下下載 `.zip` 檔。
+2. **解壓縮。**在「下載」資料夾對 `.zip` 檔按右鍵，選「**全部解壓縮…**」，再按「**解壓縮**」。打開的資料夾裡會有 `version.dll`。
+3. **把遊戲和啟動器完全關掉。**
+4. **找到遊戲資料夾。**對桌面上的《巔峰極速》捷徑按右鍵，選「**開啟檔案位置**」，再依序打開 `Binaries`、`Win64`。看到一個叫 `g112-Win64-Shipping` 的檔案，就是這裡沒錯。照預設安裝的話，路徑是 `C:\Program Files (x86)\g112\Binaries\Win64`。
+5. **把檔案放進去。**把解壓縮出來的 `version.dll` 拖進 `Win64` 資料夾。因為這是程式資料夾，Windows 會問你要不要給權限，按「**繼續**」。如果 Windows 說已經有同名檔案（舊版的這個模組），選「**取代目的地中的檔案**」。
+6. **照平常一樣開遊戲。**過幾秒，畫面下方會出現一行小提示，說音樂面板準備好了。按 **Insert** 就能打開。
 
-### 需求
-
-- Windows 10 或 11，64 位元
-- 《巔峰極速》PC 版（已測試港澳台版，遊戲主程式是 `g112-Win64-Shipping.exe`）
-- 之後的 DLSS 功能需要 NVIDIA GeForce RTX 顯示卡
-
-### 安裝
-
-1. 關掉遊戲和啟動器。
-2. 把 `version.dll` 複製到 `g112-Win64-Shipping.exe` 所在的資料夾。預設安裝位置是
-   `C:\Program Files (x86)\g112\Binaries\Win64\`。
-   因為資料夾在 Program Files 底下，Windows 會跳出系統管理員權限的確認。
-3. 照平常的方式開遊戲。
-
-成功的話，畫面下方中間會跳出一行小提示，告訴你按哪個鍵打開音樂面板。
+只想聽自己的歌的話，按面板上的「**遊戲音樂**」按鈕，或在遊戲自己的聲音設定裡把音樂關掉。
 
 ### 移除
 
-關掉遊戲，把那個資料夾裡的 `version.dll` 刪掉就好，遊戲資料夾裡其他東西都沒動過。歌單和設定存在 `%LOCALAPPDATA%\RacingMasterMod\`，不想留的話，把這個資料夾一起刪掉。
+關掉遊戲，打開同一個 `Win64` 資料夾（第 4 步），把 `version.dll` 刪掉，這樣就好了，遊戲資料夾裡其他東西都沒動過。歌單和設定存在 `%LOCALAPPDATA%\RacingMasterMod\`（把這串貼到檔案總管的網址列就能打開），不想留的話，這個資料夾也一起刪掉。
+
+### 好像怪怪的？
+
+- **沒有出現提示，按 Insert 也沒反應：**確認檔名剛好是 `version.dll`（不是 `version (1).dll`），而且跟 `g112-Win64-Shipping` 放在同一個資料夾。Windows 可能把 `.dll` 副檔名藏起來，只要名字是 `version` 就沒問題。
+- **面板一直閃：**表示這個遊戲開了 NVIDIA Smooth Motion。到 NVIDIA App 裡把《巔峰極速》的 Smooth Motion 關掉。
+- **其他問題：**打開 `%LOCALAPPDATA%\RacingMasterMod\`，回報時附上 `mod.log`（和前一份 `mod.<日期>-<時間>.log`）。紀錄檔裡會有你自己歌曲的檔名和資料夾路徑（路徑裡有你的 Windows 使用者名稱），但不會記下其他程式在放什麼。
+
+### 目前進度
+
+0.3.2 版。音樂面板已經用測試帳號在遊戲裡跑過（0.3.0 版）；0.3.1 和 0.3.2 版修正並加上了那幾次試玩發現需要的東西：關遊戲時記住正在播的歌和播到哪裡、面板可以放在畫面邊緣的六個位置、只有一列的精簡面板、時間不會被截掉、其他程式只顯示簡單的名稱、「清空清單」按鈕，以及控制遊戲本身音樂的按鈕。每個版本發行前，都會先用分身帳號在遊戲裡試過。
+
+另外正在研究 DLSS 外掛，之後會是另一個獨立下載，音樂面板不需要它。
 
 ### 音樂面板
 
@@ -244,7 +250,7 @@ The panel is drawn with Dear ImGui, and the music player uses miniaudio, stb_vor
 
 按「加入檔案」或「加入資料夾」時，遊戲上面會開一個一般的 Windows 檔案視窗，關掉它之前，遊戲不會回應鍵盤和滑鼠。遊戲在獨佔全螢幕模式時，這兩個按鈕會變灰，因為檔案視窗會讓遊戲縮到最小；這時請改用音樂資料夾，或把遊戲切成視窗或無邊框模式。
 
-只想聽自己的音樂的話，到遊戲設定裡把遊戲本身的音樂音量調低。
+工具列上的「**遊戲音樂**」可以在這次遊戲中關掉或打開遊戲本身的音樂，引擎聲、音效和語音照常播放。模組預設每次開遊戲都會把遊戲音樂關掉（設定檔的 `mute_game_music`，或「設定」裡的「開遊戲時關掉遊戲音樂」）。遊戲自己的音樂設定不會被改動。如果遊戲更新後這個功能不能用了，按鈕會變灰並說明原因，這時請改用遊戲聲音設定裡的音樂開關。<!-- DRAFT 0.3.2 -->
 
 ### 音樂資料夾
 
@@ -323,6 +329,7 @@ media_keys=1
 - 模組只會在 `g112-Win64-Shipping.exe` 裡面啟動。萬一被別的程式讀到，它只做轉交，其他什麼都不做。
 - 要在畫面上畫東西，它會掛在 Direct3D 把畫好的一幀送上螢幕的那個函式上。Steam、Discord、OBS 的遊戲內介面也是掛在同一個地方。為了接收面板的滑鼠和按鍵，它會看著遊戲視窗收到的訊息，不是給面板的就原樣交回遊戲。
 - 音樂由模組自己的執行緒播放，走 Windows 的預設音訊輸出；你在 Windows 換了預設裝置，它也會跟著換。
+- 「遊戲音樂」按鈕是透過遊戲自己公開提供的函式，呼叫遊戲的音效引擎（Wwise）。<!-- DRAFT 0.3.2 -->
 - 不修改任何遊戲檔案，也不改寫遊戲的記憶體。
 
 ### 從原始碼編譯
