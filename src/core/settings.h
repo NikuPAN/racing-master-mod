@@ -11,6 +11,11 @@ enum UiMode : unsigned {
     UiModeOff = 0,       // no panel: the loader alone, as in 0.2.0
     UiModeDisplay = 1,   // the panel is drawn, always open, but cannot be clicked; no keys; the game window is not touched
     UiModeOn = 2,        // the full panel (default)
+    // Minimal mode (0.3.2): the panel is drawn and the hotkeys work as GLOBAL hotkeys
+    // (RegisterHotKey on the mod's own thread), but the mod never replaces the game window's
+    // procedure. The smallest touch on the game while still showing a panel; for cautious players
+    // weighing ban risk. The panel cannot be clicked (keys only). See src/ui/global_hotkeys.h.
+    UiModeKeys = 3,
 };
 
 // Where the panel sits ([panel] corner). The numbers are what the panel stores; bottom centre was
@@ -47,12 +52,8 @@ struct UiSettings {
 };
 
 struct Settings {
-    // 0 = do nothing, 1 = load and write the log only, 2 = also hook frames and draw the marker.
+    // 0 = do nothing, 1 = load and write the log only, 2 = full mod (hook frames, draw the panel).
     unsigned stage = 2;
-    // How long the "mod is alive" square stays on screen, 0 to 600 seconds. Off by default since
-    // 0.3.2: the owner, after three clean game runs, "please remove the black and white square
-    // rendering as the plugin is proven to work". Kept as a setting for diagnosis.
-    unsigned markerSeconds = 0;
     // [debug] present_probe=1: the present probe (present_probe.h), a diagnostic; off by default.
     bool presentProbe = false;
     UiSettings ui;

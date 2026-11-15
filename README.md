@@ -139,7 +139,8 @@ stage=2
 marker_seconds=0
 
 [panel]
-; on = 完整面板（預設）；display = 只顯示，不能點也不能用按鍵；off = 沒有面板，也沒有音樂
+; on = 完整面板（預設）；keys = 畫出面板，只用 F5-F9 控制，不能點（最小干擾）；
+; display = 只顯示，不能點也不能用按鍵；off = 沒有面板，也沒有音樂
 mode=on
 ; auto（跟隨 Windows）、en 或 zh-TW
 language=auto
@@ -334,7 +335,8 @@ stage=2
 marker_seconds=0
 
 [panel]
-; on = the full panel (default); display = shown but cannot be clicked, no keys; off = no panel and no music
+; on = the full panel (default); keys = drawn, controlled by F5-F9 only, no clicks (smallest footprint);
+; display = shown but cannot be clicked, no keys; off = no panel and no music
 mode=on
 ; auto (follow Windows), en or zh-TW
 language=auto

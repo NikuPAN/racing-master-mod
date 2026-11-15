@@ -14,10 +14,10 @@
 // the per-frame code off until the game restarts.
 
 struct PresentHookOptions {
-    // How long to draw the small "mod is alive" square after the first frame.
-    unsigned markerSeconds = 20;
     // Test host only: its window is never shown, so a hidden window may qualify.
     bool acceptHiddenWindow = false;
+    // Test host only: draw the detection marker the host tests read (never set in the game).
+    bool testDrawMarker = false;
     // Test host only: fault deliberately at this frame (0 = never) to check the recovery path.
     unsigned testFaultAtFrame = 0;
 };

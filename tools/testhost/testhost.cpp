@@ -1695,7 +1695,7 @@ void ScriptInput(Host& host) {
     const std::string ini = ReadWholeFile(ModFolder() + L"\\settings.ini");
     printf("  settings.ini after the change:\n%s\n", ini.c_str());
     Check("I13 choosing Traditional Chinese in the settings row switches the panel and saves language=zh-TW",
-          ok && ini.find("language=zh-TW") != std::string::npos && ini.find("marker_seconds=0") != std::string::npos);
+          ok && ini.find("language=zh-TW") != std::string::npos);
     Click(host, Item("language"));
     WaitLayout(host, [](const LayoutFile& l) { return l.Has("language_item1"); });
     Click(host, Item("language_item1"));
@@ -1865,7 +1865,8 @@ void ScriptInput(Host& host) {
 
 // End to end: the panel driving the real music engine, with the songs musictest.exe --fixtures
 // made (FLAC, MP3, tagged Opus and OGG Vorbis in the music folder; a WAV the picker hands over).
-// The loader's marker is on for the whole run, so the screenshot shows it next to the panel.
+// The test-only detection marker is on for this run (RACING_MASTER_MOD_TEST_MARKER), so the
+// screenshot shows it next to the panel and the frame-vs-marker check has something to find.
 void ScriptIntegrated(Host& host) {
     bool ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("enabled") == 1; }, 10000);
     Check("E0 the panel is ready and watching the window", ok);
@@ -1958,7 +1959,7 @@ void ScriptIntegrated(Host& host) {
     MoveAway(host);
     const ShotResult shot = Shoot(host, "integrated-my-files", &kMarkerArea);
     CheckShot("E8 the panel with the engine's songs", shot, true);
-    Check("E8 the loader's marker square is drawn in the same frame as the panel", shot.markerOk);
+    Check("E8 the test detection marker is drawn in the same frame as the panel", shot.markerOk);
 
     // The player clicks the window's X (SC_CLOSE), and the game does not close (yet): the mod
     // saves the song and its place at once, and the music plays on. main() then closes the

@@ -138,11 +138,15 @@ function Record([string]$Name, [bool]$Ok) {
 
 # Runs one program with LOCALAPPDATA pointed at its own folder and the given environment variables.
 function Invoke-Run {
-    param([string]$Title, [string]$Exe, [string[]]$Arguments, [hashtable]$Environment, [string]$LogRoot)
+    # $Marker draws the test-only detection square the hook tests read (RACING_MASTER_MOD_TEST_MARKER).
+    # On for direct runs (game/legacy/quick); the panel runs pass $false so screenshots stay clean,
+    # and the few panel runs that need it set the env themselves.
+    param([string]$Title, [string]$Exe, [string[]]$Arguments, [hashtable]$Environment, [string]$LogRoot, [bool]$Marker = $true)
     Write-Host ''
     Write-Host "--- $Title ---"
     New-Item -ItemType Directory -Force $LogRoot | Out-Null
     $env:LOCALAPPDATA = $LogRoot
+    if ($Marker) { $env:RACING_MASTER_MOD_TEST_MARKER = '1' }
     foreach ($key in $Environment.Keys) { Set-Item -Path "Env:\$key" -Value $Environment[$key] }
     # Anything the program writes to its error stream is kept as a line, not turned into a script
     # error: under 'Stop', one such line would abort the whole test with no summary.
@@ -154,6 +158,7 @@ function Invoke-Run {
     } finally {
         $ErrorActionPreference = $previousPreference
         foreach ($key in $Environment.Keys) { Remove-Item -Path "Env:\$key" -ErrorAction SilentlyContinue }
+        Remove-Item -Path 'Env:\RACING_MASTER_MOD_TEST_MARKER' -ErrorAction SilentlyContinue
         $env:LOCALAPPDATA = $realLocalAppData
     }
     $lines | ForEach-Object { Write-Host "    $_" }
@@ -223,16 +228,17 @@ New-Item -ItemType Directory -Force $songsWithUnplayable | Out-Null
 Copy-Item (Join-Path $songs '*') $songsWithUnplayable
 [IO.File]::WriteAllBytes((Join-Path $songsWithUnplayable '06 Cannot be played.wav'), [byte[]](1..64))
 
-# One music panel run (testhost.exe panel ...). marker_seconds=0 so nothing but the panel is on
-# screen; each run is also checked for a Dear ImGui assertion or reported mistake in its log.
+# One music panel run (testhost.exe panel ...). Nothing but the panel is on screen (no detection
+# marker unless the run's own env asks for it); each run is also checked for a Dear ImGui assertion
+# or reported mistake in its log.
 function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashtable]$Environment, [string[]]$Ini, [string]$Songs = $songs, [bool]$AssertExpected = $false, [bool]$WindowWatched = $true) {
     $logRoot = Join-Path $work ('lad-panel-' + ($Title -replace '[^A-Za-z0-9]+', '-'))
-    Write-Ini (Join-Path $logRoot 'RacingMasterMod\settings.ini') (@('[mod]', 'marker_seconds=0') + $Ini) 'utf8'
+    Write-Ini (Join-Path $logRoot 'RacingMasterMod\settings.ini') $Ini 'utf8'
     New-Item -ItemType Directory -Force (Join-Path $logRoot 'RacingMasterMod\music') | Out-Null
     Copy-Item (Join-Path $Songs '*') (Join-Path $logRoot 'RacingMasterMod\music')
     $arguments = @('panel', $work, '10', $Script)
     if ($Name) { $arguments += $Name }
-    $result = Invoke-Run $Title (Join-Path $work 'testhost.exe') $arguments ($flag + $Environment) $logRoot
+    $result = Invoke-Run $Title (Join-Path $work 'testhost.exe') $arguments ($flag + $Environment) $logRoot $false
     $text = Read-Log $result.Log
     Record "$($Title): host checks pass" ($result.Exit -eq 0)
     if ($AssertExpected) {
@@ -256,11 +262,8 @@ function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashta
 $gameFirstFrame = 'first frame: 2558x1360, format 24, buffers 2, swap effect 4, windowed 1, samples 1'
 
 try {
-    # 1. Game layout, mod active. Runs 1-3 look for the marker square, which is off by default since
-    # 0.3.2 (the owner's decision), so they ask for it.
-    foreach ($markerRoot in @('lad-active', 'lad-fault', 'lad-legacy')) {
-        Write-Ini (Join-Path $work "$markerRoot\RacingMasterMod\settings.ini") @('[mod]', 'marker_seconds=20') 'utf8'
-    }
+    # 1. Game layout, mod active. The product has no marker; Invoke-Run turns on the test-only
+    # detection square (RACING_MASTER_MOD_TEST_MARKER) so the hook tests can read it.
     $run = Invoke-Run '1. game layout, mod active (T1-T6)' (Join-Path $work 'testhost.exe') @('game', $work, '8') $flag (Join-Path $work 'lad-active')
     $log = Read-Log $run.Log
     Record 'game layout: host checks T1-T6 pass' ($run.Exit -eq 0)
@@ -301,11 +304,10 @@ try {
     Record 'ini with BOM: stage 0 recognised, mod off' ($log.Contains('settings: stage 0') -and $log.Contains('stage 0: the mod is switched off') -and ($run.Lines -match '^marker: not found').Count -eq 1)
 
     # 8. settings.ini in UTF-16 with bad values; same folder, so the earlier log gets archived.
-    Write-Ini (Join-Path $iniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'stage=-1', 'marker_seconds=ten') 'utf16'
-    $run = Invoke-Run '8. settings.ini in UTF-16, stage=-1, marker_seconds=ten (T13)' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $iniRoot
+    Write-Ini (Join-Path $iniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'stage=-1') 'utf16'
+    $run = Invoke-Run '8. settings.ini in UTF-16, stage=-1 (T13)' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $iniRoot
     $log = Read-Log $run.Log
     Record 'bad ini: stage=-1 refused with a reason, mod off' ($log.Contains('"stage=-1" is not 0, 1 or 2') -and ($run.Lines -match '^marker: not found').Count -eq 1)
-    Record 'bad ini: marker_seconds=ten refused with a reason' ($log.Contains('"marker_seconds=ten" is not a number'))
     $archived = @(Get-ChildItem (Join-Path $iniRoot 'RacingMasterMod') -Filter 'mod.*.log' | Where-Object { $_.Name -match '^mod\.\d{8}-\d{6}\.log$' })
     Record 'log of the previous run archived under a dated name' ($archived.Count -eq 1)
 
@@ -314,11 +316,11 @@ try {
     New-Item -ItemType Directory -Force $overrideDir | Out-Null
     Copy-Item $dll, $hostExe $overrideDir
     $overrideRoot = Join-Path $work 'lad-override'
-    Write-Ini (Join-Path $overrideRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=7') 'utf8'
-    Write-Ini (Join-Path $overrideDir 'racing-master-mod.ini') @('[mod]', 'marker_seconds = 5 ; beside the DLL') 'utf8'
+    Write-Ini (Join-Path $overrideRoot 'RacingMasterMod\settings.ini') @('[mod]', 'stage=0') 'utf8'
+    Write-Ini (Join-Path $overrideDir 'racing-master-mod.ini') @('[mod]', 'stage = 2 ; beside the DLL') 'utf8'
     $run = Invoke-Run '9. racing-master-mod.ini beside the DLL overrides settings.ini' (Join-Path $overrideDir 'testhost.exe') @('quick', $work, '1') $flag $overrideRoot
     $log = Read-Log $run.Log
-    Record 'ini beside the DLL wins: marker for 5 s' ($log.Contains('settings: stage 2, marker for 5 s') -and ($run.Lines -match '^marker: found').Count -eq 1)
+    Record 'ini beside the DLL wins: its stage=2 overrides settings.ini stage=0, so the mod runs' ($log.Contains('settings: stage 2') -and -not $log.Contains('stage 0: the mod is switched off') -and ($run.Lines -match '^marker: found').Count -eq 1)
 
     # 10. Folder whose name has Chinese characters (U+904A U+6232).
     $cjkDir = Join-Path $work ([string][char]0x904A + [string][char]0x6232)
@@ -359,10 +361,10 @@ try {
     # 13. No [mod] heading and CR-only line endings: the keys still count as [mod].
     $crRoot = Join-Path $work 'lad-ini-cr'
     New-Item -ItemType Directory -Force (Join-Path $crRoot 'RacingMasterMod') | Out-Null
-    [IO.File]::WriteAllText((Join-Path $crRoot 'RacingMasterMod\settings.ini'), "stage=0`rmarker_seconds=3`r", $utf8)
+    [IO.File]::WriteAllText((Join-Path $crRoot 'RacingMasterMod\settings.ini'), "stage=0`r", $utf8)
     $run = Invoke-Run '13. settings.ini without a [mod] heading, CR-only line endings' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $crRoot
     $log = Read-Log $run.Log
-    Record 'ini without heading, CR-only: stage 0 and marker 3 s applied' ($log.Contains('settings: stage 0, marker for 3 s') -and ($run.Lines -match '^marker: not found').Count -eq 1)
+    Record 'ini without heading, CR-only: stage 0 applied, mod off' ($log.Contains('settings: stage 0') -and $log.Contains('stage 0: the mod is switched off') -and ($run.Lines -match '^marker: not found').Count -eq 1)
 
     # 14. Every line under a heading that is not [mod]: the log must say the file changed nothing.
     $otherRoot = Join-Path $work 'lad-ini-other'
@@ -538,10 +540,10 @@ try {
     # --- music panel ------------------------------------------------------------------------------
     # 25. [panel] and [keys]: good values are taken, bad ones refused with a reason; the mod runs on.
     $panelIniRoot = Join-Path $work 'lad-ini-panel'
-    Write-Ini (Join-Path $panelIniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=3', '[panel]', 'language=zh-TW', 'text_size=huge', 'mode=sometimes', 'source=other_app', 'colour=red', 'corner=middle', 'compact=2', '[keys]', 'next=F2', 'jump=F3') 'utf8'
+    Write-Ini (Join-Path $panelIniRoot 'RacingMasterMod\settings.ini') @('[mod]', 'stage=2', '[panel]', 'language=zh-TW', 'text_size=huge', 'mode=sometimes', 'source=other_app', 'colour=red', 'corner=middle', 'compact=2', '[keys]', 'next=F2', 'jump=F3') 'utf8'
     $run = Invoke-Run '25. settings.ini with [panel] and [keys] values' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $panelIniRoot
     $log = Read-Log $run.Log
-    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, display or on') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('"corner=middle" is not top-left, top-centre, top-right, bottom-left, bottom-centre or bottom-right') -and $log.Contains('"compact=2" is not 0 or 1') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2, marker for 3 s') -and ($run.Lines -match '^marker: found').Count -eq 1)
+    Record 'panel settings: bad values refused with a reason, unknown keys named, mod keeps running' ($log.Contains('"text_size=huge" is not small, medium or large') -and $log.Contains('"mode=sometimes" is not off, display, on or keys') -and $log.Contains('unknown key "colour" under [panel]') -and $log.Contains('"corner=middle" is not top-left, top-centre, top-right, bottom-left, bottom-centre or bottom-right') -and $log.Contains('"compact=2" is not 0 or 1') -and $log.Contains('unknown key "jump" under [keys]') -and $log.Contains('settings: stage 2') -and ($run.Lines -match '^marker: found').Count -eq 1)
 
     # 27-32. Screenshots: English and the draft Chinese at each text size.
     foreach ($language in 'en', 'zh-TW') {
@@ -587,9 +589,15 @@ try {
     Record 'panel display mode: the log says so and the game window is not watched' ($panelRun.Log.Contains('mode display only') -and -not $panelRun.Log.Contains('watching the game window'))
     Record 'panel display mode: the key line says no key works in this mode' ($panelRun.Log.Contains('panel: no keys in display mode ([panel] mode=display); with mode=on they would be Insert panel, F5 stop') -and -not $panelRun.Log.Contains('panel: keys Insert'))
 
+    # 37b. [panel] mode=keys (minimal mode): the panel is drawn, the keys are global hotkeys, and the
+    # game window is never subclassed. The [keys] are F13-F18 so the test's real global hotkeys cannot
+    # capture the owner's keys (no keyboard has F13-F18). WindowWatched=$false: no window procedure.
+    $panelRun = Invoke-PanelRun 'panel minimal mode' 'shot1' 'panel-en-minimal' @{ RACING_MASTER_MOD_PANEL = 'open'; RACING_MASTER_MOD_LANG = 'en' } @('[panel]', 'mode=keys', '[keys]', 'panel=F13', 'stop=F14', 'previous=F15', 'play_pause=F16', 'next=F17', 'loop=F18') $songs $false $false
+    Record 'minimal mode: the panel is drawn, the game window is not subclassed, and the keys are global hotkeys' (($panelRun.Log -match 'panel: minimal mode \(\[panel\] mode=keys\): [1-6] of the keys work as global hotkeys') -and -not $panelRun.Log.Contains('watching the game window for clicks and keys'))
+
     # 26. Keys chosen in [keys]: taken by the panel; an unknown key name keeps the default and says why.
     $keysRoot = Join-Path $work 'lad-ini-keys'
-    Write-Ini (Join-Path $keysRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=0', '[keys]', 'panel=none', 'next=Ctrl+F2', 'stop=Banana', 'media_keys=0') 'utf8'
+    Write-Ini (Join-Path $keysRoot 'RacingMasterMod\settings.ini') @('[mod]', '[keys]', 'panel=none', 'next=Ctrl+F2', 'stop=Banana', 'media_keys=0') 'utf8'
     $run = Invoke-Run '26. settings.ini with keys chosen by the player' (Join-Path $work 'testhost.exe') @('quick', $work, '1') $flag $keysRoot
     $log = Read-Log $run.Log
     Record 'keys: the chosen keys are used, an unknown name keeps the default with a reason' ($log.Contains('panel: keys none panel, F5 stop, F6 previous, F7 play or pause, Ctrl+F2 next, F9 repeat; media keys off') -and $log.Contains('"stop=Banana" under [keys] is not a key name the mod knows; the default stays'))
@@ -604,9 +612,9 @@ try {
     # The panel ([panel] values) and the music engine ([music] section) both rewrite settings.ini
     # during this run; neither may undo the other's lines.
     $inputIni = [IO.File]::ReadAllText((Join-Path $work 'lad-panel-panel-input\RacingMasterMod\settings.ini'), [Text.Encoding]::UTF8)
-    Record 'panel input: settings.ini keeps the panel''s and the music engine''s values side by side' ($inputIni.Contains('marker_seconds=0') -and $inputIni.Contains('[panel]') -and $inputIni.Contains('language=en') -and $inputIni.Contains('source=my_files') -and $inputIni.Contains('[music]') -and $inputIni -match 'volume=\d+')
+    Record 'panel input: settings.ini keeps the panel''s and the music engine''s values side by side' ($inputIni.Contains('[panel]') -and $inputIni.Contains('language=en') -and $inputIni.Contains('source=my_files') -and $inputIni.Contains('[music]') -and $inputIni -match 'volume=\d+')
     $inputBytes = [IO.File]::ReadAllBytes((Join-Path $work 'lad-panel-panel-input\RacingMasterMod\settings.ini'))
-    $joins = '^\[mod\]\r\nmarker_seconds=0\r\n\r\n\[panel\]\r\nmode=on\r\nlanguage=en\r\ntext_size=\w+\r\npause_when_unfocused=\d\r\nsource=my_files\r\ncorner=bottom-centre\r\ncompact=0\r\nmute_game_music=0\r\n\r\n\[keys\]\r\npanel=Insert\r\n\r\n\[music\]\r\n(\w+=[^\r\n]*\r\n)+$'
+    $joins = '^\[panel\]\r\nmode=on\r\nlanguage=en\r\ntext_size=\w+\r\npause_when_unfocused=\d\r\nsource=my_files\r\ncorner=bottom-centre\r\ncompact=0\r\nmute_game_music=0\r\n\r\n\[keys\]\r\npanel=Insert\r\n\r\n\[music\]\r\n(\w+=[^\r\n]*\r\n)+$'
     Record 'panel input: after both writers, one blank line between sections, the panel''s new keys right after its last line, CR LF only, no BOM' ($inputIni -match $joins -and -not ($inputIni -match '[^\r]\n|\r[^\n]') -and -not ($inputBytes.Length -ge 3 -and $inputBytes[0] -eq 0xEF -and $inputBytes[1] -eq 0xBB -and $inputBytes[2] -eq 0xBF))
     if (-not ($inputIni -match $joins)) { Write-Host "    settings.ini of the input run:"; Write-Host ($inputIni -replace "`r", '\r' -replace "`n", "\n`n") }
     Record 'panel input: the worker logged the music player start with the full path of the music folder' ($panelRun.Log.Contains('music: the player for your own songs has started; songs copied into ' + (Join-Path $work 'lad-panel-panel-input\RacingMasterMod\music') + ' are added at every start'))
@@ -614,10 +622,10 @@ try {
     # --- integration ------------------------------------------------------------------------------
     # 39. [panel] mode=off: the loader alone, as in 0.2.0. Nothing of the music parts starts.
     $offRoot = Join-Path $work 'lad-ini-panel-off'
-    Write-Ini (Join-Path $offRoot 'RacingMasterMod\settings.ini') @('[mod]', 'marker_seconds=3', '[panel]', 'mode=off', 'source=other_app') 'utf8'
+    Write-Ini (Join-Path $offRoot 'RacingMasterMod\settings.ini') @('[mod]', 'stage=2', '[panel]', 'mode=off', 'source=other_app') 'utf8'
     $run = Invoke-Run '39. [panel] mode=off: no panel, no music player, no other-app control' (Join-Path $work 'testhost.exe') @('quick', $work, '2') $flag $offRoot
     $log = Read-Log $run.Log
-    Record 'mode=off: the marker still shows and the log says why nothing of the music started' (($run.Lines -match '^marker: found').Count -eq 1 -and $log.Contains('panel: off ([panel] mode=off)') -and $log.Contains('music: neither your own songs nor other music apps are started, because the panel is off ([panel] mode=off)'))
+    Record 'mode=off: the loader still runs (hook attached, detection marker shown) and the log says why nothing of the music started' (($run.Lines -match '^marker: found').Count -eq 1 -and $log.Contains('panel: off ([panel] mode=off)') -and $log.Contains('music: neither your own songs nor other music apps are started, because the panel is off ([panel] mode=off)'))
     Record 'mode=off: no music player, no other-app control, no window procedure, no music folder' (-not $log.Contains('the player for your own songs has started') -and -not $log.Contains('other app:') -and -not $log.Contains('music apps:') -and -not $log.Contains('watching the game window') -and -not (Test-Path (Join-Path $offRoot 'RacingMasterMod\music')))
 
     # 40. End to end, "My files": the panel driving the real music engine inside version.dll, with
@@ -628,7 +636,7 @@ try {
     $addFile = Join-Path $fixtures ('add\05 Epsilon ' + [string][char]0x6E2C + [string][char]0x8A66 + '.wav')
     # The host ends its process the moment its window is gone (RACING_MASTER_MOD_TEST_EXIT_AFTER_CLOSE),
     # as the game did on 2026-11-15: the final save must already be on disk by then.
-    $panelRun = Invoke-PanelRun '40. end to end: the panel driving the music engine' 'integrated' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_PICKER_FILES = $addFile; RACING_MASTER_MOD_TEST_EXIT_AFTER_CLOSE = '1' } @('[mod]', 'marker_seconds=600') (Join-Path $fixtures 'music')
+    $panelRun = Invoke-PanelRun '40. end to end: the panel driving the music engine' 'integrated' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_PICKER_FILES = $addFile; RACING_MASTER_MOD_TEST_EXIT_AFTER_CLOSE = '1'; RACING_MASTER_MOD_TEST_MARKER = '1' } @() (Join-Path $fixtures 'music')
     $endIni = [IO.File]::ReadAllText((Join-Path $work 'lad-panel-40-end-to-end-the-panel-driving-the-music-engine\RacingMasterMod\settings.ini'), [Text.Encoding]::UTF8)
     $endPosition = if ($endIni -match 'position_ms=(\d+)') { [long]$Matches[1] } else { -1 }
     Record 'end to end: the process ended straight after the close, and the final save was on disk (the song and a place in it)' (@($panelRun.Lines -eq 'ending the process straight after the close').Count -eq 1 -and $endIni -match 'current=.+\.(flac|mp3|opus|ogg|wav)' -and $endPosition -gt 0)
@@ -638,7 +646,6 @@ try {
     Record 'end to end: only the null device was opened (nothing audible)' ($panelRun.Log.Contains('music: output opened (null device') -and -not $panelRun.Log.Contains('output opened (shared mode'))
     # The host's window is never shown, so it is never minimised or in front, and has a title bar.
     Record 'end to end: the game window line names the picture size, windowed, behind another window' ($panelRun.Log -match 'game window: \d+x\d+, windowed, behind another window')
-    Record 'end to end: no marker line beyond the one asked for (marker_seconds=600 in this run)' ($panelRun.Log.Contains('marker for 600 s'))
 
     # 40b. 0.3.2's additions: the game's music switch (through the host's stand-in for the game's
     # sound engine, exported under Wwise's names), the engine's status line going by itself, and
@@ -646,7 +653,7 @@ try {
     # mute_game_music=1 explicitly: the product default is off (smallest footprint), so this run asks
     # for the mute-at-start path to be exercised.
     $panelRun = Invoke-PanelRun '40b. the game music switch, the passing status line and Clear list' 'extras' '' @{ RACING_MASTER_MOD_LANG = 'en' } @('[panel]', 'mute_game_music=1') (Join-Path $fixtures 'music')
-    Record 'extras: the marker is off by default since 0.3.2' ($panelRun.Log.Contains('settings: stage 2, marker for 0 s'))
+    Record 'extras: the loader ran (stage 2) with no product marker' ($panelRun.Log.Contains('settings: stage 2') -and -not ($panelRun.Lines -match '^marker: found'))
     Record 'extras: the game''s music switch was found by name and used from the worker (logged once each)' ($panelRun.Log.Contains('game music: the game''s sound engine offers its music switch') -and ([regex]::Matches($panelRun.Log, 'game music: waiting for the game''s sound engine')).Count -eq 1)
 
     # 41. End to end, "Other app": the real media remote, started by the worker because "Other app"

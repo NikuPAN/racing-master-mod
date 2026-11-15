@@ -17,6 +17,7 @@
 
 #include "fonts.h"
 #include "imgui_errors.h"
+#include "global_hotkeys.h"
 #include "input_queue.h"
 #include "input_wndproc.h"
 #include "media_api.h"
@@ -250,18 +251,22 @@ bool InitOnFrameThread(IDXGISwapChain* swapChain, FrameRefs& refs) {
 
     RECT client = {};
     GetClientRect(g_window, &client);
+    const char* modeText = g_mode == UiModeDisplay ? "display only (cannot be clicked, no keys)"
+                           : g_mode == UiModeKeys  ? "minimal (drawn, global keys, the game window is not touched)"
+                                                   : "on";
     Log("panel: ready on the frame thread %lu; back buffer %ux%u, window client area %ldx%ld, mode %s",
-        GetCurrentThreadId(), desc.BufferDesc.Width, desc.BufferDesc.Height, client.right, client.bottom,
-        g_mode == UiModeDisplay ? "display only (cannot be clicked, no keys)" : "on");
+        GetCurrentThreadId(), desc.BufferDesc.Width, desc.BufferDesc.Height, client.right, client.bottom, modeText);
     LogDisplayFacts(swapChain);
 
     if (g_mode == UiModeOn) {
         if (InstallWindowSubclass(g_window)) {
             Shared().enabled.store(true, std::memory_order_release);
         }
-    } else {
+    } else if (g_mode == UiModeDisplay) {
         Shared().panelOpen.store(true, std::memory_order_relaxed);   // display mode: always shown
     }
+    // Minimal mode (keys): the panel starts closed and the Insert global hotkey toggles it; the
+    // hotkey thread was started in PanelStart. The game window is never subclassed.
     PanelFirstFrame();
     return true;
 }
@@ -584,7 +589,7 @@ bool DrawFrame(IDXGISwapChain* swapChain, FrameRefs& refs, bool panelOpen) {
     info.window = g_window;
     info.displayWidth = io.DisplaySize.x;
     info.displayHeight = io.DisplaySize.y;
-    info.displayOnly = g_mode == UiModeDisplay;
+    info.displayOnly = g_mode != UiModeOn;   // display and minimal (keys) modes: not clickable
     // Exclusive full screen is checked about once a second while the panel is drawn (the file
     // window is not offered there).
     if (g_panelFrames % 60 == 0) {
@@ -715,6 +720,12 @@ void PanelStart(const UiSettings& settings, bool testHost) {
     }
     static const char* const kUser32Names[] = {"USER32.dll", "user32.dll"};
     ResolveDelayLoaded(kUser32Names, 2, "the window functions");
+    if (g_mode == UiModeKeys) {
+        // Minimal mode: the keys are global hotkeys on the mod's own thread, not the window
+        // procedure. user32 is resolved just above (on the frame thread), so the hotkey thread
+        // never resolves a delay-loaded DLL first.
+        global_hotkeys::Start(table);
+    }
     UiSettingsStartWriter();
     g_started = true;
 }

@@ -30,8 +30,8 @@ void* volatile g_originalPresent1 = nullptr;
 
 // Set before the hook is installed, read-only afterwards.
 void** g_patchedTable = nullptr;   // DXGI's swap chain function table (for the present probe's report)
-ULONGLONG g_markerMs = 0;
 bool g_acceptHiddenWindow = false;
+bool g_testDrawMarker = false;   // test host only: draw the detection marker (never set in the game)
 unsigned g_testFaultAtFrame = 0;
 
 // Written by whichever thread presents, read by the worker thread.
@@ -67,7 +67,6 @@ volatile ULONGLONG g_lastBoundFrameTick = 0;
 
 // Present thread of the bound swap chain only.
 ULONGLONG g_firstFrameTick = 0;
-bool g_drawFailedLogged = false;
 ULONGLONG g_lastStateSample = 0;
 
 // The bound swap chain's full-screen state and window, sampled about once a second on the frame
@@ -90,14 +89,18 @@ void LogFirstFrame(IDXGISwapChain* swapChain, FrameRefs& refs) {
     if (SUCCEEDED(swapChain->GetDevice(__uuidof(ID3D11Device), reinterpret_cast<void**>(&refs.device)))) {
         Log("renderer: Direct3D 11, feature level 0x%x", static_cast<unsigned>(refs.device->GetFeatureLevel()));
     } else {
-        Log("renderer: the swap chain is not Direct3D 11 (the marker will not be drawn)");
+        Log("renderer: the swap chain is not Direct3D 11 (the panel cannot be drawn)");
     }
     ReleaseFrameRefs(refs);
 }
 
-// Draws a white square with a dark centre in the top-left corner. Uses ClearView, which
-// touches no pipeline state, so the game's own rendering is unaffected.
-void DrawMarker(IDXGISwapChain* swapChain, FrameRefs& refs, bool injectFault) {
+// TEST HOST ONLY: a small white square with a dark centre in the top-left corner, drawn only when
+// the test host asks for it (g_testDrawMarker, set from RACING_MASTER_MOD_TEST_MARKER). The real
+// game never draws it: the loader has proven itself, so the product has no marker. The host tests
+// read this square from the back buffer to confirm the hook attached and drew into the right chain,
+// and the deliberate fault (g_testFaultAtFrame) is injected here, while a back-buffer reference is
+// held, so the frame guard's cleanup is exercised. Uses ClearView, which touches no pipeline state.
+void DrawTestMarker(IDXGISwapChain* swapChain, FrameRefs& refs, LONG64 frame) {
     HRESULT hr = swapChain->GetDevice(__uuidof(ID3D11Device), reinterpret_cast<void**>(&refs.device));
     if (SUCCEEDED(hr)) {
         refs.device->GetImmediateContext(&refs.context);
@@ -109,8 +112,8 @@ void DrawMarker(IDXGISwapChain* swapChain, FrameRefs& refs, bool injectFault) {
     if (SUCCEEDED(hr)) {
         hr = refs.device->CreateRenderTargetView(refs.backBuffer, nullptr, &refs.target);
     }
-    if (injectFault) {
-        *g_faultTarget = 1;   // test host only: fault while references are held
+    if (g_testFaultAtFrame != 0 && frame == static_cast<LONG64>(g_testFaultAtFrame)) {
+        *g_faultTarget = 1;   // fault while references are held
     }
     if (SUCCEEDED(hr)) {
         const FLOAT white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -119,12 +122,7 @@ void DrawMarker(IDXGISwapChain* swapChain, FrameRefs& refs, bool injectFault) {
         const D3D11_RECT inner = {36, 36, 60, 60};
         refs.context1->ClearView(refs.target, white, &outer, 1);
         refs.context1->ClearView(refs.target, dark, &inner, 1);
-    } else if (!g_drawFailedLogged) {
-        g_drawFailedLogged = true;
-        Log("marker: could not draw (error 0x%08lx); frames are still being counted",
-            static_cast<unsigned long>(hr));
     }
-    // Nothing that refers to a swap chain buffer is kept between frames.
     ReleaseFrameRefs(refs);
 }
 
@@ -235,11 +233,10 @@ void OnFrame(IDXGISwapChain* swapChain, UINT flags, FrameRefs& refs) {
         g_lastStateSample = now;
         SampleChainState(swapChain);
     }
-    if (now - g_firstFrameTick < g_markerMs) {
-        DrawMarker(swapChain, refs, g_testFaultAtFrame != 0 && frame == static_cast<LONG64>(g_testFaultAtFrame));
+    if (g_testDrawMarker) {
+        DrawTestMarker(swapChain, refs, frame);   // test host only; never in the game
     }
-    // The music panel (does nothing when [panel] mode=off). Runs after the marker, which has
-    // already given back everything it held.
+    // The music panel (does nothing when [panel] mode=off).
     if (PanelOnFrame(swapChain, flags, refs)) {
         g_frameOutcome = ProbeOutcome::Drawn;
     }
@@ -395,8 +392,8 @@ void RestoreGameStateAfterFault(FrameRefs& refs) {
 }
 
 bool InstallPresentHook(const PresentHookOptions& options) {
-    g_markerMs = static_cast<ULONGLONG>(options.markerSeconds) * 1000;
     g_acceptHiddenWindow = options.acceptHiddenWindow;
+    g_testDrawMarker = options.testDrawMarker;
     g_testFaultAtFrame = options.testFaultAtFrame;
 
     bool hasPresent1 = false;

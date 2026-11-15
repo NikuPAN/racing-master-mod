@@ -89,14 +89,14 @@ void ApplyPanelKey(const char* key, const char* value, const char* path8, UiSett
     // In UiCorner order. "bottom-center" and "top-center" are accepted too.
     static const char* const kCorners[UiCornerCount] = {"top-left",     "top-right",     "bottom-left",
                                                         "bottom-right", "bottom-centre", "top-centre"};
-    static const char* const kModes[] = {"off", "display", "on"};
+    static const char* const kModes[] = {"off", "display", "on", "keys"};
     static const char* const kSources[] = {"my_files", "other_app"};
     if (_stricmp(key, "mode") == 0) {
-        const int index = MatchWord(value, kModes, 3);
+        const int index = MatchWord(value, kModes, 4);
         if (index >= 0) {
             ui->mode = static_cast<unsigned>(index);
         } else {
-            Log("settings: \"mode=%s\" is not off, display or on (in %s); the panel stays on", value, path8);
+            Log("settings: \"mode=%s\" is not off, display, on or keys (in %s); the panel stays on", value, path8);
         }
     } else if (_stricmp(key, "source") == 0) {
         const int index = MatchWord(value, kSources, 2);
@@ -284,14 +284,6 @@ bool ApplyIniFile(const wchar_t* path, Settings* settings) {
                 Log("settings: \"stage=%s\" is not 0, 1 or 2 (in %s); the mod stays off. Under the [mod] line write "
                     "stage=2 for the full mod or stage=0 to switch it off.",
                     value, path8);
-            }
-        } else if (_stricmp(key, "marker_seconds") == 0) {
-            if (isNumber && number <= 600) {
-                settings->markerSeconds = number;
-            } else {
-                Log("settings: \"marker_seconds=%s\" is not a number of seconds from 0 to 600 (in %s); using %u. "
-                    "Under the [mod] line write, for example, marker_seconds=20.",
-                    value, path8, settings->markerSeconds);
             }
         } else {
             Log("settings: unknown key \"%s\" under [mod] is ignored (in %s)", key, path8);

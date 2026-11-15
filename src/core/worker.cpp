@@ -489,8 +489,7 @@ DWORD WINAPI ModThread(LPVOID) {
         GetCurrentProcessId());
 
     const Settings settings = ReadSettings(g_self);
-    Log("settings: stage %u, marker for %u s%s", settings.stage, settings.markerSeconds,
-        g_testHost ? " (developer test host)" : "");
+    Log("settings: stage %u%s", settings.stage, g_testHost ? " (developer test host)" : "");
 
     if (settings.stage == 0) {
         Log("stage 0: the mod is switched off; nothing else will happen");
@@ -545,9 +544,12 @@ DWORD WINAPI ModThread(LPVOID) {
     const bool musicStarted = StartMusicParts(settings.ui);
 
     PresentHookOptions options;
-    options.markerSeconds = settings.markerSeconds;
     options.acceptHiddenWindow = g_testHost;
     if (g_testHost) {
+        wchar_t marker[8] = L"";
+        if (GetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_MARKER", marker, 8) > 0 && marker[0] == L'1') {
+            options.testDrawMarker = true;   // the host tests' hook-detection probe
+        }
         wchar_t fault[16] = L"";
         const DWORD n = GetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_FAULT", fault, 16);
         if (n > 0 && n < 16) {
@@ -567,7 +569,6 @@ DWORD WINAPI ModThread(LPVOID) {
         Log("the frame hook was not installed; the game runs unmodified");
         return 0;
     }
-    Log("ready: a white square appears in the top-left corner for %u s", settings.markerSeconds);
     WatchFrames(musicStarted);
     return 0;
 }

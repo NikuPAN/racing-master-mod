@@ -277,6 +277,7 @@ $uiSources = @(
     'src\ui\scale.cpp',
     'src\ui\hotkeys.cpp',
     'src\ui\input_wndproc.cpp',
+    'src\ui\global_hotkeys.cpp',
     'src\ui\ui_settings.cpp',
     'src\ui\other_app.cpp',
     'src\ui\panel.cpp',
