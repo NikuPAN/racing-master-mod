@@ -20,9 +20,13 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   (`RACING_MASTER_MOD_TEST_MARKER`), minimal mode `mode=keys` (global hotkeys, no window
   procedure takeover), display mode removed, `stage` plain on/off, the game-music mute removed
   (it had no effect in the game; do not re-add it), a 250 ms fade on pause, stop and song
-  change (`music-engine.md`, "Fades"), and "Same volume for every song" (`even-volume.md`: each
-  song measured once with EBU R128 on a background thread, played at -14 LUFS, on by default).
-- **Version 0.3.1 on branch `fix/0.3.1` (not merged, test host only)**: the fixes for what the
+  change (`music-engine.md`, "Fades"), "Same volume for every song" (`even-volume.md`: each
+  song measured once with EBU R128 on a background thread, played at -14 LUFS, on by default),
+  a volume slider on the compact panel, and the README rewritten short with Chinese first. Suite
+  462/462 (2026-11-15). Merged into main only after the owner's game test (the owner's choice).
+- **DLSS (paused):** branches `dlss/capture` and `dlss/plugin`, unmerged. `dlss/plugin` ends in a
+  WIP checkpoint (6ff77f9) holding what used to be uncommitted in its old worktree folder.
+- **Version 0.3.1 (branch `fix/0.3.1`, merged into main; test host only)**: the fixes for what the
   owner's 0.3.0 game runs of 2026-11-15 showed. The final music save at a normal close (window
   procedure passes the close to the worker, bounded 0.5 s wait after `WM_DESTROY`) and a save of
   the place every 10 s (`integration.md`, "Shutdown"); the panel at the bottom centre by default
@@ -96,8 +100,11 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
 ## Rules that must not be "fixed" away
 
 - **Small, logical commits, one concern each.** Every commit builds with `build\build.ps1` and
-  passes `tools\run-host-test.ps1`; tests land with the code they test. Feature work happens on
-  a branch (worktrees under `../racing-master-mod-wt/`); work-in-progress checkpoints are
+  passes `tools\run-host-test.ps1`; tests land with the code they test. Each piece is committed
+  the moment it builds and passes, never split out of finished work afterwards. Feature work
+  happens on a branch, switched to in this one folder: **no git worktrees** (the owner,
+  2026-11-15: "why separate working folders when not needed"; the old `../racing-master-mod-wt/`
+  folders were removed, their branches kept). Work-in-progress checkpoints are
   replaced by logical commits before merging; pushed history is never rewritten. Subagents
   that commit are told this rule explicitly.
 
@@ -164,7 +171,7 @@ SHA-256, and Dear ImGui 1.93.0 (13 files from the tagged source tree, each SHA-2
 staged in `imgui-1.93.0.partial` and renamed only when every file matched). Licences and the
 notices that must ship with the DLL: `THIRD_PARTY.md`. The Xiph libraries are built once into
 `out\obj\xiph.lib` (and `vorbisenc.lib` for the tests); a stamp file rebuilds them when the
-recipe changes. In a worktree `.deps` is a junction to the main repo's. With `-MsvcCrt` it also
+recipe changes. With `-MsvcCrt` it also
 downloads the Visual C++ runtime headers and libraries; `build.ps1` asks for that automatically
 when Visual Studio has the compiler but no
 headers. The build also writes `out\version.pdb` and `out\version.map` for turning a fault
