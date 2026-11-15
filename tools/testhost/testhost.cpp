@@ -1990,6 +1990,47 @@ void ScriptIntegrated(Host& host) {
     g_refuseClose = false;
 }
 
+// 0.3.2's additions, end to end: the engine's status line going away by itself, and Clear list
+// with its question.
+void ScriptExtras(Host& host) {
+    bool ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("enabled") == 1; }, 10000);
+    Check("X0 the panel is ready and watching the window", ok);
+    if (!ok) return;
+    Check("X0 the music engine listed the songs from the music folder", WaitLayout(host, SongsReady, 15000));
+
+    // The engine's "Added ... from the music folder" shows when the panel first shows, then goes
+    // (6 s after the panel first drew it).
+    Key(host, VK_INSERT);
+    const ULONGLONG openedAt = GetTickCount64();
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("open") == 1 && l.Has("list"); });
+    Pump(host, 4);
+    const bool shownAtFirst = ReadLayout().Int("message") == 1;
+    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Int("message") == 0; }, 9000);
+    printf("  status line shown at first %d, gone after %llu ms\n", shownAtFirst ? 1 : 0, GetTickCount64() - openedAt);
+    Check("M1 the engine's status line shows when the panel opens and goes by itself a few seconds later",
+          shownAtFirst && ok && GetTickCount64() - openedAt >= 4000);
+
+    Click(host, Item("list"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("list") == 1 && l.Has("clear_list"); });
+    Pump(host, 4);
+    const int tracks = ReadLayout().Int("tracks");
+    Click(host, Item("clear_list"));
+    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Int("clearask") == 1 && l.Has("clear_no"); });
+    Pump(host, 4);
+    Click(host, Item("clear_no"));
+    ok = ok && WaitLayout(host, [&](const LayoutFile& l) { return l.Int("clearask") == 0 && l.Int("tracks") == tracks; });
+    Check("L1 Clear list asks first, and Cancel keeps every song", ok && tracks > 0);
+    Pump(host, 4);
+    Click(host, Item("clear_list"));
+    ok = WaitLayout(host, [](const LayoutFile& l) { return l.Int("clearask") == 1 && l.Has("clear_yes"); });
+    Pump(host, 4);
+    Click(host, Item("clear_yes"));
+    ok = ok && WaitLayout(host, [](const LayoutFile& l) { return l.Int("tracks") == 0 && l.Int("clearask") == 0; }, 5000);
+    char line[96];
+    snprintf(line, sizeof(line), "music: the list was cleared (%d song(s) taken off)", tracks);
+    Check("L2 Clear takes every song off in one go, and the log says how many", ok && WaitForModLog(host, line, 3000));
+}
+
 // End to end, "Other app": the real media remote controlling the host's silent fake player
 // (published by main() when RACING_MASTER_MOD_TEST_FAKE_PLAYER=1). The mod's test guard lets
 // commands reach that player only.
@@ -2204,6 +2245,7 @@ void RunPanel(Host& host, const char* outputFolder, int seconds, const char* scr
         else if (what == "display") ScriptDisplay(host);
         else if (what == "input") ScriptInput(host);
         else if (what == "integrated") ScriptIntegrated(host);
+        else if (what == "extras") ScriptExtras(host);
         else if (what == "other-real") ScriptOtherReal(host);
         else if (what == "panel-off") ScriptPanelOff(host);
         else if (what == "concurrent") ScriptConcurrent(host);

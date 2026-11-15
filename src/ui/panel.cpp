@@ -53,6 +53,14 @@ float g_seekValue = 0.0f;
 char g_toast[256] = "";
 ULONGLONG g_toastUntil = 0;
 ULONGLONG g_noticeUntil = 0;
+// The engine's status line ("Added 1984 file(s) ...", a skipped song) is a notice, not a fixture:
+// it shows for kEngineMessageMs from the first frame the panel draws it, then goes (the owner,
+// 2026-11-15: "this text doesn't need to be persistent"). Keyed on the engine's messageSerial, so
+// the same text set again shows again.
+constexpr ULONGLONG kEngineMessageMs = 6000;
+uint32_t g_engineMessageSerial = 0;
+ULONGLONG g_engineMessageUntil = 0;
+int g_clearConfirmCount = -1;   // Clear list asked "take all N songs off?" for this N; -1 = not asking
 char g_testText[64] = "";
 char g_musicFolder[MAX_PATH * 3] = "";   // the engine's music folder, UTF-8 (set on the first frame)
 
@@ -882,6 +890,19 @@ void SongList(const music::Snapshot& snapshot, const PanelFrameInfo& info) {
     Tip(s.addFolderHint, canPick ? nullptr : pickReason);
     Mark("add_folder");
     const int count = static_cast<int>(snapshot.tracks.size());
+    // Clear list (0.3.2, the owner: "in case I have 1000+ tracks, I don't want to click 1000 times").
+    // The first click asks, naming the count; the question goes away if the list changes meanwhile.
+    if (count == 0 || count != g_clearConfirmCount) {
+        g_clearConfirmCount = -1;
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(count == 0 || g_clearConfirmCount >= 0);
+    if (ImGui::Button((std::string(s.clearList) + "##clear_list").c_str()) && count > 0) {
+        g_clearConfirmCount = count;
+    }
+    ImGui::EndDisabled();
+    Tip(s.clearListHint, count == 0 ? s.reasonNoSongs : nullptr);
+    Mark("clear_list");
     char countText[64];
     if (count == 1) {
         snprintf(countText, sizeof(countText), "%s", s.songCountOne);
@@ -893,6 +914,24 @@ void SongList(const music::Snapshot& snapshot, const PanelFrameInfo& info) {
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImMax(0.0f, ImGui::GetContentRegionAvail().x - countWidth));
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(countText);
+
+    if (g_clearConfirmCount >= 0) {
+        char question[160];
+        snprintf(question, sizeof(question), s.clearListConfirm, count);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(question);
+        ImGui::SameLine();
+        if (ImGui::Button((std::string(s.clearListYes) + "##clear_yes").c_str())) {
+            music::Player::Get().Clear();
+            g_clearConfirmCount = -1;
+        }
+        Mark("clear_yes");
+        ImGui::SameLine();
+        if (ImGui::Button((std::string(s.clearListNo) + "##clear_no").c_str())) {
+            g_clearConfirmCount = -1;
+        }
+        Mark("clear_no");
+    }
 
     if (count == 0) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
@@ -1176,21 +1215,24 @@ void DrawExtras(const PanelFrameInfo& info, const BarPlace& bar, const char* mes
         ImGui::End();
         return;
     }
-    // From the bar outward: the status lines, the song list, the settings row. The window is drawn
-    // top-down, so at the bottom of the screen the order is reversed.
+    // From the bar outward: the song list, the settings row, the status lines. The status line is
+    // outermost because it goes by itself a few seconds after it appears (0.3.2): at the far edge
+    // its going only shrinks that edge, while nearer the bar it moved the list and the settings row
+    // under the pointer. The window is drawn top-down, so at the bottom of the screen the order is
+    // reversed.
     bool drewSection = false;
     for (int i = 0; i < 3; ++i) {
         const int which = bottom ? 2 - i : i;
-        if (which == 0 && status) {
+        if (which == 2 && status) {
             if (drewSection) ImGui::Separator();
             MutedWrapped(help);
             MutedWrapped(message);
             drewSection = true;
-        } else if (which == 1 && list) {
+        } else if (which == 0 && list) {
             if (drewSection) ImGui::Separator();
             SongList(*songs, info);
             drewSection = true;
-        } else if (which == 2 && g_settingsOpen) {
+        } else if (which == 1 && g_settingsOpen) {
             if (drewSection) ImGui::Separator();
             SettingsRow();
             drewSection = true;
@@ -1222,8 +1264,14 @@ void DrawBar(const PanelFrameInfo& info) {
         const music::Snapshot& snapshot = CurrentSnapshot();
         songs = &snapshot;
         // The engine's status line ("Added 6 file(s)", an error) comes and goes: it goes in the
-        // window beside the bar, never in the bar.
-        Utf8(snapshot.message, message, sizeof(message));
+        // window beside the bar, never in the bar, and only for a few seconds after it changes.
+        if (snapshot.messageSerial != g_engineMessageSerial) {
+            g_engineMessageSerial = snapshot.messageSerial;
+            g_engineMessageUntil = snapshot.message.empty() ? 0 : GetTickCount64() + kEngineMessageMs;
+        }
+        if (GetTickCount64() < g_engineMessageUntil) {
+            Utf8(snapshot.message, message, sizeof(message));
+        }
         if (shown) {
             NowPlayingMyFiles(snapshot, nowPlaying, sizeof(nowPlaying));
             SourceRow(nowPlaying, inner, info.displayOnly);
@@ -1484,11 +1532,13 @@ int PanelAppendTestState(char* buffer, int size) {
     for (const music::TrackInfo& track : snapshot.tracks) {
         unplayable += track.supported ? 0 : 1;
     }
-    // "message": whether the engine's status line is showing.
+    // "message": whether the engine's status line is showing (it goes a few seconds after it
+    // changed); "clearask": whether Clear list is asking.
     int extra = snprintf(buffer + n, static_cast<size_t>(size - n),
-                         "position %d\nunplayable %d\ncorner %u\nmessage %d\ncompact %d\n",
+                         "position %d\nunplayable %d\ncorner %u\nmessage %d\ncompact %d\nclearask %d\n",
                          static_cast<int>(snapshot.positionSeconds), unplayable, g_settings.corner,
-                         snapshot.message.empty() ? 0 : 1, g_settings.compact ? 1 : 0);
+                         !snapshot.message.empty() && GetTickCount64() < g_engineMessageUntil ? 1 : 0,
+                         g_settings.compact ? 1 : 0, g_clearConfirmCount >= 0 ? 1 : 0);
     if (g_settings.source == SourceOtherApp && extra > 0 && n + extra < size) {
         const remote::Snapshot other = other_app::GetSnapshot();
         const RemoteView view = ViewOf(other);

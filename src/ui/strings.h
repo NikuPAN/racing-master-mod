@@ -63,6 +63,11 @@ struct Strings {
     const char* cannotPlayUnknown;       // when the player gave no reason
     const char* remove;                  // the small button at the end of each row
     const char* removeHint;
+    const char* clearList;               // 0.3.2: the button in the list header
+    const char* clearListHint;
+    const char* clearListConfirm;        // %d = number of songs; the question after the first click
+    const char* clearListYes;
+    const char* clearListNo;
 
     // Why a control is greyed out (shown when the pointer rests on it)
     const char* reasonNoSongs;
@@ -155,6 +160,12 @@ inline const Strings kStringsEnglish = {
     "This file cannot be played.",
     "Remove",
     "Take this song off the list. The file stays on your computer.",
+    "Clear list",
+    "Take every song off the list at once. The files stay on your computer. Songs in the mod's music folder "
+    "come back the next time the game starts.",
+    "Take all %d songs off the list?",
+    "Clear",
+    "Cancel",
 
     "Add songs first, with Add files or Add folder.",
     "Choose a song in the list first.",
@@ -247,6 +258,11 @@ inline const Strings kStringsChineseTraditionalDraft = {
     "這個檔案無法播放。",
     "移除",
     "把這首歌從清單移除。檔案仍留在你的電腦上。",
+    "清空清單",                       // DRAFT (0.3.2)
+    "一次把所有歌曲從清單移除，檔案仍留在你的電腦上。放在模組音樂資料夾裡的歌，下次開遊戲時會再加回來。",   // DRAFT (0.3.2)
+    "要把全部 %d 首歌從清單移除嗎？",   // DRAFT (0.3.2)
+    "清空",                           // DRAFT (0.3.2)
+    "取消",                           // DRAFT (0.3.2)
 
     "請先用「加入檔案」或「加入資料夾」加入歌曲。",
     "請先在清單中選一首歌。",

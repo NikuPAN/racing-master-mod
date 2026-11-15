@@ -712,6 +712,7 @@ private:
     }
 
     void HandleClear() {
+        Log("music: the list was cleared (%zu song(s) taken off)", entries_.size());
         const Step step = logic_.Cleared();
         entries_.clear();
         keyIndex_.clear();

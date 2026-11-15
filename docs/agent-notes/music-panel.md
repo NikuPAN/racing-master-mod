@@ -140,6 +140,17 @@ example app answers at once, and run 41 sends single presses).
   under the same fixed id took the commands; every run now has its own id (`test-host.md`,
   items 12-14).
 
+**0.3.2 follow-ups (the owner, 2026-11-15, after the first game run with 1,986 songs):**
+- The engine's status line ("Added 1984 file(s) from I:\Music", a skipped song) is a notice: it
+  shows for 6 s from the first frame the panel draws it (keyed on `messageSerial`), then goes. The
+  song count in the list header stays. The status line is the outermost section of the window
+  beside the bar, so its going only shrinks the far edge; nearer the bar it moved the list and the
+  settings row under the pointer (found by the host test: a click landed on the wrong item).
+- **Clear list** in the list header takes every song off at once after a question naming the
+  count ("Take all N songs off the list?", Clear / Cancel); the question goes if the list changes
+  meanwhile. Songs in the drop-in music folder come back at the next start (said in the hint).
+  Duplicates: only the exact same path is skipped (the owner's decision); copies of a song in
+  different folders stay. Run 40b checks both.
 **Why:** a later agent needs to know which behaviours are the owner's decisions, which are this
 build's suggestions, and which claims rest on the test host only.
 

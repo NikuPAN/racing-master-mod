@@ -639,6 +639,11 @@ try {
     # The host's window is never shown, so it is never minimised or in front, and has a title bar.
     Record 'end to end: the game window line names the picture size, windowed, behind another window' ($panelRun.Log -match 'game window: \d+x\d+, windowed, behind another window')
 
+    # 40b. 0.3.2's additions: the engine's status line going by itself, and Clear list with its
+    # question. No [mod] lines: the marker stays off by default.
+    $panelRun = Invoke-PanelRun '40b. the passing status line and Clear list' 'extras' '' @{ RACING_MASTER_MOD_LANG = 'en' } @() (Join-Path $fixtures 'music')
+    Record 'extras: the marker is off by default since 0.3.2' ($panelRun.Log.Contains('settings: stage 2, marker for 0 s'))
+
     # 41. End to end, "Other app": the real media remote, started by the worker because "Other app"
     # was the last choice, controlling the host's silent fake player through Windows. For a few
     # seconds the fake player is Windows' current media session (see media-remote-tests.md).
