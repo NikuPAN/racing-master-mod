@@ -523,10 +523,18 @@ std::atomic<int> g_gotKeyDown[256];
 std::atomic<int> g_gotKeyUp[256];
 std::atomic<int> g_gotLDown{0}, g_gotLUp{0}, g_gotMove{0}, g_gotWheel{0}, g_gotChar{0}, g_gotActivateApp{0};
 std::atomic<unsigned> g_gotSync{0};
+std::atomic<int> g_gotCloseRequest{0};
+// While set, "the game" refuses to close: it swallows WM_CLOSE and SC_CLOSE, as a game that asks
+// "are you sure?" first does (and as Unreal does with SC_CLOSE, which it turns into its own close).
+std::atomic<bool> g_refuseClose{false};
 constexpr UINT kSyncMessage = WM_APP + 7;
 
 // The host window's own procedure: what "the game" receives after the mod's window procedure.
 LRESULT CALLBACK HostWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    if (message == WM_CLOSE || (message == WM_SYSCOMMAND && (wParam & 0xFFF0) == SC_CLOSE)) {
+        ++g_gotCloseRequest;
+        if (g_refuseClose.load()) return 0;
+    }
     switch (message) {
         case WM_KEYDOWN: case WM_SYSKEYDOWN: if (wParam < 256) ++g_gotKeyDown[wParam]; break;
         case WM_KEYUP: case WM_SYSKEYUP: if (wParam < 256) ++g_gotKeyUp[wParam]; break;
@@ -1525,6 +1533,46 @@ void ScriptIntegrated(Host& host) {
     const ShotResult shot = Shoot(host, "integrated-my-files", &kMarkerArea);
     CheckShot("E8 the panel with the engine's songs", shot, true);
     Check("E8 the loader's marker square is drawn in the same frame as the panel", shot.markerOk);
+
+    // The player clicks the window's X (SC_CLOSE), and the game does not close (yet): the mod
+    // saves the song and its place at once, and the music plays on. main() then closes the
+    // window for real (WM_CLOSE) and ends the process the moment the window is gone.
+    g_refuseClose = true;
+    const int requests = g_gotCloseRequest.load();
+    // A place well into the song, so the saved position_ms tells this save from the one made when
+    // the song started.
+    WaitLayout(host, [](const LayoutFile& l) { return l.Int("state") == 1 && l.Int("position") >= 2; }, 5000);
+    const int playingAt = ReadLayout().Int("position");
+    PostMessageW(host.window, WM_SYSCOMMAND, SC_CLOSE, 0);
+    Sync(host);
+    ok = WaitForModLog(host, "music: the game was asked to close; the song and its place are saved now", 3000);
+    std::string ini;
+    long long savedMs = -1;
+    const ULONGLONG saveDeadline = GetTickCount64() + 3000;
+    while (ok && GetTickCount64() < saveDeadline) {
+        ini = ReadWholeFile(ModFolder() + L"\\settings.ini");
+        const size_t at = ini.find("position_ms=");
+        savedMs = at == std::string::npos ? -1 : atoll(ini.c_str() + at + 12);
+        if (savedMs >= playingAt * 1000LL) break;
+        PanelFrame(host, 0);
+        Sleep(20);
+    }
+    printf("  position %d s when the close was asked for; settings.ini then held position_ms=%lld\n", playingAt, savedMs);
+    Check("C1 the close request (the window's X) reaches the game, and the mod saves the song and its place at once",
+          ok && g_gotCloseRequest.load() == requests + 1 && savedMs >= playingAt * 1000LL &&
+              ini.find("current=") != std::string::npos);
+    const int afterRequest = ReadLayout().Int("position");
+    ok = WaitLayout(host, [&](const LayoutFile& l) { return l.Int("state") == 1 && l.Int("position") >= afterRequest + 1; },
+                    4000);
+    Check("C2 the game stayed open, so the music plays on", ok && IsWindow(host.window));
+    Check("C2 the log says the game is still open and the music carries on",
+          WaitForModLog(host, "music: the game is still open 3 s after it was asked to close", 5000));
+    Key(host, VK_F7);
+    Check("C3 the panel still works after a close that did not happen (F7 pauses)",
+          WaitLayout(host, [](const LayoutFile& l) { return l.Int("state") == 2; }));
+    Key(host, VK_F7);
+    Check("C3 ... and plays again", WaitLayout(host, [](const LayoutFile& l) { return l.Int("state") == 1; }));
+    g_refuseClose = false;
 }
 
 // End to end, "Other app": the real media remote controlling the host's silent fake player
@@ -1811,10 +1859,25 @@ int main(int argc, char** argv) {
     WaitForSingleObject(thread, INFINITE);
     CloseHandle(thread);
     DestroyWindow(host.secondWindow);
-    DestroyWindow(host.window);
-    if (strcmp(mode, "panel") == 0) {
-        // The mod notices the closed "game" window within about a second and a half, then lets
-        // the music fade out and saves. Waiting here keeps the process alive for that.
+    if (strcmp(mode, "panel") != 0) {
+        DestroyWindow(host.window);
+    } else {
+        // Closed the way a player closes a window: WM_CLOSE, which the host's procedure turns into
+        // DestroyWindow. With the mod's window procedure (mode=on) the music is stopped and saved
+        // before SendMessage returns; display mode has none, and the worker's window watch notices
+        // the window gone within about a second and a half.
+        const ULONGLONG closing = GetTickCount64();
+        SendMessageW(host.window, WM_CLOSE, 0, 0);
+        const bool savedBeforeGone = ModLogContains("music: stopped and saved");
+        printf("window closed after %llu ms; music stopped and saved before the window was gone: %s\n",
+               GetTickCount64() - closing, savedBeforeGone ? "yes" : "no");
+        wchar_t exitFlag[8] = L"";
+        if (GetEnvironmentVariableW(L"RACING_MASTER_MOD_TEST_EXIT_AFTER_CLOSE", exitFlag, 8) == 1 && exitFlag[0] == L'1') {
+            // As a game that ends its process the moment its window is gone: nothing more runs.
+            const bool ok = forwardingOk && standInOk && g_allPassed;
+            printf("ending the process straight after the close\nresult: %s\n", ok ? "PASS" : "FAIL");
+            TerminateProcess(GetCurrentProcess(), ok ? 0 : 1);
+        }
         const ULONGLONG end = GetTickCount64() + 10000;
         while (!ModLogContains("music: stopped and saved") && GetTickCount64() < end) {
             PumpMessages();   // the fake player, when there is one, answers on this thread

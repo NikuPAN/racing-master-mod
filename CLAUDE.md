@@ -195,7 +195,8 @@ full paths of `racing-master-mod.ini` beside the DLL and the per-user `settings.
   `settings`, `vtable_patch` (the only place that writes into a foreign function table),
   `dxgi_probe` (finds DXGI's swap chain table with a throwaway device), `present_hook` (hook,
   swap chain binding, fault guard, counters), `frame.h` (`FrameRefs`), `worker` (start-up
-  order, watchdog, periodic status line).
+  order, watchdog, periodic status line), `game_close` (the close messages the window procedure
+  hands to the worker, and the bounded wait for the final save).
 - `src/remote/` — remote control of other music apps through Windows media sessions.
   `remote.h` is the panel's interface (plain types; `Snapshot` with a `Message` id for
   translation); `remote.cpp` is the only file that includes the WinRT ABI headers. See
@@ -229,9 +230,9 @@ full paths of `racing-master-mod.ini` beside the DLL and the per-user `settings.
 | Thread | Runs | May do | Must not do |
 |---|---|---|---|
 | Loader (under the loader lock) | `DllMain` | read exe name and one environment variable, load the real `version.dll`, `CreateThread` | wait, log, read files |
-| Worker (`ModThread`) | start-up, settings, `PanelStart`, starting the music parts, hook install, watchdog, periodic log, watching the game window (every 250 ms) and the final music shutdown | file I/O, `user32`, device creation, sleeping, `Player::Start`/`Shutdown` | touch the game's device context or swap chain |
+| Worker (`ModThread`) | start-up, settings, `PanelStart`, starting the music parts, hook install, watchdog, periodic log, watching the game window (every 250 ms, and at once when the window procedure reports a close) and the final music shutdown | file I/O, `user32`, device creation, sleeping, `Player::Start`/`Shutdown`/`SaveNow` | touch the game's device context or swap chain |
 | Game's present thread | `HookedPresent` -> `GuardedOnFrame` -> `PanelOnFrame` | Direct3D on the swap chain it was handed, ImGui, popping the input queue, calling the players (quick calls only), atomics, a one-off log line | file flushes, sleeping, periodic logging, waiting on a lock the worker holds during slow work |
-| Game's window thread | `PanelWndProc` (subclass) | atomics, pushing the input queue, `PostCommand`, `Player::OnGameFocusChanged` (posts to the engine under its command lock, held for one `push_back`) | ImGui, Direct3D, files, other locks, per-message logging |
+| Game's window thread | `PanelWndProc` (subclass) | atomics, pushing the input queue, `PostCommand`, `Player::OnGameFocusChanged` (posts to the engine under its command lock, held for one `push_back`), `SetEvent` for a close, and one wait of at most 500 ms after the game's `WM_DESTROY`/`WM_ENDSESSION` for the final save | ImGui, Direct3D, files, other locks, per-message logging, any other wait |
 | Panel settings writer | `WriterThread` in `ui_settings.cpp` | read and rewrite `settings.ini` under `SettingsFileLock`, log after releasing it | anything else |
 | Any game thread | forwarding stubs | jump | anything else |
 | Media (`MediaThread`, created by `Remote::Start`) | every WinRT call, session reading, commands | COM in the multithreaded apartment, waits with deadlines, logging | leave the apartment in the game (`RoUninitialize` is test host only) |
@@ -263,9 +264,14 @@ Details and the reasons: `docs/agent-notes/integration.md`.
   No subclass in `mode=display`, so no focus pausing there.
 - Add files / Add folder: the picker gets `GetAncestor(window, GA_ROOT)`; both buttons are greyed
   with the reason while a file window is open and in exclusive full screen.
-- Shutdown: `WatchFrames` checks every 250 ms whether the window the panel draws into is gone and
-  no frame arrived for a second; then `Player::Shutdown()` (fade, final save) and
-  `other_app::Shutdown()`. Nothing runs from `DllMain`. Whenever the panel is off for the session
+- Shutdown (0.3.1, `integration.md`): in `mode=on` the window procedure passes the close to the
+  worker at once (`src/core/game_close.h`): a request (`WM_CLOSE`, `SC_CLOSE`,
+  `WM_QUERYENDSESSION`) saves the song and its place (`Player::SaveNow`) and the music plays on;
+  the window going (`WM_DESTROY` of the panel's window, `WM_ENDSESSION`) stops and saves, and the
+  window procedure waits for that at most 500 ms after the game handled the message. Backstop,
+  and the only path in `mode=display`: `WatchFrames` checks every 250 ms whether the window is gone
+  and no frame arrived for a second. While a song plays its place is saved every 10 s. Then
+  `Player::Shutdown()` (fade, final save) and `other_app::Shutdown()`. Nothing runs from `DllMain`. Whenever the panel is off for the session
   (a fault in the per-frame code, an ImGui assertion, or a fault in the window procedure, which
   also closes the panel) the worker pauses the music once (nothing could control it any more) and
   says why (`PanelSwitchedOff()`; runs 36, 43, 44).

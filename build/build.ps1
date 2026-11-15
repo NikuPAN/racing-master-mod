@@ -232,6 +232,7 @@ $loaderSources = @(
     'src\core\vtable_patch.cpp',
     'src\core\dxgi_probe.cpp',
     'src\core\present_hook.cpp',
+    'src\core\game_close.cpp',
     'src\core\worker.cpp',
     'src\remote\remote.cpp'
 )

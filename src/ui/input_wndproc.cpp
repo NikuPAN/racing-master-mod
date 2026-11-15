@@ -21,6 +21,8 @@
 //   other keys                     forwarded, except while a panel text field has the keyboard
 //   raw input (WM_INPUT)           forwarded (camera look, wheels and pads are never touched)
 //   game activated / deactivated   noted, the player told, forwarded
+//   close request / window going   the worker told (game_close.h), forwarded; after the game's
+//                                  WM_DESTROY, a wait of at most 0.5 s for the music's final save
 //   everything else                forwarded
 //
 // "Owned" is a heartbeat: the frame thread stamps the time of every panel frame it draws, and
@@ -30,13 +32,16 @@
 // the message's own position, which is what ImGui's WantCaptureMouse would say for that point.
 //
 // Nothing here calls ImGui or Direct3D, takes a lock, or logs per message. The mod's own part of
-// each message runs inside a fault guard; the game's procedure is always called outside it.
+// each message runs inside a fault guard; the game's procedure is always called outside it. The
+// close messages are passed to the worker before that guard and whether or not the panel is on.
 
 #include "input_wndproc.h"
 
 #include "input_queue.h"
 #include "media_api.h"
+#include "overlay.h"
 
+#include "../core/game_close.h"
 #include "../core/log.h"
 
 #include <windowsx.h>
@@ -423,6 +428,30 @@ Verdict Decide(HWND window, UINT message, WPARAM wParam, LPARAM lParam, LRESULT*
     }
 }
 
+// The player closing the game (src/core/game_close.h): a request (the X button, Alt+F4, the
+// taskbar's "Close window", Windows asking before it signs out) or the window really going.
+// Only the window the panel draws into counts as "going": an older window the game has left
+// behind may be destroyed while the game carries on in its new one.
+enum class CloseKind { None, Request, Ending };
+
+CloseKind CloseKindOf(HWND window, UINT message, WPARAM wParam) {
+    switch (message) {
+        case WM_CLOSE:
+        case WM_QUERYENDSESSION:
+            return CloseKind::Request;
+        case WM_SYSCOMMAND:
+            // Unreal handles SC_CLOSE itself and turns it into a close of its own, so the game
+            // window never receives a WM_CLOSE for the X button; this is where the click shows.
+            return (wParam & 0xFFF0) == SC_CLOSE ? CloseKind::Request : CloseKind::None;
+        case WM_ENDSESSION:
+            return wParam ? CloseKind::Ending : CloseKind::None;
+        case WM_DESTROY:
+            return window == PanelGameWindow() ? CloseKind::Ending : CloseKind::None;
+        default:
+            return CloseKind::None;
+    }
+}
+
 // SEH guard around the mod's part only. A fault here switches the panel's input handling off
 // for good (every later message is forwarded) and is reported once by the worker thread.
 Verdict GuardedDecide(HWND window, UINT message, WPARAM wParam, LPARAM lParam, LRESULT* result) {
@@ -449,6 +478,18 @@ LRESULT CALLBACK PanelWndProc(HWND window, UINT message, WPARAM wParam, LPARAM l
             }
         }
         return result;
+    }
+    // Whatever state the panel is in (it may have switched itself off), the music still needs its
+    // final save when the game closes. The game gets every one of these messages unchanged.
+    const CloseKind close = CloseKindOf(window, message, wParam);
+    if (close == CloseKind::Ending) {
+        GameWindowEndingSignal();   // the worker starts stopping the music while the game handles it
+        const LRESULT result = CallWindowProcW(previous, window, message, wParam, lParam);
+        GameWindowEndingWait();     // at most half a second, so the save is done before the game can end
+        return result;
+    }
+    if (close == CloseKind::Request) {
+        GameCloseRequested();
     }
     if (g_shared.enabled.load(std::memory_order_relaxed)) {
         LRESULT result = 0;

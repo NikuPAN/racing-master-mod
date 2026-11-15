@@ -1,6 +1,6 @@
 ---
 name: integration
-description: How 0.3.0 wires the music panel, the music engine and the media remote into version.dll, the choices made while wiring and why, and what only the game can confirm
+description: How 0.3.0 wires the music panel, the music engine and the media remote into version.dll (and how 0.3.1 sees the game close), the choices made while wiring and why, and what only the game can confirm
 type: decision
 ---
 
@@ -40,9 +40,47 @@ from user32 on the worker. A state must hold for about 1 s to be logged (up to 2
 to or from exclusive full screen). Run 40 checks the hidden host's line; minimised, in front and
 the full-screen kinds can only be seen in the game.
 
-**Shutdown:** the worker watches the panel's window every 250 ms. Gone, and no frame for a second:
-`Player::Shutdown()` (fade, final save) and `other_app::Shutdown()` (in the game the media thread
-only lets go and sleeps). A gone window while frames still arrive is logged once and ignored.
+**Shutdown (0.3.1):** 0.3.0 only had the window watch below, and in the owner's game runs of
+2026-11-15 the process ended before it fired: twice `mod.log` simply stopped after a close with the
+window's X, with no final save. Now, in `mode=on`, the window procedure subclass passes the close
+to the worker the moment it happens (`src/core/game_close.h`), and the game gets every message
+unchanged:
+
+- **Close request** (`WM_CLOSE`, `WM_SYSCOMMAND` `SC_CLOSE`, `WM_QUERYENDSESSION`): the worker,
+  woken through an auto-reset event it now waits on instead of `Sleep(250)`, calls
+  `Player::SaveNow()` (list, song and place at once, crash-safe, under `SettingsFileLock`) and logs
+  "music: the game was asked to close ...". **The music plays on** (decision made here, see
+  below). If the window is still there 3 s later the worker logs "music: the game is still open 3 s
+  after it was asked to close ...; the music carries on". Unreal 4.26 handles `SC_CLOSE` itself
+  and turns it into a deferred close of its own, so for the X button the game window sees
+  `WM_SYSCOMMAND` and probably never a `WM_CLOSE` (from the engine source as remembered, not
+  checked against this game: that is why both are watched).
+- **Window going** (`WM_DESTROY` of the window the panel draws into, `WM_ENDSESSION` with TRUE):
+  the window procedure wakes the worker, calls the game's procedure, then waits at most 500 ms
+  (`kGameCloseWaitMs`) on a manual-reset event the worker sets right after `Player::Shutdown()`
+  (fade, final save) and the "music: stopped and saved" line, so the save is on disk before the
+  game can end its process. Only while the worker is watching; never on `WM_CLOSE`.
+- **Backstop:** the worker still checks the window every 250 ms. Gone, and no frame for a second
+  (or gone at all after a close request): the same stop, logged as "the game window has closed".
+  This is the only path in `mode=display`, which has no window procedure. A gone window while
+  frames still arrive is logged once and ignored.
+- **Periodic save:** in every mode, while a song plays its place is saved every 10 s when it
+  moved (`music-engine.md`), so a forced exit (the game ending from its own menu, a crash) loses
+  at most 10 s.
+- `other_app::Shutdown()` runs after the event is set (in the game the media thread only lets go
+  and sleeps).
+
+Why the music plays on after a request (instead of pausing, or stopping at once): a close can be
+cancelled (a question first, or Unreal's own handling), and a stopped engine would then need a
+restart; the request already saved the place, and the fade comes when the window really goes.
+The owner may prefer a pause on request; that is a small change in `CloseWatch` (`worker.cpp`).
+
+Test host: run 40 clicks the X (`SC_CLOSE`) while "the game" refuses to close (C1-C3: saved at
+once, music plays on, the still-open line, the panel still works), then `main()` closes with
+`WM_CLOSE` and ends the process with `TerminateProcess` the moment `SendMessage` returns
+(`RACING_MASTER_MOD_TEST_EXIT_AFTER_CLOSE=1`); the script checks the log and `settings.ini`. Every
+`mode=on` panel run checks "stopped and saved before the window was gone"; the display-mode run
+checks the backstop.
 Whenever the panel is off for the session the worker pauses the music once, because nothing could
 stop it any more: after a fault in the per-frame code (which also stops the marker), an ImGui
 assertion, or a fault in the window procedure (which now also closes the panel, since Insert goes
@@ -70,9 +108,11 @@ with `RACING_MASTER_MOD_TEST_REMOTE=real` the remote follows only `RACING_MASTER
 **Only the game can confirm:** that NetEase's protection tolerates ImGui drawing, the window
 subclass, the extra threads, WASAPI, Media Foundation and COM (try `mode=display` first); that
 Insert and F5-F9 are free in the game's UI; the music's level against the game's; the file
-window over the game; whether the 250 ms window watch sees the game close (Unreal destroys its
-window before exit; a game killed outright gets no final save, which is safe because saves are
-crash-safe); "Other app" from the elevated game.
+window over the game; which close messages the game window really gets (`SC_CLOSE` for the X,
+then `WM_DESTROY`?) and whether the process lives the 0.5 s the final save needs (the log answers
+it: "asked to close", "is closing", "stopped and saved"); a game that ends without any of those
+messages loses at most 10 s of the place in the song (saves are crash-safe); "Other app" from the
+elevated game.
 
 **Why:** the owner tests 0.3.0 in the game next; each choice above trades a little start-up
 work for a panel that never shows half a state, and every guard says what it did in the log.

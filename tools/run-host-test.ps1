@@ -56,8 +56,10 @@
 #  39. [panel] mode=off            the loader alone: no panel, no music player, no other-app control
 #  40. end to end, "My files"      songs from musictest.exe --fixtures (FLAC, MP3, tagged Opus and OGG
 #                                  Vorbis); Insert, a click plays and the position advances, F7, F8,
-#                                  F9, Add files through the picker (no window), focus pause, and a
-#                                  screenshot with the marker, kept in out\preview\integrated
+#                                  F9, Add files through the picker (no window), focus pause, a
+#                                  screenshot with the marker (kept in out\preview\integrated), a
+#                                  close the game refuses (saved at once, music plays on), then a
+#                                  real close after which the process ends at once (final save on disk)
 #  41. end to end, "Other app"     the real media remote and the silent fake player: play, F8, F9,
 #                                  F7 reach it and nothing else; screenshot in out\preview\integrated
 #  42. settings.ini beside the DLL ignored, and the log says so once, with the two paths it reads
@@ -188,7 +190,7 @@ Copy-Item (Join-Path $songs '*') $songsWithUnplayable
 
 # One music panel run (testhost.exe panel ...). marker_seconds=0 so nothing but the panel is on
 # screen; each run is also checked for a Dear ImGui assertion or reported mistake in its log.
-function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashtable]$Environment, [string[]]$Ini, [string]$Songs = $songs, [bool]$AssertExpected = $false) {
+function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashtable]$Environment, [string[]]$Ini, [string]$Songs = $songs, [bool]$AssertExpected = $false, [bool]$WindowWatched = $true) {
     $logRoot = Join-Path $work ('lad-panel-' + ($Title -replace '[^A-Za-z0-9]+', '-'))
     Write-Ini (Join-Path $logRoot 'RacingMasterMod\settings.ini') (@('[mod]', 'marker_seconds=0') + $Ini) 'utf8'
     New-Item -ItemType Directory -Force (Join-Path $logRoot 'RacingMasterMod\music') | Out-Null
@@ -204,7 +206,14 @@ function Invoke-PanelRun([string]$Title, [string]$Script, [string]$Name, [hashta
     } else {
         Record "$($Title): no Dear ImGui assertion or reported mistake in the log" (-not ($text -match 'IMGUI ASSERT|reported a mistake'))
     }
-    Record "$($Title): when the game window closed, the music was stopped and saved" ($text.Contains('music: the game window has closed; stopping the music and saving the list') -and $text.Contains('music: stopped and saved'))
+    if ($WindowWatched) {
+        # The host closes its window with WM_CLOSE: the mod's window procedure tells the worker, and
+        # waits after WM_DESTROY until the music is stopped and saved (at most half a second).
+        Record "$($Title): when the game window closed, the music was stopped and saved before the window was gone" ($text.Contains('music: the game window is closing; stopping the music and saving the list') -and $text.Contains('music: stopped and saved') -and @($result.Lines -match 'music stopped and saved before the window was gone: yes$').Count -eq 1)
+    } else {
+        # No window procedure (display mode): the worker's window watch is the backstop.
+        Record "$($Title): when the game window closed, the music was stopped and saved" ($text.Contains('music: the game window has closed; stopping the music and saving the list') -and $text.Contains('music: stopped and saved'))
+    }
     # Frames drawn while the window still existed must not count as "frames still arrive".
     Record "$($Title): no ""frames still arrive"" line at an ordinary close" (-not $text.Contains('frames still arrive'))
     return @{ Exit = $result.Exit; Log = $text; Lines = $result.Lines }
@@ -518,7 +527,7 @@ try {
     Record 'panel fault: the music is paused because nothing can control it any more, and the log says so' ($panelRun.Log.Contains('music: paused, because the panel that controls it has switched off with the rest of the mod'))
 
     # 37. [panel] mode=display: drawn, but no window procedure and no keys.
-    $panelRun = Invoke-PanelRun 'panel display mode' 'display' '' @{} @('[panel]', 'mode=display')
+    $panelRun = Invoke-PanelRun 'panel display mode' 'display' '' @{} @('[panel]', 'mode=display') $songs $false $false
     Record 'panel display mode: the log says so and the game window is not watched' ($panelRun.Log.Contains('mode display only') -and -not $panelRun.Log.Contains('watching the game window'))
     Record 'panel display mode: the key line says no key works in this mode' ($panelRun.Log.Contains('panel: no keys in display mode ([panel] mode=display); with mode=on they would be Insert panel, F5 stop') -and -not $panelRun.Log.Contains('panel: keys Insert'))
 
@@ -554,7 +563,13 @@ try {
     $fx = Invoke-Run '40. musictest.exe --fixtures: songs for the end-to-end run' $musicTestExe @('--fixtures', $fixtures) @{} (Join-Path $work 'lad-fixtures')
     Record 'end to end: the songs were written (FLAC, MP3, tagged Opus and OGG Vorbis, a WAV to add)' ($fx.Exit -eq 0)
     $addFile = Join-Path $fixtures ('add\05 Epsilon ' + [string][char]0x6E2C + [string][char]0x8A66 + '.wav')
-    $panelRun = Invoke-PanelRun '40. end to end: the panel driving the music engine' 'integrated' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_PICKER_FILES = $addFile } @('[mod]', 'marker_seconds=600') (Join-Path $fixtures 'music')
+    # The host ends its process the moment its window is gone (RACING_MASTER_MOD_TEST_EXIT_AFTER_CLOSE),
+    # as the game did on 2026-11-15: the final save must already be on disk by then.
+    $panelRun = Invoke-PanelRun '40. end to end: the panel driving the music engine' 'integrated' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_PICKER_FILES = $addFile; RACING_MASTER_MOD_TEST_EXIT_AFTER_CLOSE = '1' } @('[mod]', 'marker_seconds=600') (Join-Path $fixtures 'music')
+    $endIni = [IO.File]::ReadAllText((Join-Path $work 'lad-panel-40-end-to-end-the-panel-driving-the-music-engine\RacingMasterMod\settings.ini'), [Text.Encoding]::UTF8)
+    $endPosition = if ($endIni -match 'position_ms=(\d+)') { [long]$Matches[1] } else { -1 }
+    Record 'end to end: the process ended straight after the close, and the final save was on disk (the song and a place in it)' (@($panelRun.Lines -eq 'ending the process straight after the close').Count -eq 1 -and $endIni -match 'current=.+\.(flac|mp3|opus|ogg|wav)' -and $endPosition -gt 0)
+    Record 'end to end: the close request was seen and the music was not stopped by it' ($panelRun.Log.Contains('music: the game was asked to close; the song and its place are saved now') -and $panelRun.Log.Contains('music: the game is still open 3 s after it was asked to close'))
     Record 'end to end: the engine inside version.dll played the MP3 and then the Opus song' ($panelRun.Log.Contains('music: started 02 Beta') -and $panelRun.Log.Contains('music: started 03 gamma.opus'))
     Record 'end to end: the picker handed over the chosen file from a window owned by the game window' ($panelRun.Log.Contains('music: file dialog suppressed (test mode); reporting 1 path(s) from RACING_MASTER_MOD_TEST_PICKER_FILES (owned by a top-level window)'))
     Record 'end to end: only the null device was opened (nothing audible)' ($panelRun.Log.Contains('music: output opened (null device') -and -not $panelRun.Log.Contains('output opened (shared mode'))

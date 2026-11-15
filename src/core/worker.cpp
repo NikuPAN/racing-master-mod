@@ -1,5 +1,6 @@
 #include "worker.h"
 
+#include "game_close.h"
 #include "log.h"
 #include "present_hook.h"
 #include "settings.h"
@@ -57,18 +58,23 @@ unsigned ParseDigits(const wchar_t* text) {
     return value;
 }
 
-// Watches the window the panel draws into. The game is closing when that window is gone and no
-// frame has reached the hook for a second; a window that is gone while frames still arrive (the
-// game moved to a new window) is not a close, and is logged once.
+// Watches the window the panel draws into: the backstop for a close the window procedure did not
+// see (display mode has no window procedure; a game may also end its window without the
+// messages). The game is closing when that window is gone and no frame has reached the hook for a
+// second; a window that is gone while frames still arrive (the game moved to a new window) is not
+// a close, and is logged once. After a close request the second is not waited for.
 class GameWindowWatch {
 public:
     // Called every 250 ms. True once the game window has closed.
-    bool Closed() {
+    bool Closed(bool closeRequested) {
         const HWND window = PanelGameWindow();
         if (!window || IsWindow(window)) {
             goneSeen_ = false;
             quietTicks_ = 0;
             return false;
+        }
+        if (closeRequested) {
+            return true;
         }
         const unsigned long long calls = PresentHookGetCounters().hookCalls;
         if (!goneSeen_) {
@@ -187,17 +193,73 @@ private:
 };
 
 // When the game closes: the music fades out instead of being cut off mid-sound, the list and
-// settings get their final save, and the other-app control lets go.
-void StopMusicParts() {
-    Log("music: the game window has closed; stopping the music and saving the list");
+// settings get their final save, a window procedure waiting for that is released, and the
+// other-app control lets go (in the game it only lets go and sleeps, so it comes last).
+void StopMusicParts(bool closing) {
+    if (closing) {
+        Log("music: the game window is closing; stopping the music and saving the list");
+    } else {
+        Log("music: the game window has closed; stopping the music and saving the list");
+    }
     music::Player::Get().Shutdown();
-    other_app::Shutdown();
     Log("music: stopped and saved");
+    GameCloseMusicStopped();
+    other_app::Shutdown();
+}
+
+// The player asking the game to close, as the window procedure saw it (game_close.h). A request
+// saves the song and its place at once and lets the music play on: the game may still stay open
+// (a question first, or a close that is cancelled). The window going stops the music.
+class CloseWatch {
+public:
+    // Called whenever the worker wakes. True when the music must stop now.
+    bool Check(ULONGLONG now) {
+        const GameCloseState state = GameCloseRead();
+        if (state.ending) {
+            return true;
+        }
+        if (state.requests != seenRequests_) {
+            seenRequests_ = state.requests;
+            requestedAt_ = now;
+            stillOpenLogged_ = false;
+            music::Player::Get().SaveNow();
+            Log("music: the game was asked to close; the song and its place are saved now, and the music plays on "
+                "until the game window closes");
+        }
+        if (requestedAt_ && !stillOpenLogged_ && now - requestedAt_ >= 3000) {
+            stillOpenLogged_ = true;
+            const HWND window = PanelGameWindow();
+            if (window && IsWindow(window)) {
+                Log("music: the game is still open 3 s after it was asked to close (it may be asking first, or the "
+                    "close was cancelled); the music carries on");
+            }
+        }
+        return false;
+    }
+    bool Requested() const { return seenRequests_ != 0; }
+
+private:
+    unsigned seenRequests_ = 0;
+    ULONGLONG requestedAt_ = 0;
+    bool stillOpenLogged_ = false;
+};
+
+// Sleeps until `until` (GetTickCount64), waking early whenever the window procedure signals a
+// close. True when it woke for that.
+bool WaitForTickOrClose(ULONGLONG until) {
+    const HANDLE wake = GameCloseWakeEvent();
+    const ULONGLONG now = GetTickCount64();
+    const DWORD wait = until > now ? static_cast<DWORD>(until - now) : 0;
+    if (!wake) {
+        Sleep(wait);
+        return false;
+    }
+    return WaitForSingleObject(wake, wait) == WAIT_OBJECT_0;
 }
 
 // Runs after the hook is in place: the periodic status line, the watchdog, and (when the music
-// started) the game window, every 250 ms. Nothing periodic is written from the thread that
-// presents frames.
+// started) the game window, every 250 ms, and at once when the window procedure reports a close.
+// Nothing periodic is written from the thread that presents frames.
 void WatchFrames(bool musicStarted) {
     const ULONGLONG attachedAt = GetTickCount64();
     ULONGLONG lastReport = attachedAt;
@@ -207,11 +269,27 @@ void WatchFrames(bool musicStarted) {
     bool faultHandled = false;
     GameWindowWatch window;
     WindowStateLog windowLog;
+    CloseWatch close;
+    GameCloseSetWatching(musicStarted);
+    ULONGLONG nextTick = attachedAt + 250;
     for (unsigned tick = 1;; ++tick) {
-        Sleep(250);
-        if (musicStarted && window.Closed()) {
-            StopMusicParts();
-            return;
+        // Between ticks only a close is acted on; the rest keeps its 250 ms rhythm.
+        while (GetTickCount64() < nextTick) {
+            if (WaitForTickOrClose(nextTick) && musicStarted && close.Check(GetTickCount64())) {
+                StopMusicParts(true);
+                return;
+            }
+        }
+        nextTick += 250;
+        if (GetTickCount64() > nextTick + 1000) {
+            nextTick = GetTickCount64() + 250;   // fell behind (a slow step): no burst of catch-up ticks
+        }
+        if (musicStarted) {
+            const bool ending = close.Check(GetTickCount64());
+            if (ending || window.Closed(close.Requested())) {
+                StopMusicParts(ending || close.Requested());
+                return;
+            }
         }
         const bool hookOff = PresentHookSwitchedOff();
         if (!faultHandled && (hookOff || PanelSwitchedOff())) {
@@ -361,6 +439,8 @@ DWORD WINAPI ModThread(LPVOID) {
     }
     // The music panel's start-up work that must not happen on the game's threads (settings,
     // hotkeys, loading the shader compiler). Before the hook, so the first frame finds it done.
+    // The close events first: the window procedure subclass (installed on the first frame) uses them.
+    GameCloseInit();
     PanelStart(settings.ui, g_testHost);
     const bool musicStarted = StartMusicParts(settings.ui);
 

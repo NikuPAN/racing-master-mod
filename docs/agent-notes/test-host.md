@@ -76,8 +76,15 @@ code 1 for both "no marker" and "forwarding failed"; the review showed what it d
    reports a cancel without showing it.
 
 10. **Every panel run ends with the window closed and the music shut down.** After the render
-    thread finishes, `main` destroys the window and (panel mode only) waits up to 10 s, pumping
-    messages, for "music: stopped and saved" from the worker's window watch; the script checks it.
+    thread finishes, `main` closes the window with `SendMessage(WM_CLOSE)` (the host's procedure
+    destroys it) and prints whether "music: stopped and saved" was already in the log when that
+    returned: with the mod's window procedure (`mode=on`) it must be ("before the window was gone:
+    yes"; the procedure waits up to 0.5 s after `WM_DESTROY`). Then it waits up to 10 s, pumping
+    messages, for the line (display mode: the worker's window watch). With
+    `RACING_MASTER_MOD_TEST_EXIT_AFTER_CLOSE=1` (run 40) it ends the process with
+    `TerminateProcess` straight after the close instead, as the game did on 2026-11-15. While
+    `g_refuseClose` is set the host's procedure swallows `WM_CLOSE` and `SC_CLOSE`, standing in for
+    a game that asks first (run 40, C1-C3).
 11. **End to end (runs 40-41).** `integrated` uses the songs from `musictest.exe --fixtures`, with
     `marker_seconds=600` so the screenshot also checks the loader's marker (`Shoot` with
     `kMarkerArea` leaves the marker out of the stray count and checks its white frame and dark
