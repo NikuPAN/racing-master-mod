@@ -76,13 +76,19 @@ command yet (the panel contract has none).
 
 **Shuffle (0.3.3, the owner's request of 2026-11-15).** With shuffle on the logic walks `order`
 (a permutation, this round's play order; `order[pos] == c`) instead of the list: Next, the end
-of a song, a failed song and `PeekNextOnEnd` take `order[pos + 1]`; at the end of the round loop
-all starts `order[0]` again and loop off stops cued at `order[0]`, both setting `roundEnded` so
-the engine hands over a new order that starts with the current song. Previous walks back
-through `order`. Choosing a song moves it to just after the current one and starts it, so the
-rest of the round keeps its order. Removing the playing song starts the next one in `order`;
-added songs join the end of the round. Switching shuffle off continues the list in order from
-the current song. `Arrived(index)` is the gapless change-over (decided on a copy) and keeps
-`pos` in step. Tested by the shuffle sweep (every order of up to 4 songs, 18 events,
-412,522 checks, including Arrived landing where TrackEnded goes) and the named shuffle cases
-(musictest 215, 225). How the order is made lives in the engine, not here.
+of a song, a failed song and `PeekNextOnEnd` take `order[pos + 1]`. While the last song of a
+round plays the engine hands over the next round (`SetNextOrder`); at the end of the round the
+logic switches to it (loop all plays its first song, loop off stops cued there). Without one
+(an edit dropped it) the round starts again at `order[0]` and `roundEnded` asks the engine for
+a new order keeping the current song. Why a prepared next round: building the new round only
+after wrapping to `order[0]` made every round open with the same song (found 2026-11-16, before
+it shipped). Previous walks back through `order`. Choosing a song moves it to just after the
+current one and starts it, so the rest of the round keeps its order (and drops a prepared next
+round, whose opening song was chosen against the old last song). Removing the playing song
+starts the next one in `order`; added songs join the end of the round; list edits drop the
+prepared next round. Switching shuffle off continues the list in order from the current song.
+`Arrived(index)` is the gapless change-over (decided on a copy) and takes exactly the steps
+TrackEnded would. Tested by the shuffle sweep (every order of up to 4 songs, 19 events, with
+and without a next round, 864,650 checks, including Arrived landing in the same place and
+round as TrackEnded) and the named shuffle cases (musictest 215, 225). How orders are made
+lives in `shuffle.h`, not here.

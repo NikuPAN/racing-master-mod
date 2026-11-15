@@ -149,6 +149,7 @@ bool Invariant(const PlaylistState& s) {
         }
         if (s.count == 0 && s.pos != -1) return false;
         if (s.count > 0 && (s.pos < 0 || s.pos >= s.count || s.order[static_cast<size_t>(s.pos)] != s.current)) return false;
+        if (!s.nextOrder.empty() && !s.IsPermutation(s.nextOrder)) return false;
     }
     if (s.count == 0) return s.current == -1 && s.status == State::Stopped;
     return s.current >= 0 && s.current < s.count && s.failures >= 0 && s.failures < s.count;
@@ -174,9 +175,16 @@ Step ApplyEvent(PlaylistState& s, int e, int a) {
         // Shuffle events (0.3.3), used by the shuffle sweep.
         case 15: return s.SetShuffle(a % 2 == 0);
         case 16: s.Arrived(a - 1); return {};
-        default: {
+        case 17: {
             std::vector<int> reversed(s.order.rbegin(), s.order.rend());
             s.SetShuffleOrder(reversed);
+            return {};
+        }
+        default: {
+            // The engine hands over the next round (here: this round reversed, rotated by a).
+            std::vector<int> next(s.order.rbegin(), s.order.rend());
+            if (!next.empty()) std::rotate(next.begin(), next.begin() + a % static_cast<int>(next.size()), next.end());
+            s.SetNextOrder(next);
             return {};
         }
     }
@@ -284,11 +292,17 @@ MT_TEST(215, LogicShuffleSweep, "playlist state machine: shuffle sweep (every or
                     if (count == 0 && status != St) continue;
                     for (const LoopMode loop : loops) {
                         ++states;
-                        for (int e = 0; e < 18; ++e) {
+                        for (int e = 0; e < 19 * 2; ++e) {
                             for (int a = 0; a <= 6; ++a) {
-                                const PlaylistState from = MakeShuffled(order, pos, status, loop);
+                                // Every event from a state without and with the next round made.
+                                PlaylistState from = MakeShuffled(order, pos, status, loop);
+                                if (e >= 19 && count > 0) {
+                                    std::vector<int> next(order.rbegin(), order.rend());
+                                    std::rotate(next.begin(), next.begin() + 1 % count, next.end());
+                                    from.SetNextOrder(next);
+                                }
                                 PlaylistState s = from;
-                                const Step step = ApplyEvent(s, e, a);
+                                const Step step = ApplyEvent(s, e % 19, a);
                                 check(Invariant(s), "invariant broken", e, a, from);
                                 if (step.action == Action::Start) {
                                     check(step.index == s.current && s.status == Pl, "Start must point at the current song and play", e, a,
@@ -311,8 +325,9 @@ MT_TEST(215, LogicShuffleSweep, "playlist state machine: shuffle sweep (every or
                                         // A gapless change-over arrives where TrackEnded would have gone.
                                         PlaylistState u = s;
                                         u.Arrived(peek);
-                                        check(Invariant(u) && u.current == t.current && u.pos == t.pos,
-                                              "Arrived must land where TrackEnded goes", e, a, from);
+                                        check(Invariant(u) && u.current == t.current && u.pos == t.pos &&
+                                                  (u.order == t.order || u.count == 1),
+                                              "Arrived must land where TrackEnded goes, in the same round", e, a, from);
                                     }
                                 }
                             }
@@ -323,7 +338,8 @@ MT_TEST(215, LogicShuffleSweep, "playlist state machine: shuffle sweep (every or
         } while (std::next_permutation(order.begin(), order.end()));
     }
     char name[128];
-    snprintf(name, sizeof(name), "shuffle sweep: %d states x 18 events x 7 arguments, %d checks hold", states, checks);
+    snprintf(name, sizeof(name), "shuffle sweep: %d states x 19 events x 7 arguments, with and without a next round, %d checks hold",
+             states, checks);
     mt::Check(failures == 0, name, "%d failed; first: %s", failures, first);
 }
 
@@ -337,6 +353,16 @@ MT_TEST(225, LogicShuffleNamed, "playlist state machine: shuffle, named cases") 
         const Step wrap = s.TrackEnded();
         mt::Check(heard == "2031" && !roundBefore && wrap.index == 2 && s.roundEnded,
                   "every song once per round, in the round's order; the end of the round asks for a new one", "heard %s", heard.c_str());
+    }
+    {
+        // With the next round made, the end of this round goes straight into it.
+        PlaylistState s = MakeShuffled({2, 0, 3, 1}, 3, Pl, All);
+        s.SetNextOrder({0, 3, 2, 1});
+        const int peek = s.PeekNextOnEnd();
+        const Step next = s.TrackEnded();
+        mt::Check(peek == 0 && next.index == 0 && s.order == std::vector<int>({0, 3, 2, 1}) && s.pos == 0 && !s.roundEnded &&
+                      s.nextOrder.empty(),
+                  "the next round, once made, starts right after the last song of this one (gapless look-ahead agrees)");
     }
     {
         PlaylistState s = MakeShuffled({2, 0, 3, 1}, 3, Pl, Off);

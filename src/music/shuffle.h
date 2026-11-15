@@ -22,10 +22,14 @@ struct ShuffleItem {
 };
 
 // A play order for a round: a permutation of 0..items.size()-1, starting with `first` when it is
-// a valid index. `now` is Unix seconds; `rng` is a random state the call moves on.
-std::vector<int> MakeShuffleOrder(const std::vector<ShuffleItem>& items, int first, int64_t now, uint64_t* rng);
+// a valid index. `now` is Unix seconds; `rng` is a random state the call moves on. `after` is the
+// song that plays just before the round (the last of the previous one): the round does not start
+// with it, nor with its artist where the list allows.
+std::vector<int> MakeShuffleOrder(const std::vector<ShuffleItem>& items, int first, int64_t now, uint64_t* rng, int after = -1);
 
 // Mixes order[from..] again the same way (songs added mid-round), leaving order[0..from) alone.
-void RemixRest(std::vector<int>& order, size_t from, const std::vector<ShuffleItem>& items, int64_t now, uint64_t* rng);
+// With from == 0, `after` is the song before order[0], as above.
+void RemixRest(std::vector<int>& order, size_t from, const std::vector<ShuffleItem>& items, int64_t now, uint64_t* rng,
+               int after = -1);
 
 }  // namespace music

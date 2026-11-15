@@ -31,7 +31,8 @@ double Weight(const ShuffleItem& item, int64_t now) {
 
 }  // namespace
 
-void RemixRest(std::vector<int>& order, size_t from, const std::vector<ShuffleItem>& items, int64_t now, uint64_t* rng) {
+void RemixRest(std::vector<int>& order, size_t from, const std::vector<ShuffleItem>& items, int64_t now, uint64_t* rng,
+               int after) {
     if (from >= order.size()) return;
     // Weighted random order (Efraimidis-Spirakis): each song draws log(u) / weight and the largest
     // go first, so a song unheard for a month is far more likely to come early than one heard an
@@ -57,7 +58,9 @@ void RemixRest(std::vector<int>& order, size_t from, const std::vector<ShuffleIt
         const std::wstring& a = items[static_cast<size_t>(song)].artist;
         if (!a.empty()) ++left[a];
     }
-    const std::wstring* previous = from > 0 ? &items[static_cast<size_t>(order[from - 1])].artist : nullptr;
+    const int before = from > 0 ? order[from - 1] : after;
+    const std::wstring* previous =
+        before >= 0 && before < static_cast<int>(items.size()) ? &items[static_cast<size_t>(before)].artist : nullptr;
     size_t out = from;
     while (!rest.empty()) {
         const std::wstring* most = nullptr;
@@ -103,7 +106,7 @@ void RemixRest(std::vector<int>& order, size_t from, const std::vector<ShuffleIt
     }
 }
 
-std::vector<int> MakeShuffleOrder(const std::vector<ShuffleItem>& items, int first, int64_t now, uint64_t* rng) {
+std::vector<int> MakeShuffleOrder(const std::vector<ShuffleItem>& items, int first, int64_t now, uint64_t* rng, int after) {
     std::vector<int> order(items.size());
     for (size_t i = 0; i < items.size(); ++i) order[i] = static_cast<int>(i);
     size_t from = 0;
@@ -111,7 +114,10 @@ std::vector<int> MakeShuffleOrder(const std::vector<ShuffleItem>& items, int fir
         std::swap(order[0], order[static_cast<size_t>(first)]);
         from = 1;
     }
-    RemixRest(order, from, items, now, rng);
+    RemixRest(order, from, items, now, rng, after);
+    // The song that just played never opens the next round (its artist may be empty, which the
+    // spreading does not treat as a clash).
+    if (from == 0 && order.size() > 1 && order[0] == after) std::swap(order[0], order[1]);
     return order;
 }
 

@@ -82,6 +82,20 @@ MT_TEST(230, ShuffleOrder, "shuffle: every song once, not heard lately first, ar
                   "%d times back-to-back", together);
     }
     {
+        // The next round never opens with the song that just played, nor (where possible) its artist.
+        const std::vector<ShuffleItem> items = Artists({{L"a", 3}, {L"b", 3}, {L"", 4}});
+        uint64_t rng = 5;
+        bool ok = true;
+        for (int round = 0; round < 500 && ok; ++round) {
+            const int last = round % 10;
+            const std::vector<int> next = MakeShuffleOrder(items, -1, kNow, &rng, last);
+            ok = IsPermutation(next, items.size()) && next[0] != last &&
+                 (items[static_cast<size_t>(last)].artist.empty() ||
+                  items[static_cast<size_t>(next[0])].artist != items[static_cast<size_t>(last)].artist);
+        }
+        mt::Check(ok, "a new round never opens with the song that just played, nor with its artist (500 rounds)");
+    }
+    {
         // One artist for everything: nothing to spread; still a full round, no endless search.
         const std::vector<ShuffleItem> items = Artists({{L"only", 12}});
         uint64_t rng = 3;
