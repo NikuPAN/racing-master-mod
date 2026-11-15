@@ -97,10 +97,19 @@ bool IsBlank(const Line& line) {
 }
 
 // `out` ends with its last line (with its line ending) followed by exactly one blank line, or is
-// left empty when there is nothing in it yet. Blank lines at its end are dropped first.
+// left empty when there is nothing in it yet. Blank lines at its end are dropped first, also
+// lines of only spaces and tabs (they look blank in Notepad; the engine's writer drops them too).
 void EndWithOneBlankLine(char* out, int outSize, int* used) {
     int content = *used;
-    while (content > 0 && (out[content - 1] == '\r' || out[content - 1] == '\n')) --content;
+    for (;;) {
+        while (content > 0 && (out[content - 1] == '\r' || out[content - 1] == '\n')) --content;
+        int start = content;
+        while (start > 0 && out[start - 1] != '\r' && out[start - 1] != '\n') --start;
+        bool blank = true;
+        for (int i = start; i < content && blank; ++i) blank = out[i] == ' ' || out[i] == '\t';
+        if (!blank || start == content) break;
+        content = start;   // a line of only spaces and tabs: drop it as well
+    }
     if (content == 0) {
         *used = 0;
         out[0] = '\0';

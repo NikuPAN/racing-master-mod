@@ -201,7 +201,8 @@ in place, and log only after letting go. A new writer of `settings.ini` must tak
 `settings.ini` it could not read (held by another program, or larger than that writer reads: 16 KB
 for the panel, 1 MB for the engine):
 writing only its own section would drop the others, so it leaves the file as it is and logs why.
-Both writers keep exactly one blank line between their own section and the ones around it (0.3.1;
+Both writers keep exactly one blank line between their own section and the ones around it, and
+treat a line of only spaces or tabs as blank (0.3.1;
 0.3.0 wrote "mode=on\r\n[music]" when `[music]` was last, and the panel put missing keys after the
 blank line ending `[panel]`); other lines are copied as they were, added lines use CR LF, UTF-8
 without a byte order mark unless the file had one. Musictest case 420 and run 38 check it.

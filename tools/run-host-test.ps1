@@ -552,8 +552,9 @@ try {
 
     # 38. Input through the window procedure: clicks, pass-through, hotkeys, Insert and the rest.
     # Its settings.ini has a [panel] that ends in blank lines and a [keys] after it, so both writers'
-    # section joins are checked at the end (one blank line between sections, CR LF, no BOM).
-    $panelRun = Invoke-PanelRun 'panel input' 'input' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_TEXT_FIELD = '1' } @('', '[panel]', 'mode=on', '', '', '[keys]', 'panel=Insert')
+    # section joins are checked at the end (one blank line between sections, CR LF, no BOM). The
+    # line before [panel] and one inside it hold only spaces: they look blank and count as blank.
+    $panelRun = Invoke-PanelRun 'panel input' 'input' '' @{ RACING_MASTER_MOD_LANG = 'en'; RACING_MASTER_MOD_TEST_TEXT_FIELD = '1' } @('  ', '[panel]', 'mode=on', '', "`t ", '[keys]', 'panel=Insert')
     Record 'panel input: the music engine and the other app were told what the keys and clicks asked for' ($panelRun.Log.Contains('test app: pause') -and -not $panelRun.Log.Contains('test app: next') -and -not $panelRun.Log.Contains('test app: stop') -and $panelRun.Log.Contains('music: started 02 Beta') -and $panelRun.Log.Contains('music: file dialog suppressed (test mode)') -and $panelRun.Log.Contains('panel: settings saved to'))
     Record 'panel input: the music engine played through the null device only (no sound card opened)' ($panelRun.Log.Contains('music: output opened (null') -and -not $panelRun.Log.Contains('output opened (shared mode'))
     # The panel ([panel] values) and the music engine ([music] section) both rewrite settings.ini
