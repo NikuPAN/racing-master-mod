@@ -135,6 +135,10 @@ Free, MIT, README in English and Traditional Chinese. Repo is private until the 
   "no hiding" promise argues against it. The hook works identically either way.
 - The README must keep the account-risk warning at the top, in both languages. Chinese is
   written by hand as Traditional Chinese for Taiwan/HK players, never machine-translated.
+  Since 0.3.2 (the owner): Traditional Chinese first, short and plain, only what players need;
+  no status or progress section, no "what it does / never does" list (one plain line instead),
+  no developer detail beyond a two-line build note. Screenshots go in `docs/screenshots/` with
+  the player ID and in-game name pixelated before they are committed.
 
 ## Commands
 

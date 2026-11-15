@@ -1,3 +1,30 @@
+《巔峰極速》音樂面板 安裝方法
+============================
+
+開始之前
+遊戲並不允許模組，帳號有可能被封，有時會在幾天或幾週後才發生。
+請先用分身帳號試。使用風險自負。
+
+安裝
+1. 把遊戲和啟動器完全關掉。
+2. 對《巔峰極速》捷徑按右鍵，選「開啟檔案位置」，再依序打開
+   「Binaries」、「Win64」。看到 g112-Win64-Shipping 這個檔案就對了。
+   （預設安裝位置：C:\Program Files (x86)\g112\Binaries\Win64）
+3. 把這個資料夾裡的 version.dll 拖進 Win64 資料夾。
+   Windows 要求權限時按「繼續」。
+   如果說已經有同名檔案，選「取代目的地中的檔案」。
+4. 照平常一樣開遊戲。畫面下方會出現一行提示，說音樂面板準備好了。
+   按 Insert 打開。
+
+移除
+關掉遊戲，把 Win64 資料夾裡的 version.dll 刪掉就好。
+歌單和設定在 %LOCALAPPDATA%\RacingMasterMod（貼到檔案總管的網址列就能打開），
+不想留也可以一起刪掉。
+
+遇到問題
+回報時請附上 %LOCALAPPDATA%\RacingMasterMod 裡的 mod.log。
+
+
 Racing Master music panel - how to install
 ==========================================
 
@@ -24,30 +51,3 @@ Your song list and settings are in %LOCALAPPDATA%\RacingMasterMod
 
 PROBLEMS
 Send the file mod.log from %LOCALAPPDATA%\RacingMasterMod with your report.
-
-
-《巔峰極速》音樂面板 安裝方法
-============================
-
-開始之前
-遊戲並不允許模組，帳號有可能被封，有時會在幾天或幾週後才發生。
-請先用分身帳號試。使用風險自負。
-
-安裝
-1. 把遊戲和啟動器完全關掉。
-2. 對《巔峰極速》捷徑按右鍵，選「開啟檔案位置」，再依序打開
-   「Binaries」、「Win64」。看到 g112-Win64-Shipping 這個檔案就對了。
-   （預設安裝位置：C:\Program Files (x86)\g112\Binaries\Win64）
-3. 把這個資料夾裡的 version.dll 拖進 Win64 資料夾。
-   Windows 要求權限時按「繼續」。
-   如果說已經有同名檔案，選「取代目的地中的檔案」。
-4. 照平常一樣開遊戲。畫面下方會出現一行提示，說音樂面板準備好了。
-   按 Insert 打開。
-
-移除
-關掉遊戲，把 Win64 資料夾裡的 version.dll 刪掉就好。
-歌單和設定在 %LOCALAPPDATA%\RacingMasterMod（貼到檔案總管的網址列就能打開），
-不想留也可以一起刪掉。
-
-遇到問題
-回報時請附上 %LOCALAPPDATA%\RacingMasterMod 裡的 mod.log。
