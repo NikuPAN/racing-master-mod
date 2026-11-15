@@ -46,6 +46,7 @@ struct MusicSettings {
     std::wstring currentPath;        // the cued track
     int64_t positionMs = 0;
     bool evenVolume = true;          // even_volume: play every song at about the same loudness (0.3.2)
+    bool shuffle = false;            // shuffle: play the list in shuffled rounds (0.3.3)
 };
 
 // Rewrites the [music] section inside an existing settings.ini (other sections are kept line for

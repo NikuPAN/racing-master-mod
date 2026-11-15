@@ -42,6 +42,7 @@ struct Snapshot {
     double positionSeconds = 0;
     double durationSeconds = -1;    // -1 while unknown
     LoopMode loop = LoopMode::All;
+    bool shuffle = false;           // shuffled rounds (0.3.3)
     float volume = 0.6f;            // 0..1, the slider position (the gain applied is volume squared)
     bool pauseWhenGameUnfocused = false;
     std::vector<TrackInfo> tracks;
@@ -72,6 +73,9 @@ public:
     void Seek(double seconds);
     void SetVolume(float v);  // 0..1
     void SetLoop(LoopMode m);
+    // Shuffle (0.3.3): every song once per round, songs not heard lately first, the same artist
+    // never back-to-back (shuffle.h). Saved as [music] shuffle.
+    void SetShuffle(bool on);
     void SetPauseWhenGameUnfocused(bool on);
     void OnGameFocusChanged(bool focused);
     // Even volume (0.3.2): every song is measured once in the background (loudness.h) and played

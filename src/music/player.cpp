@@ -26,6 +26,7 @@
 #include "picker.h"
 #include "playlist_logic.h"
 #include "playlist_store.h"
+#include "shuffle.h"
 #include "source.h"
 #include "tag_reader.h"
 #include "testing.h"
@@ -104,9 +105,16 @@ uint64_t FileTimeValue(const FILETIME& time) {
     return (static_cast<uint64_t>(time.dwHighDateTime) << 32) | time.dwLowDateTime;
 }
 
+int64_t UnixNow() {
+    FILETIME now = {};
+    GetSystemTimeAsFileTime(&now);
+    return static_cast<int64_t>((FileTimeValue(now) - 116444736000000000ull) / 10000000ull);
+}
+
 bool SameSettings(const MusicSettings& a, const MusicSettings& b) {
     return a.volumePercent == b.volumePercent && a.loop == b.loop && a.pauseWhenGameUnfocused == b.pauseWhenGameUnfocused &&
-           a.currentPath == b.currentPath && a.positionMs == b.positionMs && a.evenVolume == b.evenVolume;
+           a.currentPath == b.currentPath && a.positionMs == b.positionMs && a.evenVolume == b.evenVolume &&
+           a.shuffle == b.shuffle;
 }
 
 // ---- commands -------------------------------------------------------------------------------------
@@ -115,7 +123,7 @@ enum class CommandKind {
     Play, Pause, TogglePlayPause, Stop, Next, Previous, PlayIndex, Seek, SetVolume, SetLoop,
     SetPauseWhenUnfocused, FocusChanged, AddFiles, AddFolder, Remove, Clear, Rescan,
     FilesFound, TagsReady, IoMessage, SaveNow, Nop, Shutdown,
-    SetEvenVolume, Measured,
+    SetEvenVolume, Measured, SetShuffle,
 };
 
 struct TagJobItem {
@@ -220,6 +228,7 @@ struct View {
     double positionSeconds = 0;
     double durationSeconds = -1;
     LoopMode loop = LoopMode::All;
+    bool shuffle = false;
     float volume = 0.6f;
     bool pauseWhenGameUnfocused = false;
     bool outputFailed = false;
@@ -260,6 +269,9 @@ public:
         }
         ResolvePaths();
         ResetState();
+        LARGE_INTEGER counter = {};
+        QueryPerformanceCounter(&counter);
+        rng_ = static_cast<uint64_t>(counter.QuadPart) ^ (static_cast<uint64_t>(GetCurrentProcessId()) << 32) ^ GetTickCount64();
         LoadState();
         PublishList();
         PublishView();
@@ -351,6 +363,7 @@ public:
         out.positionSeconds = view_.positionSeconds;
         out.durationSeconds = view_.durationSeconds;
         out.loop = view_.loop;
+        out.shuffle = view_.shuffle;
         out.volume = view_.volume;
         out.pauseWhenGameUnfocused = view_.pauseWhenGameUnfocused;
         out.outputFailed = view_.outputFailed;
@@ -480,7 +493,10 @@ private:
         bool quit = false;
         for (Command& command : batch) {
             if (command.kind == CommandKind::Shutdown) quit = true;
-            else if (!quit) Handle(command);
+            else if (!quit) {
+                Handle(command);
+                ShuffleUpkeep();
+            }
         }
         return quit;
     }
@@ -538,6 +554,7 @@ private:
             case CommandKind::SaveNow: HandleSaveNow(); break;
             case CommandKind::SetEvenVolume: HandleEvenVolume(c.flag); break;
             case CommandKind::Measured: ApplyMeasurement(c); break;
+            case CommandKind::SetShuffle: HandleShuffle(c.flag); break;
             case CommandKind::Nop: break;
             case CommandKind::Shutdown: break;
         }
@@ -750,6 +767,51 @@ private:
         } else if (pausedByFocus_) {
             pausedByFocus_ = false;
             if (logic_.status == State::Paused) Apply(logic_.Play());
+        }
+    }
+
+    // ---- shuffle (0.3.3) ----
+    // What shuffle orders by: the artist (folded to lower case; without one, the song's folder,
+    // so untagged albums are spread too) and when the song was last heard.
+    std::vector<ShuffleItem> ShuffleItems() const {
+        std::vector<ShuffleItem> items;
+        items.reserve(entries_.size());
+        for (const Entry& entry : entries_) {
+            ShuffleItem item;
+            item.artist = entry.artist;
+            if (item.artist.empty()) {
+                const size_t slash = entry.path.find_last_of(L"\\/");
+                item.artist = slash == std::wstring::npos ? std::wstring() : L"folder:" + entry.path.substr(0, slash);
+            }
+            if (!item.artist.empty()) CharLowerBuffW(&item.artist[0], static_cast<DWORD>(item.artist.size()));
+            item.lastPlayed = entry.lastPlayed;
+            items.push_back(std::move(item));
+        }
+        return items;
+    }
+
+    void HandleShuffle(bool on) {
+        if (logic_.shuffle == on) return;
+        logic_.SetShuffle(on);
+        if (on && logic_.count > 0) logic_.SetShuffleOrder(MakeShuffleOrder(ShuffleItems(), logic_.current, UnixNow(), &rng_));
+        Log("music: shuffle %s", on ? "on" : "off");
+        InvalidateSuccessorIfChanged();
+        MarkSettingsDirty();
+    }
+
+    // After every command and every change-over: a new round when one ended without the next
+    // being ready, and the next round as soon as the last song of this one is playing (so the end
+    // of the round, gapless or not, goes straight into it).
+    void ShuffleUpkeep() {
+        if (!logic_.shuffle || logic_.count == 0) return;
+        if (logic_.roundEnded) {
+            logic_.SetShuffleOrder(MakeShuffleOrder(ShuffleItems(), logic_.current, UnixNow(), &rng_));
+            InvalidateSuccessorIfChanged();
+        }
+        if (logic_.pos == logic_.count - 1 && logic_.nextOrder.empty()) {
+            logic_.SetNextOrder(MakeShuffleOrder(ShuffleItems(), -1, UnixNow(), &rng_, logic_.order.back()));
+            Log("music: shuffle: the next round of %d song(s) is ready", logic_.count);
+            InvalidateSuccessorIfChanged();
         }
     }
 
@@ -1018,6 +1080,12 @@ private:
         }
         if (added > 0) {
             logic_.Inserted(static_cast<int>(at), added);
+            if (logic_.shuffle && logic_.pos >= 0) {
+                // The new songs joined the end of the round; mix them into what is still to come.
+                std::vector<int> order = logic_.order;
+                RemixRest(order, static_cast<size_t>(logic_.pos) + 1, ShuffleItems(), UnixNow(), &rng_);
+                logic_.SetShuffleOrder(order);
+            }
             QueueTagReads(at);
             MarkListDirty();
             InvalidateSuccessorIfChanged();
@@ -1109,6 +1177,7 @@ private:
         const ULONGLONG now = GetTickCount64();
         if (!tracks_.empty() || endKind_ != EndKind::None) {
             CrossBoundaries();
+            ShuffleUpkeep();   // the next round, before FillRing decides what follows gaplessly
             FillRing();
         }
         if (logic_.status == State::Playing && tracks_.empty() && endKind_ == EndKind::None && outputFailed_ &&
@@ -1349,10 +1418,7 @@ private:
         }
         if (played < need || need == 0) return;
         track.heard = true;
-        FILETIME now = {};
-        GetSystemTimeAsFileTime(&now);
-        entries_[static_cast<size_t>(track.index)].lastPlayed =
-            static_cast<int64_t>((FileTimeValue(now) - 116444736000000000ull) / 10000000ull);
+        entries_[static_cast<size_t>(track.index)].lastPlayed = UnixNow();
         MarkListDirty();
     }
 
@@ -1363,9 +1429,9 @@ private:
             CountHeard();
             Log("music: ended %s", Utf8(FileName(tracks_[0].path, false)).c_str());
             // Only the position in the list moves; the status stays what the user made it (a
-            // pause in the last few milliseconds of a track must stay a pause).
-            logic_.current = tracks_[1].index;
-            logic_.failures = 0;
+            // pause in the last few milliseconds of a track must stay a pause). Arrived also keeps
+            // shuffle's place in its round.
+            logic_.Arrived(tracks_[1].index);
             tracks_.erase(tracks_.begin());
             Log("music: started %s", Utf8(FileName(tracks_[0].path, false)).c_str());
             RememberPosition();
@@ -1380,7 +1446,7 @@ private:
             // The decision was taken on a copy; a row removed since then can leave its index past
             // the end of the list.
             const int cued = endState_.current;
-            logic_.current = logic_.count == 0 ? -1 : (cued >= 0 && cued < logic_.count ? cued : 0);
+            logic_.Arrived(logic_.count == 0 ? -1 : (cued >= 0 && cued < logic_.count ? cued : 0));
             logic_.failures = 0;
             logic_.status = State::Stopped;
             Log("music: list finished");
@@ -1654,6 +1720,7 @@ private:
         view_.positionSeconds = position;
         view_.durationSeconds = duration;
         view_.loop = logic_.loop;
+        view_.shuffle = logic_.shuffle;
         view_.volume = volume_;
         view_.pauseWhenGameUnfocused = pauseWhenUnfocused_;
         view_.outputFailed = outputFailed_;
@@ -1708,6 +1775,7 @@ private:
         deviceRestarts_.store(0);
         settingsSaves_.store(0);
         measured_.store(0);
+        shuffleAtLoad_ = false;
         evenVolume_ = evenDefault_;
         evenShown_.store(evenVolume_);
         measureQueueStale_ = true;
@@ -1778,6 +1846,7 @@ private:
         pauseWhenUnfocused_ = settings.pauseWhenGameUnfocused;
         evenVolume_ = settings.evenVolume;
         evenShown_.store(evenVolume_);
+        shuffleAtLoad_ = settings.shuffle;   // applied once the list and the cued song are in place, below
         logic_.loop = settings.loop == 0 ? LoopMode::Off : settings.loop == 1 ? LoopMode::One : LoopMode::All;
         logic_.Inserted(0, static_cast<int>(entries_.size()));
         if (!settings.currentPath.empty()) {
@@ -1790,8 +1859,13 @@ private:
                 rememberedPositionMs_ = settings.positionMs;
             }
         }
-        Log("music: %d track(s) in the list, loop %s, volume %d%%", logic_.count,
-            logic_.loop == LoopMode::Off ? "off" : logic_.loop == LoopMode::One ? "one" : "all", settings.volumePercent);
+        if (shuffleAtLoad_) {
+            logic_.SetShuffle(true);
+            if (logic_.count > 0) logic_.SetShuffleOrder(MakeShuffleOrder(ShuffleItems(), logic_.current, UnixNow(), &rng_));
+        }
+        Log("music: %d track(s) in the list, loop %s, shuffle %s, volume %d%%", logic_.count,
+            logic_.loop == LoopMode::Off ? "off" : logic_.loop == LoopMode::One ? "one" : "all", logic_.shuffle ? "on" : "off",
+            settings.volumePercent);
     }
 
     std::vector<StoredTrack> Stored() const {
@@ -1828,6 +1902,7 @@ private:
         settings.loop = logic_.loop == LoopMode::Off ? 0 : logic_.loop == LoopMode::One ? 1 : 2;
         settings.pauseWhenGameUnfocused = pauseWhenUnfocused_;
         settings.evenVolume = evenVolume_;
+        settings.shuffle = logic_.shuffle;
         if (logic_.current >= 0 && logic_.current < static_cast<int>(entries_.size())) {
             settings.currentPath = entries_[static_cast<size_t>(logic_.current)].path;
         }
@@ -2171,6 +2246,11 @@ private:
     std::vector<MeasureJob> measureJobs_;   // the next song to measure is at the back
     std::wstring measuringKey_;             // the song being measured now, if any
     std::atomic<uint32_t> measured_{0};
+
+    // Shuffle: the random state for the orders (seeded at Start), and the saved setting while
+    // LoadState puts the list together.
+    uint64_t rng_ = 0;
+    bool shuffleAtLoad_ = false;
 };
 
 // Created on first use and never destroyed: nothing may run at process exit (the game can end
@@ -2238,6 +2318,13 @@ void Player::SetEvenVolume(bool on) {
 }
 
 bool Player::EvenVolume() const { return TheEngine().EvenVolume(); }
+
+void Player::SetShuffle(bool on) {
+    Command command;
+    command.kind = CommandKind::SetShuffle;
+    command.flag = on;
+    TheEngine().Post(std::move(command));
+}
 
 void Player::SetLoop(LoopMode m) {
     Command command;

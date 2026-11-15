@@ -10,6 +10,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -626,6 +627,49 @@ MT_TEST(589, EngineHeard, "engine: a song counts as heard once most of it has pl
     const bool ok = rows.size() == 2 && !rows[0].second && rows[1].second;
     mt::Check(ok, "a 10 s song skipped after 3 s is not counted; a 1 s song played to its end is, and playlist.tsv keeps it",
               "%s", list.c_str());
+}
+
+// Shuffle (0.3.3): every song once per round, a new round straight after (gapless, never opening
+// with the song just heard), Previous back to the song before, and the setting saved.
+MT_TEST(595, EngineShuffle, "engine: shuffle plays every song once per round") {
+    const Fixtures& f = Files();
+    const std::wstring dir = mt::NewDir(L"shuffle");
+    std::string heard;
+    int previousOk = -1;
+    {
+        Session session(dir);
+        P().SetLoop(LoopMode::All);
+        P().AddFiles({f.a, f.b, f.c, f.g1});   // A, B, C 1 s each; G 0.6 s
+        testing::WaitForIdleIo(5000);
+        P().SetShuffle(true);
+        P().Play();
+        testing::Sync(5000);
+        mt::Signal out;
+        Render(7.5, &out);   // two rounds of 3.6 s
+        mt::Signal settled;   // from 0.3 s, after the fade-in from silence
+        settled.samples.assign(out.samples.begin() + 2 * 14400, out.samples.end());
+        heard = mt::Sequence(settled, kKnown);
+        const Snapshot now = Snap();
+        // Previous goes back to the song heard before the current one (all are under 3 s long).
+        const char before = heard.size() >= 2 ? heard[heard.size() - 2] : '?';
+        P().Previous();
+        testing::Sync(5000);
+        const int back = Snap().currentIndex;
+        const char letters[] = {'A', 'B', 'C', 'G'};
+        previousOk = now.shuffle && back >= 0 && back < 4 && letters[back] == before ? 1 : 0;
+    }
+    auto isRound = [](std::string s) {
+        std::sort(s.begin(), s.end());
+        return s == "ABCG";
+    };
+    const bool rounds = heard.size() >= 8 && heard.find('.') == std::string::npos && isRound(heard.substr(0, 4)) &&
+                        isRound(heard.substr(4, 4));
+    mt::Check(rounds, "two rounds in a row, each playing all four songs once, gapless, the second never opening with the last song",
+              "heard %s", heard.c_str());
+    mt::Check(previousOk == 1, "Previous goes back to the song heard before the current one", "heard %s", heard.c_str());
+    MusicSettings saved;
+    ReadMusicSection(mt::ReadBytes(dir + L"\\settings.ini"), &saved);
+    mt::Check(saved.shuffle, "settings.ini keeps shuffle on");
 }
 
 MT_TEST(590, EngineFolders, "engine: drop-in folder, Add folder, natural order, duplicates") {

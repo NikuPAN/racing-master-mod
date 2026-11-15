@@ -194,6 +194,7 @@ std::string WriteMusicSection(const std::string& existingIni, const MusicSetting
     section += "current=" + ToUtf8(SingleLine(settings.currentPath)) + "\r\n";
     section += "position_ms=" + std::to_string(settings.positionMs) + "\r\n";
     section += std::string("even_volume=") + (settings.evenVolume ? "1" : "0") + "\r\n";
+    section += std::string("shuffle=") + (settings.shuffle ? "1" : "0") + "\r\n";
 
     // The file may have been saved by Notepad as UTF-16 or with a byte order mark; the loader's own
     // reader accepts all of those. Read it as text, never as raw bytes, or the [mod] lines would be
@@ -273,6 +274,9 @@ void ReadMusicSection(const std::string& ini, MusicSettings* settings) {
         } else if (key == "even_volume") {
             if (value == "1" || value == "true" || value == "yes") settings->evenVolume = true;
             else if (value == "0" || value == "false" || value == "no") settings->evenVolume = false;
+        } else if (key == "shuffle") {
+            if (value == "1" || value == "true" || value == "yes") settings->shuffle = true;
+            else if (value == "0" || value == "false" || value == "no") settings->shuffle = false;
         }
     }
 }
