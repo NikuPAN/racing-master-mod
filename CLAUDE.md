@@ -8,9 +8,18 @@ and owner-only notes stay in `docs/agent-notes/local/`.
 
 @docs/agent-notes/README.md
 
-## Current state (2026-11-15)
+## Current state (2026-11-17)
 
-- **Version 0.3.2 on branch `panel/0.3.2` (not merged, test host only)**: the owner's decisions
+- **Version 0.4.0 (released 2026-11-17 as "Music player 0.4.0", tag `music-v0.4.0`)**: shuffle
+  for "My files" after the owner's game test ("Shuffle looks okay"). A new feature bumps the
+  minor version (the owner's rule, 2026-11-17: 0.4.0, not 0.3.3); fixes bump the patch.
+- **Shuffle (0.4.0, merged into main):** fair shuffle for "My files", the owner's choice
+  of 2026-11-15: every song once per round, songs not heard lately first (a song counts as heard
+  after 30 s; `P` lines in playlist.tsv), the same artist never back-to-back, the next round made
+  while the last song plays so rounds never open with the same song. Button after Repeat, F10,
+  `[music] shuffle`. Spotify's Smart Shuffle adds recommended songs; that needs the internet,
+  which this mod never uses. Details: `music-engine-playlist-table.md`, `music-panel.md`.
+- **Version 0.3.2 (released 2026-11-15, merged into main)**: the owner's decisions
   after the 0.3.0 game run of 15:40 (`design-decisions.md` 14-16): six places, each flush with the
   screen edges (top centre added); a compact one-row panel (`[panel] compact=`); the panel as two
   windows so the bar never moves; times never cut off and centred on the bar's line; other apps
@@ -26,12 +35,6 @@ and owner-only notes stay in `docs/agent-notes/local/`.
   song measured once with EBU R128 on a background thread, played at -14 LUFS, on by default),
   a volume slider on the compact panel, and the README rewritten short with Chinese first. Suite
   462/462 (2026-11-15). Merged into main only after the owner's game test (the owner's choice).
-- **Shuffle (0.3.3, branch `feature/shuffle`):** fair shuffle for "My files", the owner's choice
-  of 2026-11-15: every song once per round, songs not heard lately first (a song counts as heard
-  after 30 s; `P` lines in playlist.tsv), the same artist never back-to-back, the next round made
-  while the last song plays so rounds never open with the same song. Button after Repeat, F10,
-  `[music] shuffle`. Spotify's Smart Shuffle adds recommended songs; that needs the internet,
-  which this mod never uses. Details: `music-engine-playlist-table.md`, `music-panel.md`.
 - **DLSS (paused):** branches `dlss/capture` and `dlss/plugin`, unmerged. `dlss/plugin` ends in a
   WIP checkpoint (6ff77f9) holding what used to be uncommitted in its old worktree folder.
 - **Version 0.3.1 (branch `fix/0.3.1`, merged into main; test host only)**: the fixes for what the
@@ -204,7 +207,9 @@ README's download link is `releases/latest/download/racing-master-music-player.z
 and its SHA-256 to a release titled "Music player X.Y.Z" (the owner's name for it, 2026-11-15)
 and mark it Latest. The DLSS plugin gets its own workflow and `dlss-v` tags when it exists. A
 `music-v` tag publishes a stable release: only on the owner's say-so (music-v0.3.2 was approved
-on 2026-11-15). The `dev-build` prerelease updates on its own with every main push, so merging
+on 2026-11-15, music-v0.4.0 on 2026-11-17). Before tagging, set the version in
+`src/loader/version.rc` (both numeric and string fields), `kVersion` in `src/core/worker.cpp`
+and the version check in `tools/run-host-test.ps1`. The `dev-build` prerelease updates on its own with every main push, so merging
 to main makes an unreviewed build downloadable — keep that in mind before pushing. README
 screenshots live in `docs/screenshots/` (player ID and in-game name masked before commit; the
 ID shows faintly even through the panel's background, so check a contrast-boosted copy).
