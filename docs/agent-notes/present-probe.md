@@ -92,6 +92,19 @@ thread's presents passed on;
 `RACING_MASTER_MOD_TEST_SMOOTH_MOTION_DLL` points the Smooth Motion check at a DLL the host does
 load. The real `NvPresent64.dll` is never copied or loaded here.
 
+**Findings so far.** 2026-11-17, the owner's run of the shuffle build (0.3.2 + shuffle), Smooth
+Motion on, probe off. The owner's earlier "it no longer flickers" was wrong: Smooth Motion only
+switches on or off after a game restart, so that run had it off. In this run, `NvPresent64.dll` was
+loaded at the hook's attach. The first 45 s ran at 61 presents/s on the game's thread. Then, at the
+moment the game window went behind another window, a second thread presented the game's swap chain;
+the first thread sent none for a second, so the mod moved its drawing there (`moved to another
+thread 1 times`). From then on it was 120 presents/s on that thread, and the panel still blinked.
+About 3 minutes later there was one more brief second thread and a second move. That points to
+finding 3 (the game's own presents no longer reach the hook, and the mod draws from what is likely
+NVIDIA's thread), which is the crash-risk case above. Not verified: which module calls (needs the
+probe). The owner's `settings.ini` got `[debug] present_probe=1` for the next run (backup of the
+file before that: `%TEMP%\rmm-settings-before-probe.ini`); remove it after the run.
+
 **How to apply:** ask the owner for `mod.log` from a run with Smooth Motion on and
 `present_probe=1`, read the block against the list above, and decide the fix from the finding.
 Keep the probe off by default and its frame-thread side free of allocation, locks and logging.
